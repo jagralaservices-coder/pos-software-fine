@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { POSLayout } from '@/components/layouts/POSLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
 import { usePOSSafe } from '@/contexts/POSContext';
@@ -13,6 +12,7 @@ import { Send, Users, MessageCircle, Image as ImageIcon, ArrowLeft, Mic, Smile }
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
+
 
 interface Conversation {
   id: string;
@@ -148,8 +148,7 @@ const ChatPage: React.FC = () => {
   };
 
   return (
-    <POSLayout>
-      <div className="h-[calc(100vh-4rem)] flex bg-background">
+    <div className="h-[calc(100vh-4rem)] flex bg-background">
         {/* Conversations List */}
         <div className={cn('border-r border-border flex flex-col bg-card', selectedConversation ? 'hidden md:flex w-80' : 'w-full md:w-80')}>
           <div className="p-4 border-b border-border">
@@ -291,7 +290,6 @@ const ChatPage: React.FC = () => {
           )}
         </div>
       </div>
-    </POSLayout>
   );
 };
 
