@@ -209,4 +209,3 @@ export const CustomerDetails: React.FC<CustomerDetailsProps> = ({ customer, onCh
     </div>
   );
 };
-};
