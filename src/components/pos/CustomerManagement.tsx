@@ -82,7 +82,10 @@ export const CustomerManagement: React.FC = () => {
 
   const handleAddCustomer = async () => {
     if (!formData.name.trim() || !formData.phone.trim()) { toast.error(t('common.required')); return; }
-    if (customers.some(c => c.phone === formData.phone && c.id !== editingCustomer?.id)) { toast.error(t('common.error')); return; }
+    if (customers.some(c => c.phone.trim() === formData.phone.trim() && c.id !== editingCustomer?.id)) {
+      toast.error("Customer with this contact number already exists.");
+      return;
+    }
 
     const storeId = getStoreId();
 
