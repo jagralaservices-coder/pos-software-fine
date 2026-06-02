@@ -92,7 +92,7 @@ export const SettingsPage: React.FC = () => {
   const [selectedLanguage, setSelectedLanguage] = useState('en');
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
   const [storeDetails, setStoreDetails] = useState({
-    name: 'QuickPOS Restaurant',
+    name: 'PayStore POS Restaurant',
     address: '',
     phone: '',
     gstin: '',

@@ -190,7 +190,7 @@ export const useAnalytics = (timeRange: TimeRange = 'today') => {
     orderType: 'qr',
     customerName: qr.customer_name || undefined,
     customerPhone: qr.customer_phone || undefined,
-    paymentMethod: 'cash',
+    paymentMethod: 'qr',
     createdAt: new Date(qr.created_at),
     kotPrinted: false,
     billPrinted: true,
@@ -404,6 +404,7 @@ export const useAnalytics = (timeRange: TimeRange = 'today') => {
     let cardSalesTotal = 0;
     let upiSalesTotal = 0;
     let dueSalesTotal = 0;
+    let qrSalesTotal = 0;
     let splitSalesTotal = 0;
 
     filteredOrders.forEach(o => {
@@ -412,6 +413,7 @@ export const useAnalytics = (timeRange: TimeRange = 'today') => {
       let cardAmt = 0;
       let upiAmt = 0;
       let creditAmt = 0;
+      let qrAmt = 0;
 
       if (method === 'part') {
         const breakdown = getPaymentBreakdownSummary(o);
@@ -427,6 +429,8 @@ export const useAnalytics = (timeRange: TimeRange = 'today') => {
         upiAmt = o.total;
       } else if (method === 'due' || method === 'credit') {
         creditAmt = o.total;
+      } else if (method === 'qr') {
+        qrAmt = o.total;
       } else if (method === 'split') {
         // Handled below separately
       }
@@ -438,13 +442,15 @@ export const useAnalytics = (timeRange: TimeRange = 'today') => {
         cashAdded: cashAmt,
         cardAdded: cardAmt,
         upiAdded: upiAmt,
-        creditAdded: creditAmt
+        creditAdded: creditAmt,
+        qrAdded: qrAmt
       });
 
       cashSalesTotal += (cashAmt ?? 0);
       cardSalesTotal += (cardAmt ?? 0);
       upiSalesTotal += (upiAmt ?? 0);
       dueSalesTotal += (creditAmt ?? 0);
+      qrSalesTotal += (qrAmt ?? 0);
       
       if (method === 'split') {
         splitSalesTotal += o.total;
@@ -477,6 +483,7 @@ export const useAnalytics = (timeRange: TimeRange = 'today') => {
       upiSales: upiSalesTotal,
       splitSales: splitSalesTotal,
       dueSales: dueSalesTotal,
+      qrSales: qrSalesTotal,
       kotCount: orders.filter(o => o.kotPrinted && new Date(o.createdAt).toDateString() === today).length,
       billCount: todayOrders.length,
       heldBillsCount: heldBills.length,
@@ -618,19 +625,26 @@ export const useAnalytics = (timeRange: TimeRange = 'today') => {
       card: { amount: 0, count: 0 },
       upi: { amount: 0, count: 0 },
       credit: { amount: 0, count: 0 },
+      qr: { amount: 0, count: 0 },
     };
 
     // Process each order
     filteredOrders.forEach(order => {
-      const breakdown = getPaymentBreakdownSummary(order);
-      paymentTotals.cash.amount += breakdown.amounts.cash;
-      paymentTotals.card.amount += breakdown.amounts.card;
-      paymentTotals.upi.amount += breakdown.amounts.upi;
-      paymentTotals.credit.amount += breakdown.amounts.credit;
-      paymentTotals.cash.count += breakdown.counts.cash;
-      paymentTotals.card.count += breakdown.counts.card;
-      paymentTotals.upi.count += breakdown.counts.upi;
-      paymentTotals.credit.count += breakdown.counts.credit;
+      const method = (order.paymentMethod || '').toLowerCase().trim();
+      if (method === 'qr') {
+        paymentTotals.qr.amount += order.total;
+        paymentTotals.qr.count += 1;
+      } else {
+        const breakdown = getPaymentBreakdownSummary(order);
+        paymentTotals.cash.amount += breakdown.amounts.cash;
+        paymentTotals.card.amount += breakdown.amounts.card;
+        paymentTotals.upi.amount += breakdown.amounts.upi;
+        paymentTotals.credit.amount += breakdown.amounts.credit;
+        paymentTotals.cash.count += breakdown.counts.cash;
+        paymentTotals.card.count += breakdown.counts.card;
+        paymentTotals.upi.count += breakdown.counts.upi;
+        paymentTotals.credit.count += breakdown.counts.credit;
+      }
     });
 
     // Add collected credit payments to Cash, Card, UPI and Credit Collected
@@ -654,7 +668,7 @@ export const useAnalytics = (timeRange: TimeRange = 'today') => {
     // Credit Outstanding = Total Credit Amount - Total Credit Collected
     const creditOutstanding = Math.max(0, paymentTotals.credit.amount - totalCreditCollected);
 
-    // Build rows in the correct order: Cash, Card, UPI, Credit, Credit Outstanding, Credit Collected, Discount, GST
+    // Build rows in the correct order: Cash, Card, UPI, QR Order, Credit, Credit Outstanding, Credit Collected, Discount, GST
     const rows: PaymentSummary[] = [];
 
     // Cash
@@ -679,6 +693,14 @@ export const useAnalytics = (timeRange: TimeRange = 'today') => {
       count: paymentTotals.upi.count,
       amount: paymentTotals.upi.amount,
       percentage: total > 0 ? Math.round((paymentTotals.upi.amount / total) * 100) : 0,
+    });
+
+    // QR Order
+    rows.push({
+      method: 'QR Order',
+      count: paymentTotals.qr.count,
+      amount: paymentTotals.qr.amount,
+      percentage: total > 0 ? Math.round((paymentTotals.qr.amount / total) * 100) : 0,
     });
 
     // Credit

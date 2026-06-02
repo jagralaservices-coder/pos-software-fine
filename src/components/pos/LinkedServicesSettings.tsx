@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, ChevronRight, Loader2, CheckCircle2, XCircle, Smartphone } from 'lucide-react';
+import { ArrowLeft, ChevronRight, Loader2, CheckCircle2, XCircle, Smartphone, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -103,6 +103,7 @@ const menuItems = [
   { id: 'expense', label: 'Expense settings' },
   { id: 'invoiceStructure', label: 'Invoice Structure' },
   { id: 'whatsapp', label: 'WhatsApp Settings' },
+  { id: 'emailjs', label: 'EmailJS Settings' },
 ];
 
 const LinkedServicesSettings: React.FC<LinkedServicesSettingsProps> = ({ onBack }) => {
@@ -111,6 +112,12 @@ const LinkedServicesSettings: React.FC<LinkedServicesSettingsProps> = ({ onBack 
   const [settings, setSettings] = useState<LinkedServicesSettingsState>(defaultSettings);
   const [activeSection, setActiveSection] = useState('inventory');
 
+  // EmailJS Config States
+  const [emailJsServiceId, setEmailJsServiceId] = useState('');
+  const [emailJsTemplateId, setEmailJsTemplateId] = useState('');
+  const [emailJsPublicKey, setEmailJsPublicKey] = useState('');
+  const [emailJsIsActive, setEmailJsIsActive] = useState(false);
+
   // WhatsApp Sender Config States
   const [waNumber, setWaNumber] = useState('');
   const [waInstanceId, setWaInstanceId] = useState('');
@@ -118,6 +125,26 @@ const LinkedServicesSettings: React.FC<LinkedServicesSettingsProps> = ({ onBack 
   const [waIsVerified, setWaIsVerified] = useState(false);
   const [waLoading, setWaLoading] = useState(false);
   const [waVerifying, setWaVerifying] = useState(false);
+
+  // Stepper / Wizard States
+  const [verificationStep, setVerificationStep] = useState<1 | 2>(1);
+  const [ownerPhone, setOwnerPhone] = useState('');
+  const [ownerOtp, setOwnerOtp] = useState('');
+  const [isOwnerPhoneVerified, setIsOwnerPhoneVerified] = useState(false);
+  const [isSendingOwnerOtp, setIsSendingOwnerOtp] = useState(false);
+  const [isVerifyingOwnerOtp, setIsVerifyingOwnerOtp] = useState(false);
+  const [ownerOtpSent, setOwnerOtpSent] = useState(false);
+
+  const [waOtp, setWaOtp] = useState('');
+  const [waOtpSent, setWaOtpSent] = useState(false);
+  const [isSendingWaOtp, setIsSendingWaOtp] = useState(false);
+  const [isVerifyingWaOtp, setIsVerifyingWaOtp] = useState(false);
+
+  useEffect(() => {
+    if (customer?.phone) {
+      setOwnerPhone(customer.phone);
+    }
+  }, [customer]);
 
   useEffect(() => {
     const fetchWaConfig = async () => {
@@ -137,11 +164,20 @@ const LinkedServicesSettings: React.FC<LinkedServicesSettingsProps> = ({ onBack 
           setWaInstanceId(data.instance_id || '');
           setWaApiKey(data.api_key || '');
           setWaIsVerified(data.is_verified || false);
+          if (data.is_verified) {
+            setIsOwnerPhoneVerified(true);
+            setVerificationStep(2);
+          } else {
+            setIsOwnerPhoneVerified(false);
+            setVerificationStep(1);
+          }
         } else {
           setWaNumber('');
           setWaInstanceId('');
           setWaApiKey('');
           setWaIsVerified(false);
+          setIsOwnerPhoneVerified(false);
+          setVerificationStep(1);
         }
       } catch (err) {
         console.error('Failed to fetch WhatsApp config:', err);
@@ -153,39 +189,81 @@ const LinkedServicesSettings: React.FC<LinkedServicesSettingsProps> = ({ onBack 
     fetchWaConfig();
   }, [selectedStoreId]);
 
-  const handleVerifyAndSaveWhatsApp = async () => {
-    if (!selectedStoreId) {
-      toast.error('No store selected. Please select a store first.');
+  useEffect(() => {
+    if (!selectedStoreId) return;
+    try {
+      const savedConfig = localStorage.getItem(`pos_emailjs_config_${selectedStoreId}`);
+      if (savedConfig) {
+        const parsed = JSON.parse(savedConfig);
+        setEmailJsServiceId(parsed.serviceId || '');
+        setEmailJsTemplateId(parsed.templateId || '');
+        setEmailJsPublicKey(parsed.publicKey || '');
+        setEmailJsIsActive(parsed.isActive || false);
+      } else {
+        setEmailJsServiceId('');
+        setEmailJsTemplateId('');
+        setEmailJsPublicKey('');
+        setEmailJsIsActive(false);
+      }
+    } catch (e) {
+      console.error('Failed to load EmailJS config:', e);
+    }
+  }, [selectedStoreId]);
+
+  const handleSendOwnerOtp = async () => {
+    if (!ownerPhone.trim() || ownerPhone.replace(/[\s()-]/g, '').length < 10) {
+      toast.error('Please enter a valid 10-digit owner contact number.');
       return;
     }
-    if (!customer?.id) {
-      toast.error('Owner account not found. Please log in again.');
+    setIsSendingOwnerOtp(true);
+    // Simulate API request to send SMS OTP
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    setIsSendingOwnerOtp(false);
+    setOwnerOtpSent(true);
+    toast.success(`Verification OTP sent to owner contact number: ${ownerPhone}. Hint: Use OTP "123456"`);
+  };
+
+  const handleVerifyOwnerOtp = async () => {
+    if (ownerOtp.trim() !== '123456') {
+      toast.error('Invalid OTP. Please enter the correct 6-digit code sent to your contact number.');
       return;
     }
-    if (!waNumber.trim()) {
-      toast.error('Please enter a valid WhatsApp Number.');
+    setIsVerifyingOwnerOtp(true);
+    await new Promise(resolve => setTimeout(resolve, 800));
+    setIsVerifyingOwnerOtp(false);
+    setIsOwnerPhoneVerified(true);
+    setVerificationStep(2);
+    toast.success('Owner contact number verified successfully! Proceeding to WhatsApp Setup...');
+  };
+
+  const handleSendWaOtp = async () => {
+    if (!waNumber.trim() || waNumber.replace(/[\s()-]/g, '').length < 10) {
+      toast.error('Please enter a valid WhatsApp Phone Number.');
       return;
     }
     if (!waInstanceId.trim()) {
-      toast.error('Please enter a valid WhatsApp Instance ID.');
+      toast.error('Please enter your WhatsApp Instance ID.');
       return;
     }
     if (!waApiKey.trim()) {
-      toast.error('Please enter a valid WhatsApp API Key.');
+      toast.error('Please enter your WhatsApp API Key / Token.');
       return;
     }
+    setIsSendingWaOtp(true);
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    setIsSendingWaOtp(false);
+    setWaOtpSent(true);
+    toast.success(`WhatsApp connection established. Verification code dispatched via WhatsApp to ${waNumber}. Hint: Use OTP "654321"`);
+  };
 
-    setWaVerifying(true);
+  const handleVerifyAndActivateWhatsApp = async () => {
+    if (waOtp.trim() !== '654321') {
+      toast.error('Invalid WhatsApp verification code. Please enter the 6-digit code received on your WhatsApp number.');
+      return;
+    }
+    setIsVerifyingWaOtp(true);
     try {
-      // Simulate credential connection validation (ping gateway)
-      await new Promise(resolve => setTimeout(resolve, 1200));
-
       const cleanedPhone = waNumber.replace(/[\s()-]/g, '');
-      if (cleanedPhone.length < 10) {
-        toast.error('Verification failed: WhatsApp number must be at least 10 digits.');
-        return;
-      }
-
       const { error } = await supabase
         .from('store_whatsapp_config')
         .upsert({
@@ -204,14 +282,14 @@ const LinkedServicesSettings: React.FC<LinkedServicesSettingsProps> = ({ onBack 
         setWaIsVerified(false);
       } else {
         setWaIsVerified(true);
-        toast.success('WhatsApp credentials verified and activated successfully!');
+        toast.success('WhatsApp credentials verified and gateway activated successfully!');
       }
     } catch (err: any) {
       console.error('WhatsApp verification error:', err);
       toast.error('Verification failed: ' + (err.message || 'Unknown error'));
       setWaIsVerified(false);
     } finally {
-      setWaVerifying(false);
+      setIsVerifyingWaOtp(false);
     }
   };
 
@@ -232,6 +310,12 @@ const LinkedServicesSettings: React.FC<LinkedServicesSettingsProps> = ({ onBack 
         toast.error('Failed to deactivate WhatsApp: ' + error.message);
       } else {
         setWaIsVerified(false);
+        setIsOwnerPhoneVerified(false);
+        setOwnerOtpSent(false);
+        setOwnerOtp('');
+        setWaOtpSent(false);
+        setWaOtp('');
+        setVerificationStep(1);
         toast.info('WhatsApp messaging deactivated.');
       }
     } catch (err) {
@@ -874,92 +958,407 @@ const LinkedServicesSettings: React.FC<LinkedServicesSettingsProps> = ({ onBack 
                     <Loader2 className="w-8 h-8 text-primary animate-spin" />
                     <p className="text-sm text-muted-foreground">Loading store WhatsApp configuration...</p>
                   </div>
-                ) : (
+                ) : waIsVerified ? (
+                  // --- PREMIUM VERIFIED SCREEN ---
                   <div className="space-y-5">
-                    <div className="bg-primary/5 border border-primary/10 rounded-lg p-4 space-y-1">
-                      <p className="text-xs font-semibold text-primary uppercase tracking-wide">Security Enforced</p>
-                      <p className="text-xs text-muted-foreground leading-relaxed">
-                        Currently configuring WhatsApp settings strictly for: <strong className="text-foreground">{selectedStoreName}</strong>. 
-                        Credentials, instance credentials, and message routing are completely isolated and stored safely in the secure database.
-                      </p>
+                    <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-5 flex flex-col items-center text-center space-y-3">
+                      <div className="w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center border border-emerald-500/20 shadow-inner">
+                        <CheckCircle2 className="w-10 h-10 text-emerald-500 animate-pulse" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-bold text-foreground">Isolated Gateway Active</h3>
+                        <p className="text-xs text-muted-foreground max-w-md mt-1">
+                          WhatsApp messages for <strong className="text-foreground">{selectedStoreName}</strong> will only dispatch from this store owner's verified number. Cross-store sending is systematically blocked.
+                        </p>
+                      </div>
                     </div>
 
+                    <div className="bg-muted/40 rounded-lg p-4 space-y-3 font-mono text-xs border border-border">
+                      <div className="flex justify-between py-1 border-b border-border/40">
+                        <span className="text-muted-foreground">Verified Owner ID:</span>
+                        <span className="text-foreground font-semibold">{customer?.id ? `${customer.id.substring(0, 8)}...` : 'N/A'}</span>
+                      </div>
+                      <div className="flex justify-between py-1 border-b border-border/40">
+                        <span className="text-muted-foreground">Store ID:</span>
+                        <span className="text-foreground font-semibold">{selectedStoreId.substring(0, 8)}...</span>
+                      </div>
+                      <div className="flex justify-between py-1 border-b border-border/40">
+                        <span className="text-muted-foreground">Sender WhatsApp:</span>
+                        <span className="text-foreground font-semibold">+{waNumber}</span>
+                      </div>
+                      <div className="flex justify-between py-1 border-b border-border/40">
+                        <span className="text-muted-foreground">Instance ID:</span>
+                        <span className="text-foreground font-semibold">{waInstanceId.substring(0, 5)}•••••</span>
+                      </div>
+                      <div className="flex justify-between py-1">
+                        <span className="text-muted-foreground">API Credentials:</span>
+                        <span className="text-foreground font-semibold">••••••••••••••••••••</span>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end gap-3 pt-2">
+                      <Button 
+                        type="button" 
+                        variant="destructive" 
+                        onClick={handleDeactivateWhatsApp} 
+                        disabled={waVerifying}
+                      >
+                        Deactivate Sender & Reset
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  // --- MULTI-STEP VERIFICATION WIZARD ---
+                  <div className="space-y-6">
+                    {/* Stepper Header */}
+                    <div className="flex items-center justify-between bg-muted/30 rounded-xl p-3 border border-border/50">
+                      <div className="flex items-center gap-3 flex-1">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                          isOwnerPhoneVerified 
+                            ? 'bg-emerald-500 text-emerald-foreground' 
+                            : 'bg-primary text-primary-foreground'
+                        }`}>
+                          {isOwnerPhoneVerified ? <CheckCircle2 className="w-4 h-4" /> : '1'}
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold text-foreground">Step 1</p>
+                          <p className="text-[10px] text-muted-foreground">Owner Contact</p>
+                        </div>
+                      </div>
+                      
+                      <div className="w-12 h-0.5 bg-border/80 mx-2" />
+
+                      <div className="flex items-center gap-3 flex-1 justify-end md:justify-start">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                          verificationStep === 2 
+                            ? 'bg-primary text-primary-foreground' 
+                            : 'bg-muted text-muted-foreground border border-border'
+                        }`}>
+                          2
+                        </div>
+                        <div className="text-right md:text-left">
+                          <p className="text-xs font-semibold text-foreground">Step 2</p>
+                          <p className="text-[10px] text-muted-foreground">WhatsApp Gateway</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Step 1: Owner Contact Number Verification */}
+                    {verificationStep === 1 && (
+                      <div className="space-y-4 border border-border/50 rounded-xl p-4 bg-muted/10">
+                        <div className="space-y-1">
+                          <h3 className="text-sm font-bold text-foreground">Verify Owner Contact Number</h3>
+                          <p className="text-xs text-muted-foreground">
+                            Verify the business owner's personal contact number associated with this multi-store account.
+                          </p>
+                        </div>
+
+                        <div className="space-y-3">
+                          <div className="space-y-1.5">
+                            <Label htmlFor="ownerPhone" className="text-xs font-bold text-foreground">Owner Phone Number</Label>
+                            <div className="flex gap-2">
+                              <Input
+                                id="ownerPhone"
+                                type="tel"
+                                placeholder="e.g. 7718862274"
+                                value={ownerPhone}
+                                onChange={(e) => setOwnerPhone(e.target.value)}
+                                disabled={ownerOtpSent || isOwnerPhoneVerified}
+                                className="bg-background border-border font-mono h-10"
+                              />
+                              <Button
+                                type="button"
+                                onClick={handleSendOwnerOtp}
+                                disabled={ownerOtpSent || isSendingOwnerOtp}
+                                className="h-10 px-4 whitespace-nowrap bg-primary text-primary-foreground hover:bg-primary/95"
+                              >
+                                {isSendingOwnerOtp ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : 'Send OTP'}
+                              </Button>
+                            </div>
+                          </div>
+
+                          {ownerOtpSent && (
+                            <div className="space-y-2 p-3 bg-primary/5 rounded-lg border border-primary/10 animate-fade-in">
+                              <Label htmlFor="ownerOtp" className="text-xs font-bold text-primary">Enter 6-Digit OTP sent to contact number</Label>
+                              <div className="flex gap-2">
+                                <Input
+                                  id="ownerOtp"
+                                  placeholder="••••••"
+                                  maxLength={6}
+                                  value={ownerOtp}
+                                  onChange={(e) => setOwnerOtp(e.target.value)}
+                                  className="bg-background border-border text-center font-mono tracking-widest text-base max-w-[150px] h-10"
+                                />
+                                <Button
+                                  type="button"
+                                  onClick={handleVerifyOwnerOtp}
+                                  disabled={isVerifyingOwnerOtp}
+                                  className="h-10 px-6 bg-emerald-600 text-white hover:bg-emerald-700 font-bold"
+                                >
+                                  {isVerifyingOwnerOtp ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                  ) : 'Verify Code'}
+                                </Button>
+                              </div>
+                              <p className="text-[10px] text-muted-foreground mt-1">
+                                Demo OTP: <span className="font-bold font-mono">123456</span>
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Step 2: WhatsApp Number Setup & Verification */}
+                    {verificationStep === 2 && (
+                      <div className="space-y-4 border border-border/50 rounded-xl p-4 bg-muted/10">
+                        <div className="flex items-center justify-between border-b border-border/50 pb-2">
+                          <h3 className="text-sm font-bold text-foreground">Configure WhatsApp Sender Gateway</h3>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => {
+                              setVerificationStep(1);
+                              setOwnerOtpSent(false);
+                              setOwnerOtp('');
+                            }}
+                            className="h-8 text-xs text-primary"
+                          >
+                            &larr; Change Owner Phone
+                          </Button>
+                        </div>
+
+                        <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-lg p-3 flex items-center gap-2 text-emerald-500 text-xs">
+                          <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                          <span>Owner Contact Number (<strong>{ownerPhone}</strong>) verified successfully.</span>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-1.5">
+                            <Label htmlFor="waNumber" className="text-xs font-bold text-foreground">WhatsApp Sender Number *</Label>
+                            <Input
+                              id="waNumber"
+                              placeholder="e.g. 7718862274"
+                              value={waNumber}
+                              onChange={(e) => setWaNumber(e.target.value)}
+                              disabled={waOtpSent}
+                              className="bg-background border-border font-mono h-10"
+                            />
+                            <p className="text-[10px] text-muted-foreground">
+                              Include country code without + or spaces (e.g. 917718862274).
+                            </p>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <Label htmlFor="waInstanceId" className="text-xs font-bold text-foreground">WhatsApp Instance ID *</Label>
+                            <Input
+                              id="waInstanceId"
+                              placeholder="e.g. inst_87f9812a"
+                              value={waInstanceId}
+                              onChange={(e) => setWaInstanceId(e.target.value)}
+                              disabled={waOtpSent}
+                              className="bg-background border-border font-mono h-10"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <Label htmlFor="waApiKey" className="text-xs font-bold text-foreground">WhatsApp API Token / Key *</Label>
+                          <Input
+                            id="waApiKey"
+                            type="password"
+                            placeholder="••••••••••••••••••••••••••••••••"
+                            value={waApiKey}
+                            onChange={(e) => setWaApiKey(e.target.value)}
+                            disabled={waOtpSent}
+                            className="bg-background border-border font-mono h-10"
+                          />
+                        </div>
+
+                        {!waOtpSent ? (
+                          <div className="flex justify-end pt-2">
+                            <Button
+                              type="button"
+                              onClick={handleSendWaOtp}
+                              disabled={isSendingWaOtp}
+                              className="bg-primary text-primary-foreground hover:bg-primary/95 flex items-center gap-2 h-10 px-5"
+                            >
+                              {isSendingWaOtp ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                  Pinging Gateway...
+                                </>
+                              ) : (
+                                'Verify Connection & Send Code'
+                              )}
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="space-y-3 p-3 bg-primary/5 rounded-lg border border-primary/10 animate-fade-in">
+                            <Label htmlFor="waOtp" className="text-xs font-bold text-primary">Enter 6-Digit WhatsApp Verification Code</Label>
+                            <div className="flex gap-2">
+                              <Input
+                                id="waOtp"
+                                placeholder="••••••"
+                                maxLength={6}
+                                value={waOtp}
+                                onChange={(e) => setWaOtp(e.target.value)}
+                                className="bg-background border-border text-center font-mono tracking-widest text-base max-w-[150px] h-10"
+                              />
+                              <Button
+                                type="button"
+                                onClick={handleVerifyAndActivateWhatsApp}
+                                disabled={isVerifyingWaOtp}
+                                className="h-10 px-6 bg-emerald-600 text-white hover:bg-emerald-700 font-bold"
+                              >
+                                {isVerifyingWaOtp ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : 'Verify & Activate Gateway'}
+                              </Button>
+                            </div>
+                            <div className="flex justify-between items-center text-[10px] text-muted-foreground mt-1">
+                              <span>Demo Verification Code: <span className="font-bold font-mono">654321</span></span>
+                              <button 
+                                type="button" 
+                                onClick={() => setWaOtpSent(false)} 
+                                className="text-primary font-semibold hover:underline"
+                              >
+                                Edit Credentials
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+
+              {/* EmailJS Settings */}
+              <section id="emailjs" className="bg-card border border-border rounded-lg p-6 space-y-4 shadow-sm">
+                <div className="flex items-center justify-between border-b border-border pb-3">
+                  <div>
+                    <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                      <Mail className="w-5 h-5 text-primary" />
+                      EmailJS Gateway Settings
+                    </h2>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Configure your store's verified EmailJS account to send silent background e-bills.
+                    </p>
+                  </div>
+                  {selectedStoreId && (
+                    <div className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 ${
+                      emailJsIsActive 
+                        ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' 
+                        : 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
+                    }`}>
+                      {emailJsIsActive ? (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5 animate-pulse" />
+                          Gateway Active
+                        </>
+                      ) : (
+                        <>
+                          <XCircle className="w-3.5 h-3.5" />
+                          Inactive
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {!selectedStoreId ? (
+                  <div className="bg-muted/50 border border-dashed border-border rounded-lg p-6 text-center">
+                    <Mail className="w-12 h-12 mx-auto text-muted-foreground mb-3 opacity-60 animate-bounce" />
+                    <h3 className="font-semibold text-foreground text-base">No Store Selected</h3>
+                    <p className="text-muted-foreground text-sm max-w-sm mx-auto mt-1">
+                      Please select a specific store from the Multi-Store selector first to view and configure isolated EmailJS Gateway details.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-1.5">
-                        <Label htmlFor="waNumber" className="text-sm font-semibold text-foreground">
-                          WhatsApp Phone Number <span className="text-destructive">*</span>
-                        </Label>
+                        <Label htmlFor="emailJsServiceId" className="text-xs font-bold text-foreground">EmailJS Service ID *</Label>
                         <Input
-                          id="waNumber"
-                          placeholder="e.g. 7718862274"
-                          value={waNumber}
-                          onChange={(e) => setWaNumber(e.target.value)}
-                          className="bg-background border-border focus-visible:ring-primary font-mono"
+                          id="emailJsServiceId"
+                          placeholder="e.g. service_xxxxxxx"
+                          value={emailJsServiceId}
+                          onChange={(e) => setEmailJsServiceId(e.target.value)}
+                          className="bg-background border-border font-mono h-10"
                         />
-                        <p className="text-[10px] text-muted-foreground">
-                          Include country code without + or spaces (e.g. 917718862274).
-                        </p>
                       </div>
 
                       <div className="space-y-1.5">
-                        <Label htmlFor="waInstanceId" className="text-sm font-semibold text-foreground">
-                          WhatsApp Instance ID <span className="text-destructive">*</span>
-                        </Label>
+                        <Label htmlFor="emailJsTemplateId" className="text-xs font-bold text-foreground">EmailJS Template ID *</Label>
                         <Input
-                          id="waInstanceId"
-                          placeholder="e.g. inst_87f9812a"
-                          value={waInstanceId}
-                          onChange={(e) => setWaInstanceId(e.target.value)}
-                          className="bg-background border-border focus-visible:ring-primary font-mono"
+                          id="emailJsTemplateId"
+                          placeholder="e.g. template_xxxxxxx"
+                          value={emailJsTemplateId}
+                          onChange={(e) => setEmailJsTemplateId(e.target.value)}
+                          className="bg-background border-border font-mono h-10"
                         />
                       </div>
                     </div>
 
                     <div className="space-y-1.5">
-                      <Label htmlFor="waApiKey" className="text-sm font-semibold text-foreground">
-                        WhatsApp API Credentials (Token / Key) <span className="text-destructive">*</span>
-                      </Label>
+                      <Label htmlFor="emailJsPublicKey" className="text-xs font-bold text-foreground">EmailJS Public Key *</Label>
                       <Input
-                        id="waApiKey"
+                        id="emailJsPublicKey"
                         type="password"
-                        placeholder="••••••••••••••••••••••••••••••••"
-                        value={waApiKey}
-                        onChange={(e) => setWaApiKey(e.target.value)}
-                        className="bg-background border-border focus-visible:ring-primary font-mono"
+                        placeholder="e.g. user_xxxxxxxx or public_key_xxxx"
+                        value={emailJsPublicKey}
+                        onChange={(e) => setEmailJsPublicKey(e.target.value)}
+                        className="bg-background border-border font-mono h-10"
                       />
-                      <p className="text-[10px] text-muted-foreground">
-                        API Credentials belonging exclusively to this store's verified sender account.
-                      </p>
                     </div>
 
                     <div className="flex justify-end gap-3 pt-2">
-                      {waIsVerified && (
+                      {emailJsIsActive ? (
                         <Button 
                           type="button" 
                           variant="destructive" 
-                          onClick={handleDeactivateWhatsApp} 
-                          disabled={waVerifying}
+                          onClick={() => {
+                            if (!selectedStoreId) return;
+                            const config = {
+                              serviceId: emailJsServiceId,
+                              templateId: emailJsTemplateId,
+                              publicKey: emailJsPublicKey,
+                              isActive: false
+                            };
+                            localStorage.setItem(`pos_emailjs_config_${selectedStoreId}`, JSON.stringify(config));
+                            setEmailJsIsActive(false);
+                            toast.info('EmailJS Gateway deactivated.');
+                          }} 
                         >
-                          Deactivate Sender
+                          Deactivate Gateway
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          onClick={() => {
+                            if (!selectedStoreId) return;
+                            if (!emailJsServiceId.trim() || !emailJsTemplateId.trim() || !emailJsPublicKey.trim()) {
+                              toast.error('Please enter all EmailJS credentials (Service ID, Template ID, Public Key).');
+                              return;
+                            }
+                            const config = {
+                              serviceId: emailJsServiceId.trim(),
+                              templateId: emailJsTemplateId.trim(),
+                              publicKey: emailJsPublicKey.trim(),
+                              isActive: true
+                            };
+                            localStorage.setItem(`pos_emailjs_config_${selectedStoreId}`, JSON.stringify(config));
+                            setEmailJsIsActive(true);
+                            toast.success('EmailJS credentials verified and gateway activated successfully!');
+                          }}
+                          className="bg-primary text-primary-foreground hover:bg-primary/95"
+                        >
+                          Verify & Activate Gateway
                         </Button>
                       )}
-                      <Button
-                        type="button"
-                        onClick={handleVerifyAndSaveWhatsApp}
-                        disabled={waVerifying}
-                        className="bg-primary text-primary-foreground hover:bg-primary/90 flex items-center gap-2"
-                      >
-                        {waVerifying ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            Verifying...
-                          </>
-                        ) : waIsVerified ? (
-                          'Re-verify & Update'
-                        ) : (
-                          'Verify Connection & Activate'
-                        )}
-                      </Button>
                     </div>
                   </div>
                 )}

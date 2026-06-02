@@ -63,13 +63,13 @@ export const DraggableButtonGrid: React.FC<DraggableButtonGridProps> = ({
   }, []);
 
   return (
-    <div className="relative">
+    <div className="relative w-full">
       {isEditMode && groupLabel && (
         <div className="absolute -top-5 left-0 text-[10px] font-bold uppercase tracking-wider text-primary opacity-70">
           {groupLabel}
         </div>
       )}
-      <div className="flex flex-wrap gap-2">
+      <div className="grid grid-cols-6 gap-2 w-full">
         {buttons.map((btn, index) => {
           const isHidden = !btn.visible;
           const isDragging = dragIndex === index;
@@ -86,12 +86,24 @@ export const DraggableButtonGrid: React.FC<DraggableButtonGridProps> = ({
               onDragEnd={handleDragEnd}
               onDragLeave={handleDragLeave}
               className={cn(
-                'relative group transition-all duration-200',
+                'relative group transition-all duration-200 w-full',
                 isEditMode && 'cursor-grab active:cursor-grabbing',
                 isDragging && 'opacity-40 scale-95',
                 isDragOver && 'ring-2 ring-primary ring-offset-1 rounded-lg',
                 isEditMode && isHidden && 'opacity-40',
                 isEditMode && 'hover:ring-1 hover:ring-primary/50 rounded-lg',
+                // Dynamic col-span to fit buttons in 2 lines perfectly
+                buttons.length === 5
+                  ? index < 3 ? 'col-span-2' : 'col-span-3'
+                  : buttons.length === 4
+                  ? 'col-span-3'
+                  : buttons.length === 3
+                  ? 'col-span-2'
+                  : buttons.length === 2
+                  ? 'col-span-3'
+                  : buttons.length === 1
+                  ? 'col-span-6'
+                  : 'col-span-2'
               )}
             >
               {/* Edit mode overlay controls */}

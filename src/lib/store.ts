@@ -60,6 +60,8 @@ export interface Order {
   tableNumber?: number;
   customerName?: string;
   customerPhone?: string;
+  customerEmail?: string;
+  customerAddress?: string;
   paymentMethod?: 'cash' | 'card' | 'upi' | 'split' | 'due' | 'part' | 'wallet' | 'credit';
   paymentBreakdown?: Record<string, number>; // For 'part' payments: { cash: amount, card: amount, upi: amount, credit: amount }
   createdAt: Date;
@@ -171,31 +173,11 @@ export const generateStoreCode = (): string => {
 };
 
 // Default data - Generic categories for any business type
-export const defaultCategories: Category[] = [
-  { id: 'general', name: 'General', icon: '📦', color: 'cat-starters' },
-  { id: 'grocery', name: 'Grocery', icon: '🛒', color: 'cat-food' },
-  { id: 'electronics', name: 'Electronics', icon: '📱', color: 'cat-food' },
-  { id: 'hardware', name: 'Hardware', icon: '🔧', color: 'cat-food' },
-  { id: 'food', name: 'Food & Beverages', icon: '🍽️', color: 'cat-drinks' },
-  { id: 'stationery', name: 'Stationery', icon: '📝', color: 'cat-desserts' },
-];
+export const defaultCategories: Category[] = [];
 
-export const defaultMenuItems: MenuItem[] = [
-  { id: '1', name: 'Product 1', price: 100, category: 'general', color: 'hsl(142 63% 45%)', isAvailable: true, preparationTime: 0 },
-  { id: '2', name: 'Product 2', price: 150, category: 'general', color: 'hsl(28 95% 55%)', isAvailable: true, preparationTime: 0 },
-  { id: '3', name: 'Product 3', price: 200, category: 'general', color: 'hsl(204 89% 53%)', isAvailable: true, preparationTime: 0 },
-];
+export const defaultMenuItems: MenuItem[] = [];
 
-export const defaultTables: Table[] = [
-  { id: 't1', number: 1, capacity: 2, status: 'available' },
-  { id: 't2', number: 2, capacity: 2, status: 'available' },
-  { id: 't3', number: 3, capacity: 4, status: 'available' },
-  { id: 't4', number: 4, capacity: 4, status: 'available' },
-  { id: 't5', number: 5, capacity: 4, status: 'available' },
-  { id: 't6', number: 6, capacity: 6, status: 'available' },
-  { id: 't7', number: 7, capacity: 6, status: 'available' },
-  { id: 't8', number: 8, capacity: 8, status: 'available' },
-];
+export const defaultTables: Table[] = [];
 
 // Storage helper functions
 const STORAGE_KEYS = {
@@ -393,13 +375,15 @@ export const generateId = (): string => {
   return Date.now().toString(36) + Math.random().toString(36).substr(2);
 };
 
-// Generate bill number (sequential for the day)
+// Generate bill number (sequential 6-digit number)
 export const generateBillNumber = (): string => {
-  const today = new Date().toDateString();
-  const key = 'pos_bill_counter_' + today;
-  const counter = parseInt(localStorage.getItem(key) || '0') + 1;
+  const key = 'pos_bill_number_counter';
+  let counter = parseInt(localStorage.getItem(key) || '99999') + 1; // Start from 100000
+  if (counter > 999999) {
+    counter = 100000; // Reset if exceeds 6 digits
+  }
   localStorage.setItem(key, counter.toString());
-  return `B${new Date().toISOString().slice(2, 10).replace(/-/g, '')}${counter.toString().padStart(4, '0')}`;
+  return counter.toString();
 };
 
 // Generate KOT number (sequential for the day)

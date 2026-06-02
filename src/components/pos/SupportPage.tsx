@@ -163,7 +163,7 @@ export const SupportPage: React.FC = () => {
           </div>
         </a>
         <a
-          href="mailto:support@quickpos.com"
+          href="mailto:support@paystore.com"
           className="pos-card-interactive p-5 text-left"
         >
           <div className="flex items-center gap-3 mb-3">
@@ -172,7 +172,7 @@ export const SupportPage: React.FC = () => {
             </div>
             <div>
               <h3 className="font-semibold text-foreground">Email</h3>
-              <p className="text-sm text-muted-foreground">support@quickpos.com</p>
+              <p className="text-sm text-muted-foreground">support@paystore.com</p>
             </div>
           </div>
         </a>

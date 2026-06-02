@@ -41,6 +41,14 @@ export const DeliveryManagement: React.FC = () => {
 
   // Get store ID
   const getStoreId = () => {
+    try {
+      const activeStore = localStorage.getItem('pos_active_store');
+      if (activeStore) {
+        const parsed = JSON.parse(activeStore);
+        if (parsed) return parsed;
+      }
+    } catch {}
+
     const storeData = localStorage.getItem('pos_active_store_data');
     const storeLogin = localStorage.getItem('store_login');
     if (storeData) {

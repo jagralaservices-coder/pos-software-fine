@@ -295,7 +295,7 @@ export const StaffManagement = forwardRef<HTMLDivElement>((_, ref) => {
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-md animate-scale-in max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-bold text-foreground mb-4">{t('staff.addNewStaff')}</h2>
-            <div className="space-y-4">
+            <div className="space-y-4 max-h-[55vh] overflow-y-auto pr-2">
               {/* Face Photo Capture */}
               <div>
                 <label className="block text-sm text-muted-foreground mb-2">
@@ -433,33 +433,33 @@ export const StaffManagement = forwardRef<HTMLDivElement>((_, ref) => {
                   />
                 </div>
               </div>
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => {
-                    setShowAddStaff(false);
-                    setFacePhotoBlob(null);
-                    setFacePhotoPreview(null);
-                  }}
-                  className="flex-1 pos-btn-secondary py-3"
-                  disabled={isUploading}
-                >
-                  {t('common.cancel')}
-                </button>
-                <button
-                  onClick={handleAddStaff}
-                  className="flex-1 pos-btn-primary py-3 flex items-center justify-center gap-2"
-                  disabled={isUploading}
-                >
-                  {isUploading ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      {t('common.loading')}
-                    </>
-                  ) : (
-                    t('staff.addStaff')
-                  )}
-                </button>
-              </div>
+            </div>
+            <div className="flex gap-3 pt-4 border-t border-border mt-4">
+              <button
+                onClick={() => {
+                  setShowAddStaff(false);
+                  setFacePhotoBlob(null);
+                  setFacePhotoPreview(null);
+                }}
+                className="flex-1 pos-btn-secondary py-3"
+                disabled={isUploading}
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                onClick={handleAddStaff}
+                className="flex-1 pos-btn-primary py-3 flex items-center justify-center gap-2"
+                disabled={isUploading}
+              >
+                {isUploading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    {t('common.loading')}
+                  </>
+                ) : (
+                  t('staff.addStaff')
+                )}
+              </button>
             </div>
           </div>
         </div>

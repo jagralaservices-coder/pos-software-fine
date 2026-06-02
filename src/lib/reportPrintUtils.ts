@@ -32,7 +32,7 @@ export const printReport = (options: ReportPrintOptions, sections: ReportSection
   const storeDetails = JSON.parse(localStorage.getItem('pos_store_details') || '{}');
   const activeStoreData = JSON.parse(localStorage.getItem('pos_active_store_data') || '{}');
   
-  const storeName = options.storeName || activeStoreData.name || storeDetails.name || 'QuickPOS';
+  const storeName = options.storeName || activeStoreData.name || storeDetails.name || 'PayStore POS';
   const storeAddress = activeStoreData.address || storeDetails.address || '';
   const storePhone = activeStoreData.phone || storeDetails.phone || '';
   
@@ -329,7 +329,7 @@ export const printReport = (options: ReportPrintOptions, sections: ReportSection
       
       <div class="footer">
         <p>This is a computer generated report</p>
-        <p>Powered by QuickPOS</p>
+        <p>Powered by PayStore POS</p>
       </div>
     </body>
     </html>

@@ -32,7 +32,17 @@ const EmployeeSummaryPage: React.FC = () => {
 
   useEffect(() => {
     const fetchStaff = async () => {
-      const storeId = localStorage.getItem('pos_store_id');
+      const storeId = (() => {
+        try {
+          const activeStore = localStorage.getItem('pos_active_store');
+          if (activeStore) {
+            const parsed = JSON.parse(activeStore);
+            if (parsed) return parsed;
+          }
+        } catch {}
+        return localStorage.getItem('pos_store_id');
+      })();
+
       if (!storeId) return;
 
       const { data: roles } = await supabase

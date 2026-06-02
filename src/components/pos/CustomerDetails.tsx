@@ -196,14 +196,13 @@ export const CustomerDetails: React.FC<CustomerDetailsProps> = ({ customer, onCh
         </>
       )}
       <div className="flex gap-2">
-        {!customerExists && (
-          <button onClick={handleSave} className="flex-1 pos-btn-primary py-2 text-sm flex items-center justify-center gap-2">
-            <Save className="w-4 h-4" />{t('common.save') || 'Save'}
-          </button>
-        )}
-        <button onClick={handleClear} className={cn("pos-btn-ghost py-2 px-3 text-sm", customerExists ? "flex-1 flex items-center justify-center gap-1.5" : "")}>
+        <button onClick={handleSave} className="flex-1 pos-btn-primary py-2 text-sm flex items-center justify-center gap-2">
+          <Save className="w-4 h-4" />
+          {customerExists ? (t('common.select') || 'Select') : (t('common.save') || 'Save')}
+        </button>
+        <button onClick={handleClear} className="pos-btn-ghost py-2 px-3 text-sm flex items-center justify-center gap-1.5 flex-1">
           <X className="w-4 h-4" />
-          {customerExists && (t('common.clear') || 'Clear')}
+          {t('common.clear') || 'Clear'}
         </button>
       </div>
     </div>

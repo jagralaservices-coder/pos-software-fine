@@ -255,7 +255,16 @@ export const OperationsPage: React.FC = () => {
   // Get store and staff IDs for display
   const storeData = localStorage.getItem('pos_store_login_data');
   const parsedStoreData = storeData ? JSON.parse(storeData) : null;
-  const storeId = parsedStoreData?.store_id || localStorage.getItem('pos_store_id') || '';
+  const storeId = parsedStoreData?.store_id || (() => {
+    try {
+      const activeStore = localStorage.getItem('pos_active_store');
+      if (activeStore) {
+        const parsed = JSON.parse(activeStore);
+        if (parsed) return parsed;
+      }
+    } catch {}
+    return localStorage.getItem('pos_store_id') || '';
+  })();
   const storeCode = parsedStoreData?.store_code || localStorage.getItem('pos_store_code') || '';
   const billerName = localStorage.getItem('pos_current_biller') || '';
   const staffCode = localStorage.getItem('pos_staff_code') || '';

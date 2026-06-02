@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { usePOS } from '@/contexts/POSContext';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { QRCodeSVG } from 'qrcode.react';
 import { QrCode, Download, Copy, Check } from 'lucide-react';
 import {
@@ -13,7 +14,12 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 
-export const QRMenuGenerator: React.FC = () => {
+interface QRMenuGeneratorProps {
+  className?: string;
+  iconClassName?: string;
+}
+
+export const QRMenuGenerator: React.FC<QRMenuGeneratorProps> = ({ className, iconClassName }) => {
   const { activeStore } = usePOS();
   const [copied, setCopied] = useState(false);
 
@@ -63,8 +69,8 @@ export const QRMenuGenerator: React.FC = () => {
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Button variant="outline" size="icon" className="h-8 w-8 flex-shrink-0">
-          <QrCode className="w-3.5 h-3.5" />
+        <Button variant="outline" size="icon" className={cn("h-8 w-8 flex-shrink-0", className)}>
+          <QrCode className={cn("w-3.5 h-3.5", iconClassName)} />
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-sm">

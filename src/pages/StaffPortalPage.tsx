@@ -106,12 +106,7 @@ export const StaffPortalPage: React.FC = () => {
   const dateFilters = ['Today', 'Yesterday', 'Last 7 Days', 'This Month'];
 
   // Mock staff data for demo
-  const mockStaff = [
-    { name: 'Marcus Thompson', id: 'STF-00124', checkIn: '08:02 AM', checkOut: null, totalHours: '7h 58m', status: 'ongoing' },
-    { name: 'Sarah Jenkins', id: 'STF-00125', checkIn: '09:15 AM', checkOut: '05:45 PM', totalHours: '8h 30m', status: 'completed' },
-    { name: 'David Wilson', id: 'STF-00129', checkIn: '10:30 AM', checkOut: '07:00 PM', totalHours: '8h 30m', status: 'late' },
-    { name: 'Elena Rodriguez', id: 'STF-00132', checkIn: '08:00 AM', checkOut: '12:00 PM', totalHours: '4h 00m', status: 'completed' },
-  ];
+  const mockStaff: any[] = [];
 
   const filteredStaff = mockStaff.filter(s => 
     !searchQuery || s.name.toLowerCase().includes(searchQuery.toLowerCase()) || s.id.toLowerCase().includes(searchQuery.toLowerCase())

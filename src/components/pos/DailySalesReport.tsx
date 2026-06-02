@@ -3,7 +3,7 @@ import { useAnalytics } from '@/hooks/useAnalytics';
 import { useLocale } from '@/contexts/LocaleContext';
 import { getPaymentBreakdownSummary } from '@/lib/paymentBreakdown';
 import { smartPrint } from '@/lib/printUtils';
-import { X, Printer, Calendar, TrendingUp, CreditCard, Banknote, Smartphone, DollarSign, Globe, ShoppingBag, UtensilsCrossed, Truck, Loader2 } from 'lucide-react';
+import { X, Printer, Calendar, TrendingUp, CreditCard, Banknote, Smartphone, DollarSign, Globe, ShoppingBag, UtensilsCrossed, Truck, Loader2, QrCode } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface DailySalesReportProps {
@@ -34,18 +34,25 @@ export const DailySalesReport: React.FC<DailySalesReportProps> = ({ isOpen, onCl
     card: { amount: 0, count: 0 },
     upi: { amount: 0, count: 0 },
     credit: { amount: 0, count: 0 },
+    qr: { amount: 0, count: 0 },
   };
 
   selectedDateOrders.forEach(order => {
-    const breakdown = getPaymentBreakdownSummary(order);
-    paymentBreakdown.cash.amount += breakdown.amounts.cash;
-    paymentBreakdown.card.amount += breakdown.amounts.card;
-    paymentBreakdown.upi.amount += breakdown.amounts.upi;
-    paymentBreakdown.credit.amount += breakdown.amounts.credit;
-    paymentBreakdown.cash.count += breakdown.counts.cash;
-    paymentBreakdown.card.count += breakdown.counts.card;
-    paymentBreakdown.upi.count += breakdown.counts.upi;
-    paymentBreakdown.credit.count += breakdown.counts.credit;
+    const method = String(order.paymentMethod || '').toLowerCase().trim();
+    if (method === 'qr') {
+      paymentBreakdown.qr.amount += order.total;
+      paymentBreakdown.qr.count += 1;
+    } else {
+      const breakdown = getPaymentBreakdownSummary(order);
+      paymentBreakdown.cash.amount += breakdown.amounts.cash;
+      paymentBreakdown.card.amount += breakdown.amounts.card;
+      paymentBreakdown.upi.amount += breakdown.amounts.upi;
+      paymentBreakdown.credit.amount += breakdown.amounts.credit;
+      paymentBreakdown.cash.count += breakdown.counts.cash;
+      paymentBreakdown.card.count += breakdown.counts.card;
+      paymentBreakdown.upi.count += breakdown.counts.upi;
+      paymentBreakdown.credit.count += breakdown.counts.credit;
+    }
   });
 
   // Order type breakdown with amounts
@@ -110,7 +117,7 @@ export const DailySalesReport: React.FC<DailySalesReportProps> = ({ isOpen, onCl
       </head>
       <body>
         <div class="header">
-          <div class="store-name">${storeDetails.name || 'QuickPOS Restaurant'}</div>
+          <div class="store-name">${storeDetails.name || 'PayStore POS Restaurant'}</div>
           ${storeDetails.address ? `<div>${storeDetails.address}</div>` : ''}
           ${storeDetails.phone ? `<div>Tel: ${storeDetails.phone}</div>` : ''}
           ${storeDetails.gst ? `<div>GST: ${storeDetails.gst}</div>` : ''}
@@ -143,6 +150,10 @@ export const DailySalesReport: React.FC<DailySalesReportProps> = ({ isOpen, onCl
             <div class="row-detail"><span>(${paymentBreakdown.upi.count} payments)</span></div>
           </div>
           <div class="highlight">
+            <div class="row"><span>🌀 QR Orders:</span><span>₹${paymentBreakdown.qr.amount.toFixed(2)}</span></div>
+            <div class="row-detail"><span>(${paymentBreakdown.qr.count} payments)</span></div>
+          </div>
+          <div class="highlight">
             <div class="row"><span>⏳ Credit Sales:</span><span>₹${paymentBreakdown.credit.amount.toFixed(2)}</span></div>
             <div class="row-detail"><span>(${paymentBreakdown.credit.count} payments)</span></div>
           </div>
@@ -167,7 +178,7 @@ export const DailySalesReport: React.FC<DailySalesReportProps> = ({ isOpen, onCl
         <div class="footer">
           <div>━━━━━━━━━━━━━━━━━━━━━━</div>
           <div style="margin: 5px 0;">Report Generated: ${new Date().toLocaleString('en-IN')}</div>
-          <div>Powered by QuickPOS</div>
+          <div>Powered by PayStore POS</div>
         </div>
       </body>
       </html>
@@ -231,30 +242,36 @@ export const DailySalesReport: React.FC<DailySalesReportProps> = ({ isOpen, onCl
         {/* Payment Methods */}
         <div className="mb-6">
           <h3 className="font-semibold text-foreground mb-3">Payment Methods</h3>
-          <div className="grid grid-cols-4 gap-3">
-            <div className="bg-secondary rounded-lg p-3 text-center">
-              <Banknote className="w-6 h-6 mx-auto mb-2 text-success" />
-              <p className="text-xs text-muted-foreground">Cash</p>
-              <p className="font-semibold">{formatCurrency(paymentBreakdown.cash.amount)}</p>
-              <p className="text-xs text-muted-foreground">{paymentBreakdown.cash.count} payments</p>
+          <div class="grid grid-cols-5 gap-2.5">
+            <div className="bg-secondary rounded-lg p-2.5 text-center">
+              <Banknote className="w-5 h-5 mx-auto mb-1.5 text-success" />
+              <p className="text-[10px] text-muted-foreground">Cash</p>
+              <p className="font-bold text-sm">{formatCurrency(paymentBreakdown.cash.amount)}</p>
+              <p className="text-[10px] text-muted-foreground">{paymentBreakdown.cash.count} payments</p>
             </div>
-            <div className="bg-secondary rounded-lg p-3 text-center">
-              <CreditCard className="w-6 h-6 mx-auto mb-2 text-primary" />
-              <p className="text-xs text-muted-foreground">Card</p>
-              <p className="font-semibold">{formatCurrency(paymentBreakdown.card.amount)}</p>
-              <p className="text-xs text-muted-foreground">{paymentBreakdown.card.count} payments</p>
+            <div className="bg-secondary rounded-lg p-2.5 text-center">
+              <CreditCard className="w-5 h-5 mx-auto mb-1.5 text-primary" />
+              <p className="text-[10px] text-muted-foreground">Card</p>
+              <p className="font-bold text-sm">{formatCurrency(paymentBreakdown.card.amount)}</p>
+              <p className="text-[10px] text-muted-foreground">{paymentBreakdown.card.count} payments</p>
             </div>
-            <div className="bg-secondary rounded-lg p-3 text-center">
-              <Smartphone className="w-6 h-6 mx-auto mb-2 text-purple-500" />
-              <p className="text-xs text-muted-foreground">UPI</p>
-              <p className="font-semibold">{formatCurrency(paymentBreakdown.upi.amount)}</p>
-              <p className="text-xs text-muted-foreground">{paymentBreakdown.upi.count} payments</p>
+            <div className="bg-secondary rounded-lg p-2.5 text-center">
+              <Smartphone className="w-5 h-5 mx-auto mb-1.5 text-purple-500" />
+              <p className="text-[10px] text-muted-foreground">UPI</p>
+              <p className="font-bold text-sm">{formatCurrency(paymentBreakdown.upi.amount)}</p>
+              <p className="text-[10px] text-muted-foreground">{paymentBreakdown.upi.count} payments</p>
             </div>
-            <div className="bg-secondary rounded-lg p-3 text-center">
-              <DollarSign className="w-6 h-6 mx-auto mb-2 text-indigo-500" />
-              <p className="text-xs text-muted-foreground">Credit</p>
-              <p className="font-semibold">{formatCurrency(paymentBreakdown.credit.amount)}</p>
-              <p className="text-xs text-muted-foreground">{paymentBreakdown.credit.count} payments</p>
+            <div className="bg-secondary rounded-lg p-2.5 text-center">
+              <QrCode className="w-5 h-5 mx-auto mb-1.5 text-orange-500" />
+              <p className="text-[10px] text-muted-foreground">QR Order</p>
+              <p className="font-bold text-sm">{formatCurrency(paymentBreakdown.qr.amount)}</p>
+              <p className="text-[10px] text-muted-foreground">{paymentBreakdown.qr.count} payments</p>
+            </div>
+            <div className="bg-secondary rounded-lg p-2.5 text-center">
+              <DollarSign className="w-5 h-5 mx-auto mb-1.5 text-indigo-500" />
+              <p className="text-[10px] text-muted-foreground">Credit</p>
+              <p className="font-bold text-sm">{formatCurrency(paymentBreakdown.credit.amount)}</p>
+              <p className="text-[10px] text-muted-foreground">{paymentBreakdown.credit.count} payments</p>
             </div>
           </div>
         </div>

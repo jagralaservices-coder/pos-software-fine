@@ -1376,12 +1376,14 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             body: { action: 'increment', store_id: storeId, data_type: 'bill_counter', counter_type: 'bill', store_code: getStoreCode() }
           });
           if (data?.counter) {
-            return `B${new Date().toISOString().slice(2, 10).replace(/-/g, '')}${data.counter.toString().padStart(4, '0')}`;
+            const count = 100000 + (Number(data.counter) % 900000);
+            return count.toString();
           }
         } else {
           const { data, error } = await supabase.rpc('increment_bill_counter', { p_store_id: storeId });
           if (!error && data) {
-            return `B${new Date().toISOString().slice(2, 10).replace(/-/g, '')}${data.toString().padStart(4, '0')}`;
+            const count = 100000 + (Number(data) % 900000);
+            return count.toString();
           }
         }
       } catch (e) {

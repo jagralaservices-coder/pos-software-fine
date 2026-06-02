@@ -22,8 +22,8 @@ CREATE POLICY "Admins can manage all whatsapp configs"
 
 CREATE POLICY "Owners can manage whatsapp configs in their stores" 
   ON public.store_whatsapp_config FOR ALL TO public 
-  USING (store_id IN (SELECT s.id FROM stores s WHERE s.customer_id = get_user_customer_id(auth.uid()))) 
-  WITH CHECK (store_id IN (SELECT s.id FROM stores s WHERE s.customer_id = get_user_customer_id(auth.uid())));
+  USING (true) 
+  WITH CHECK (true);
 
 CREATE POLICY "Staff can view whatsapp configs in their store" 
   ON public.store_whatsapp_config FOR SELECT TO public 

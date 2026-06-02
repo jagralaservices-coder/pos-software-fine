@@ -27,7 +27,8 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   MoreHorizontal,
-  Calendar
+  Calendar,
+  QrCode
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -220,6 +221,7 @@ export const Dashboard: React.FC = () => {
                     {payment.method === 'Cash' && <Banknote className="w-4 h-4 text-success" />}
                     {payment.method === 'Card' && <CreditCard className="w-4 h-4 text-primary" />}
                     {(payment.method === 'UPI' || payment.method === 'Upi') && <Smartphone className="w-4 h-4 text-warning" />}
+                    {payment.method === 'QR Order' && <QrCode className="w-4 h-4 text-orange-500" />}
                     {payment.method === 'Split' && <Users className="w-4 h-4 text-info" />}
                     {payment.method === 'Part' && <CreditCard className="w-4 h-4 text-muted-foreground" />}
                     {payment.method === 'Part Payment' && <CreditCard className="w-4 h-4 text-muted-foreground" />}

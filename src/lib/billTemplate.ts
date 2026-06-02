@@ -72,7 +72,7 @@ export const getStoreConfig = (): StoreConfig => {
   const activeStoreData = JSON.parse(localStorage.getItem('pos_active_store_data') || '{}');
   
   return {
-    businessName: billConfig.businessName || activeStoreData.name || storeDetails.name || 'QuickPOS',
+    businessName: billConfig.businessName || activeStoreData.name || storeDetails.name || 'PayStore POS',
     tagline: billConfig.tagline || storeDetails.tagline || '',
     address: billConfig.address || activeStoreData.address || storeDetails.address || '',
     city: billConfig.city || storeDetails.city || '',

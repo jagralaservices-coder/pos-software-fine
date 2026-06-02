@@ -154,6 +154,7 @@ export const POSBillingPage: React.FC = () => {
   const [showComplimentaryDialog, setShowComplimentaryDialog] = useState(false);
   const [customer, setCustomer] = useState({ name: '', phone: '', email: '', address: '', city: '', state: '', pincode: '' });
   const [showCustomerDetails, setShowCustomerDetails] = useState(false);
+  const [isProcessingSale, setIsProcessingSale] = useState(false);
   const { canAccess } = useSubscription();
 
   // Sales Reset Warning - global listener
@@ -320,6 +321,11 @@ export const POSBillingPage: React.FC = () => {
 
   // Complete sale - called when Print/E-Bill or KOT is clicked (counts as sale)
   const completeSale = async (action: 'print' | 'kot', existingPrintWindow?: Window | null) => {
+    if (isProcessingSale) {
+      existingPrintWindow?.close();
+      return;
+    }
+
     if (cart.length === 0) {
       toast({ title: t('msg.emptyCart'), description: t('msg.addItemsFirst'), variant: 'destructive' });
       existingPrintWindow?.close();
@@ -332,62 +338,73 @@ export const POSBillingPage: React.FC = () => {
       return;
     }
 
-    const order = await directBillPrint(selectedPayment, {
-      name: customer.name,
-      phone: customer.phone,
-      email: customer.email,
-      address: [customer.address, customer.city, customer.state, customer.pincode].filter(Boolean).join(', '),
-    }, selectedPayment === 'part' ? partPaymentDetails : undefined);
-    if (order) {
-      if (action === 'print') {
-        const billContent = generateBillContent({
-          ...order,
-          paymentMethod: selectedPayment,
-          customerName: customer.name,
-          customerPhone: customer.phone,
-          customerEmail: customer.email,
-          customerAddress: [customer.address, customer.city, customer.state, customer.pincode].filter(Boolean).join(', '),
-        });
-        const kotContent = generateKOT(order);
+    setIsProcessingSale(true);
+    try {
+      const order = await directBillPrint(selectedPayment, {
+        name: customer.name,
+        phone: customer.phone,
+        email: customer.email,
+        address: [customer.address, customer.city, customer.state, customer.pincode].filter(Boolean).join(', '),
+      }, selectedPayment === 'part' ? partPaymentDetails : undefined);
 
-        console.log('[Print] Bill HTML:', billContent);
+      if (order) {
+        if (action === 'print') {
+          const billContent = generateBillContent({
+            ...order,
+            paymentMethod: selectedPayment,
+            customerName: customer.name,
+            customerPhone: customer.phone,
+            customerEmail: customer.email,
+            customerAddress: [customer.address, customer.city, customer.state, customer.pincode].filter(Boolean).join(', '),
+          });
+          const kotContent = generateKOT(order);
 
-        directPrint(billContent, () => {
-          if (customer.phone || customer.email) {
-            autoShareBillAfterPrint({
-              customerName: customer.name,
-              customerPhone: customer.phone,
-              customerEmail: customer.email,
-              billNumber: order.id.slice(-6).toUpperCase(),
-              total: Math.round(finalTotal),
-              items: order.items,
-              subtotal: order.subtotal,
-              tax: order.tax,
-              discount: order.discount,
-            });
-          }
-          setTimeout(() => {
-            directPrint(kotContent, () => {
-              toast({ title: t('msg.saleComplete'), description: `${t('pos.billNumber')} #${order.id.slice(-6)} - ${t('msg.billKotPrinted')}` });
-            });
-          }, 500);
-        }, existingPrintWindow);
-      } else if (action === 'kot') {
-        const kotContent = generateKOT(order);
-        directPrint(kotContent, () => {
-          toast({ title: t('msg.saleComplete'), description: `${t('common.orderNo')} #${order.id.slice(-6)} - ${t('msg.kotSentKitchen')}` });
-        });
+          console.log('[Print] Bill HTML:', billContent);
+
+          directPrint(billContent, () => {
+            if (customer.phone || customer.email) {
+              autoShareBillAfterPrint({
+                customerName: customer.name,
+                customerPhone: customer.phone,
+                customerEmail: customer.email,
+                billNumber: order.billNumber || order.id.slice(-6).toUpperCase(),
+                total: Math.round(finalTotal),
+                items: order.items,
+                subtotal: order.subtotal,
+                tax: order.tax,
+                discount: order.discount,
+              });
+            }
+            setTimeout(() => {
+              directPrint(kotContent, () => {
+                toast({ title: t('msg.saleComplete'), description: `${t('pos.billNumber')} #${order.billNumber || order.id.slice(-6).toUpperCase()} - ${t('msg.billKotPrinted')}` });
+              });
+            }, 500);
+          }, existingPrintWindow);
+        } else if (action === 'kot') {
+          const kotContent = generateKOT(order);
+          directPrint(kotContent, () => {
+            toast({ title: t('msg.saleComplete'), description: `${t('common.orderNo')} #${order.kotNumber || order.id.slice(-6).toUpperCase()} - ${t('msg.kotSentKitchen')}` });
+          });
+        }
+        
+        // Reset states
+        setSelectedPayment(null);
+        setDiscount(0);
+        setDiscountReason('');
+        setDeliveryCharge(0);
+        setContainerCharge(0);
+        setTip(0);
+        setCustomer({ name: '', phone: '', email: '', address: '', city: '', state: '', pincode: '' });
+        setPartPaymentDetails([]);
+        setIsPaid(false);
       }
-      
-      // Reset states
-      setSelectedPayment(null);
-      setDiscount(0);
-      setDiscountReason('');
-      setDeliveryCharge(0);
-      setContainerCharge(0);
-      setTip(0);
-      setCustomer({ name: '', phone: '', email: '', address: '', city: '', state: '', pincode: '' });
-      setPartPaymentDetails([]);
+    } catch (error) {
+      console.error('Error completing sale:', error);
+      toast({ title: 'Error', description: 'Failed to complete sale. Please try again.', variant: 'destructive' });
+      existingPrintWindow?.close();
+    } finally {
+      setIsProcessingSale(false);
     }
   };
 
@@ -685,7 +702,7 @@ export const POSBillingPage: React.FC = () => {
       </div>
 
       {/* Right Panel - Cart & Billing */}
-      <div className="w-[312px] flex-shrink-0 overflow-hidden border-l border-border bg-card flex flex-col">
+      <div className="w-[600px] flex-shrink-0 overflow-hidden border-l border-border bg-card flex flex-col">
         {/* Cart Header with Table Select */}
         <div className="p-2 border-b border-border space-y-2">
           <div className="flex items-center justify-between gap-1">
@@ -698,10 +715,10 @@ export const POSBillingPage: React.FC = () => {
                     <Button
                       variant="outline"
                       size="icon"
-                      className="h-8 w-8 flex-shrink-0"
+                      className="h-12 w-12 flex-shrink-0"
                       onClick={() => setShowCustomerDetails(!showCustomerDetails)}
                     >
-                      <User className="w-3.5 h-3.5" />
+                      <User className="w-[22px] h-[22px]" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom"><p>{customer.name || t('common.contact') || 'Contact'}</p></TooltipContent>
@@ -713,10 +730,10 @@ export const POSBillingPage: React.FC = () => {
                     <Button
                       variant="outline"
                       size="icon"
-                      className="h-8 w-8 flex-shrink-0 relative"
+                      className="h-12 w-12 flex-shrink-0 relative"
                       onClick={() => setShowHeldBills(!showHeldBills)}
                     >
-                      <Play className="w-3.5 h-3.5" />
+                      <Play className="w-[22px] h-[22px]" />
                       {heldBills.length > 0 && (
                         <span className="absolute -top-1 -right-1 w-4 h-4 bg-primary text-primary-foreground text-[10px] rounded-full flex items-center justify-center">
                           {heldBills.length}
@@ -727,17 +744,17 @@ export const POSBillingPage: React.FC = () => {
                   <TooltipContent side="bottom"><p>{t('common.recall')}</p></TooltipContent>
                 </Tooltip>
                 )}
-                {isButtonVisible('qrMenu') && canAccess('qrMenuOrdering') && <QRMenuGenerator />}
+                {isButtonVisible('qrMenu') && canAccess('qrMenuOrdering') && <QRMenuGenerator className="h-12 w-12" iconClassName="w-[22px] h-[22px]" />}
                 {isButtonVisible('qrOrders') && canAccess('qrMenuOrdering') && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
                         variant="outline"
                         size="icon"
-                        className="h-8 w-8 flex-shrink-0"
+                        className="h-12 w-12 flex-shrink-0"
                         onClick={() => setShowQROrders(true)}
                       >
-                        <QrCode className="w-3.5 h-3.5" />
+                        <QrCode className="w-[22px] h-[22px]" />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent side="bottom"><p>Orders</p></TooltipContent>
@@ -749,7 +766,7 @@ export const POSBillingPage: React.FC = () => {
                     <Button
                       variant={editMode.isEditMode ? "default" : "ghost"}
                       size="icon"
-                      className={cn("h-8 w-8 flex-shrink-0", editMode.isEditMode && "animate-pulse")}
+                      className={cn("h-12 w-12 flex-shrink-0", editMode.isEditMode && "animate-pulse")}
                       onClick={() => {
                         if (editMode.isEditMode) {
                           editMode.exitEditMode();
@@ -758,7 +775,7 @@ export const POSBillingPage: React.FC = () => {
                         }
                       }}
                     >
-                      <Pencil className="w-3.5 h-3.5" />
+                      <Pencil className="w-[22px] h-[22px]" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom"><p>{editMode.isEditMode ? 'Exit Edit Mode' : 'Edit UI Layout'}</p></TooltipContent>
@@ -768,10 +785,10 @@ export const POSBillingPage: React.FC = () => {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 flex-shrink-0"
+                      className="h-12 w-12 flex-shrink-0"
                       onClick={() => navigate('/ui-customization')}
                     >
-                      <Settings className="w-3.5 h-3.5 text-muted-foreground" />
+                      <Settings className="w-[22px] h-[22px] text-muted-foreground" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom"><p>All Settings</p></TooltipContent>
@@ -836,7 +853,7 @@ export const POSBillingPage: React.FC = () => {
         )}
 
         {/* Cart Items */}
-        <div className="flex-1 min-h-[220px] overflow-y-auto p-3 space-y-2">
+        <div className="flex-1 min-h-[100px] overflow-y-auto p-3 space-y-2">
           {cart.length === 0 ? (
             <div className="flex min-h-[220px] items-center justify-center text-center text-muted-foreground text-sm">
               {t('pos.emptyCart')}
@@ -879,7 +896,7 @@ export const POSBillingPage: React.FC = () => {
           )}
         </div>
 
-        <div className="max-h-[180px] overflow-y-auto border-t border-border bg-card">
+        <div className="border-t border-border bg-card">
         {/* Billing Summary Swipe Up */}
         <div>
           {/* Toggle Button */}
@@ -991,24 +1008,37 @@ export const POSBillingPage: React.FC = () => {
 
           {/* Complimentary & Total */}
           <div className="space-y-2 border-t border-border p-2">
-            {/* Complimentary Toggle */}
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input 
-                  type="checkbox" 
-                  checked={isComplimentary}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      setShowComplimentaryDialog(true);
-                    } else {
-                      setIsComplimentary(false);
-                      setComplimentaryNote('');
-                    }
-                  }}
-                  className="w-4 h-4 rounded border-border accent-primary" 
-                />
-                <span className="text-xs font-medium text-foreground">{t('common.complimentary')}</span>
-              </label>
+            {/* Complimentary & Paid Toggle */}
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={isComplimentary}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setShowComplimentaryDialog(true);
+                      } else {
+                        setIsComplimentary(false);
+                        setComplimentaryNote('');
+                      }
+                    }}
+                    className="w-4 h-4 rounded border-border accent-primary" 
+                  />
+                  <span className="text-xs font-medium text-foreground">{t('common.complimentary')}</span>
+                </label>
+
+                <label className="flex items-center gap-2 cursor-pointer border-l border-border pl-4">
+                  <input 
+                    type="checkbox" 
+                    checked={isPaid}
+                    onChange={(e) => setIsPaid(e.target.checked)}
+                    className="w-4 h-4 rounded border-border accent-primary" 
+                  />
+                  <span className="text-xs font-medium text-foreground">Paid</span>
+                </label>
+              </div>
+
               {isComplimentary && complimentaryNote && (
                 <span className="text-xs text-muted-foreground bg-secondary px-2 py-1 rounded truncate max-w-[150px]">
                   {complimentaryNote}
@@ -1039,76 +1069,88 @@ export const POSBillingPage: React.FC = () => {
                 onClick={() => handlePaymentSelect('cash')}
                 disabled={cart.length === 0}
                 className={cn(
-                  'h-8 rounded-md flex flex-col items-center justify-center gap-0.5 border transition-all',
+                  'h-11 rounded-xl flex items-center justify-center gap-2 border shadow-sm transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] text-xs md:text-sm font-semibold',
                   selectedPayment === 'cash' 
                     ? 'border-primary bg-primary/10 text-primary' 
                     : 'border-border hover:border-primary/50',
                   cart.length === 0 && 'opacity-50 cursor-not-allowed'
                 )}
               >
-                  <Banknote className="w-3.5 h-3.5" />
-                  <span className="text-[11px] font-medium">{t('pos.cash')}</span>
+                  <Banknote className="w-4 h-4" />
+                  <span>{t('pos.cash')}</span>
               </button>
               <button
                 onClick={() => handlePaymentSelect('card')}
                 disabled={cart.length === 0}
                 className={cn(
-                  'h-8 rounded-md flex flex-col items-center justify-center gap-0.5 border transition-all',
+                  'h-11 rounded-xl flex items-center justify-center gap-2 border shadow-sm transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] text-xs md:text-sm font-semibold',
                   selectedPayment === 'card' 
                     ? 'border-primary bg-primary/10 text-primary' 
                     : 'border-border hover:border-primary/50',
                   cart.length === 0 && 'opacity-50 cursor-not-allowed'
                 )}
               >
-                  <CreditCard className="w-3.5 h-3.5" />
-                  <span className="text-[11px] font-medium">{t('pos.card')}</span>
+                  <CreditCard className="w-4 h-4" />
+                  <span>{t('pos.card')}</span>
               </button>
               <button
                 onClick={() => handlePaymentSelect('upi')}
                 disabled={cart.length === 0}
                 className={cn(
-                  'h-8 rounded-md flex flex-col items-center justify-center gap-0.5 border transition-all',
+                  'h-11 rounded-xl flex items-center justify-center gap-2 border shadow-sm transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] text-xs md:text-sm font-semibold',
                   selectedPayment === 'upi' 
                     ? 'border-primary bg-primary/10 text-primary' 
                     : 'border-border hover:border-primary/50',
                   cart.length === 0 && 'opacity-50 cursor-not-allowed'
                 )}
               >
-                  <Smartphone className="w-3.5 h-3.5" />
-                  <span className="text-[11px] font-medium">{t('pos.upi')}</span>
+                  <Smartphone className="w-4 h-4" />
+                  <span>{t('pos.upi')}</span>
               </button>
               <button
                 onClick={() => setShowMorePayments(true)}
                 disabled={cart.length === 0}
                 className={cn(
-                  'h-8 rounded-md flex flex-col items-center justify-center gap-0.5 border transition-all',
+                  'h-11 rounded-xl flex items-center justify-center gap-2 border shadow-sm transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] text-xs md:text-sm font-semibold',
                   ['due', 'part', 'wallet', 'credit'].includes(selectedPayment || '')
                     ? 'border-primary bg-primary/10 text-primary' 
                     : 'border-border hover:border-primary/50',
                   cart.length === 0 && 'opacity-50 cursor-not-allowed'
                 )}
               >
-                  <MoreHorizontal className="w-3.5 h-3.5" />
-                  <span className="text-[11px] font-medium">{t('common.more')}</span>
+                  <MoreHorizontal className="w-4 h-4" />
+                  <span>{t('common.more')}</span>
               </button>
             </div>
           </div>
 
           {/* Action Buttons - Drag & Drop in Edit Mode */}
-          <div className={cn("border-t border-border p-2", editMode.isEditMode && "ring-2 ring-primary/30 ring-inset bg-primary/5 relative")}>
+          <div className={cn("border-t border-border p-2.5", editMode.isEditMode && "ring-2 ring-primary/30 ring-inset bg-primary/5 relative")}>
             {editMode.isEditMode && (
               <div className="text-[10px] font-bold uppercase tracking-wider text-primary mb-1.5">⚡ Action Buttons — Drag to reorder</div>
             )}
             <DraggableButtonGrid
               buttons={getGroupButtons('cart_actions').filter(btn => {
+                if (['discount', 'customer', 'qrMenu', 'qrOrders', 'heldBills'].includes(btn.id)) return false;
                 if ((btn.id === 'kot' || btn.id === 'kotPrint') && !canAccess('kot')) return false;
-                if ((btn.id === 'qrMenu' || btn.id === 'qrOrders') && !canAccess('qrMenuOrdering')) return false;
                 return true;
               })}
               isEditMode={editMode.isEditMode}
               onReorder={(from, to) => {
-                reorderButtons('cart_actions', from, to);
-                editMode.markChanged();
+                const visibleButtons = getGroupButtons('cart_actions').filter(btn => {
+                  if (['discount', 'customer', 'qrMenu', 'qrOrders', 'heldBills'].includes(btn.id)) return false;
+                  if ((btn.id === 'kot' || btn.id === 'kotPrint') && !canAccess('kot')) return false;
+                  return true;
+                });
+                const fromBtn = visibleButtons[from];
+                const toBtn = visibleButtons[to];
+                const allCartButtons = getGroupButtons('cart_actions');
+                const fromIndex = allCartButtons.findIndex(b => b.id === fromBtn.id);
+                const toIndex = allCartButtons.findIndex(b => b.id === toBtn.id);
+                if (fromIndex !== -1 && toIndex !== -1) {
+                  reorderButtons('cart_actions', fromIndex, toIndex);
+                  editMode.markChanged();
+                }
               }}
               onToggleVisibility={(id) => {
                 toggleButton(id);
@@ -1123,7 +1165,9 @@ export const POSBillingPage: React.FC = () => {
                     preparedPrintWindowRef.current?.close();
                     preparedPrintWindowRef.current = preparePrintWindow();
                     if (!preparedPrintWindowRef.current) return;
-                    setShowPaidConfirmDialog(true);
+                    const printWindow = preparedPrintWindowRef.current;
+                    preparedPrintWindowRef.current = null;
+                    completeSale('print', printWindow);
                   },
                   kot: () => completeSale('kot'),
                   kotPrint: () => printKOTOnly(),
@@ -1131,21 +1175,21 @@ export const POSBillingPage: React.FC = () => {
                   discount: () => setShowDiscountDialog(true),
                 };
                 const iconMap: Record<string, React.ReactNode> = {
-                  split: <Scissors className="w-3.5 h-3.5" />,
-                  print: <Printer className="w-3.5 h-3.5" />,
-                  kot: <FileText className="w-3.5 h-3.5" />,
-                  kotPrint: <Receipt className="w-3.5 h-3.5" />,
-                  hold: <Pause className="w-3.5 h-3.5" />,
-                  discount: <Percent className="w-3.5 h-3.5" />,
+                  split: <Scissors className="w-4 h-4" />,
+                  print: <Printer className="w-4 h-4" />,
+                  kot: <FileText className="w-4 h-4" />,
+                  kotPrint: <Receipt className="w-4 h-4" />,
+                  hold: <Pause className="w-4 h-4" />,
+                  discount: <Percent className="w-4 h-4" />,
                 };
                 const isActionBtn = ['print', 'kot', 'kotPrint'].includes(btn.id);
                 return (
                   <Button
                     variant={isActionBtn && selectedPayment ? "default" : "outline"}
-                    size="sm"
+                    size="default"
                     onClick={buttonActions[btn.id] || (() => {})}
-                    disabled={cart.length === 0}
-                    className="h-8 gap-1 px-1.5 text-[11px] min-w-[80px]"
+                    disabled={cart.length === 0 || isProcessingSale}
+                    className="h-11 w-full gap-2 px-3 text-xs md:text-sm font-semibold shadow-sm transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] rounded-xl"
                   >
                     {iconMap[btn.id]}
                     {btn.label}
@@ -1305,47 +1349,7 @@ export const POSBillingPage: React.FC = () => {
       />
 
       {/* It's Paid Confirmation Dialog */}
-      {showPaidConfirmDialog && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 animate-fade-in">
-          <div className="bg-card rounded-2xl p-6 w-[90%] max-w-sm shadow-2xl animate-scale-in">
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Check className="w-8 h-8 text-primary" />
-              </div>
-              <h3 className="text-xl font-bold text-foreground mb-2">{t('common.itsPaid')}?</h3>
-              <p className="text-sm text-muted-foreground">{t('msg.hasCustomerPaid') || 'Has the customer paid for this order?'}</p>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => {
-                  const printWindow = preparedPrintWindowRef.current;
-                  preparedPrintWindowRef.current = null;
-                  setShowPaidConfirmDialog(false);
-                  setIsPaid(false);
-                  completeSale('print', printWindow);
-                }}
-                className="py-3 rounded-xl bg-secondary text-foreground font-bold text-base hover:bg-muted transition-colors"
-              >
-                {t('common.no')}
-              </button>
-              <button
-                onClick={() => {
-                  const printWindow = preparedPrintWindowRef.current;
-                  preparedPrintWindowRef.current = null;
-                  setShowPaidConfirmDialog(false);
-                  setIsPaid(true);
-                  completeSale('print', printWindow);
-                }}
-                className="py-3 rounded-xl bg-green-500 hover:bg-green-600 text-white font-bold text-base transition-colors flex items-center justify-center gap-2"
-              >
-                <Check className="w-5 h-5" />
-                {t('common.yes')}, {t('common.paid')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+
 
       {/* Complimentary Dialog */}
       {showComplimentaryDialog && (

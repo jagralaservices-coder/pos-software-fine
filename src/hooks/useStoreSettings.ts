@@ -14,6 +14,14 @@ export function useStoreSettings() {
   const [isLoaded, setIsLoaded] = useState(false);
 
   const getStoreId = useCallback((): string | null => {
+    try {
+      const activeStore = localStorage.getItem('pos_active_store');
+      if (activeStore) {
+        const parsed = JSON.parse(activeStore);
+        if (parsed) return parsed;
+      }
+    } catch {}
+
     const storeId = localStorage.getItem('pos_store_id');
     if (storeId) return storeId;
 

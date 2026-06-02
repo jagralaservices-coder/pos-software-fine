@@ -88,7 +88,6 @@ export const AppHeader: React.FC = () => {
   const location = useLocation();
 
   const [showMenu, setShowMenu] = useState(false);
-  const [showSearchKOT, setShowSearchKOT] = useState(false);
   const [itemsEnabled, setItemsEnabled] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [showStaffLogin, setShowStaffLogin] = useState(false);
@@ -311,7 +310,7 @@ export const AppHeader: React.FC = () => {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => setShowSearchKOT(true)}
+          onClick={() => navigate('/search-bill?type=kot')}
           className="h-9 gap-1.5 flex-shrink-0"
         >
           <FileText className="w-4 h-4" />
@@ -532,24 +531,7 @@ export const AppHeader: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Search KOT Dialog - Keeping as dialog since no full page yet */}
-      <Dialog open={showSearchKOT} onOpenChange={setShowSearchKOT}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Search KOT</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <Input
-              placeholder="Enter KOT number..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-            />
-            <div className="text-center py-8 text-muted-foreground text-sm">
-              Enter KOT number to search
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+
 
       {/* Staff PIN Login Modal */}
       <StaffPinLogin

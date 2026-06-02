@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -20,7 +20,8 @@ import {
   RefreshCw,
   Fingerprint,
   Clock,
-  Calendar
+  Calendar,
+  Upload
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -88,6 +89,20 @@ const StaffSettingsPage: React.FC = () => {
   const [facePhotoBlob, setFacePhotoBlob] = useState<Blob | null>(null);
   const [facePhotoPreview, setFacePhotoPreview] = useState<string | null>(null);
   const [updatingFaceStaff, setUpdatingFaceStaff] = useState<StaffMember | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setFacePhotoBlob(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFacePhotoPreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
   const [isUploadingFace, setIsUploadingFace] = useState(false);
   
   const [newStaff, setNewStaff] = useState({
@@ -728,7 +743,7 @@ const StaffSettingsPage: React.FC = () => {
             <DialogHeader>
               <DialogTitle>Add New Staff</DialogTitle>
             </DialogHeader>
-            <div className="space-y-4 pt-4">
+            <div className="space-y-4 pt-4 max-h-[55vh] overflow-y-auto pr-2">
               {/* Name */}
               <div>
                 <Label>Full Name *</Label>
@@ -830,33 +845,62 @@ const StaffSettingsPage: React.FC = () => {
                 <p className="text-xs text-muted-foreground mt-1">Min 6 characters. Staff will use email + this password to login</p>
               </div>
 
-              {/* Face Photo Capture */}
+              {/* Face Photo Capture & Upload */}
               <div>
                 <Label>Face Photo *</Label>
-                <div className="mt-1">
+                <div className="mt-1 flex flex-col gap-2">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    ref={fileInputRef}
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
                   {facePhotoPreview ? (
-                    <div className="flex items-center gap-4">
-                      <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-primary">
+                    <div className="flex items-center gap-4 bg-secondary/30 p-2.5 rounded-xl border border-border">
+                      <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-primary bg-background flex-shrink-0">
                         <img src={facePhotoPreview} alt="Face preview" className="w-full h-full object-cover" />
                       </div>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={() => setShowFaceCapture(true)}
-                      >
-                        <RefreshCw className="w-4 h-4 mr-2" />
-                        Retake Photo
-                      </Button>
+                      <div className="flex flex-col gap-1.5">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="h-8 gap-1.5 text-xs"
+                          onClick={() => setShowFaceCapture(true)}
+                        >
+                          <Camera className="w-3.5 h-3.5" />
+                          Retake Photo (Camera)
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="h-8 gap-1.5 text-xs"
+                          onClick={() => fileInputRef.current?.click()}
+                        >
+                          <Upload className="w-3.5 h-3.5" />
+                          Upload Different Image
+                        </Button>
+                      </div>
                     </div>
                   ) : (
-                    <Button 
-                      variant="outline" 
-                      className="w-full" 
-                      onClick={() => setShowFaceCapture(true)}
-                    >
-                      <Camera className="w-4 h-4 mr-2" />
-                      Capture Face Photo
-                    </Button>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button 
+                        variant="outline" 
+                        onClick={() => setShowFaceCapture(true)}
+                        className="h-14 gap-2 flex items-center justify-center border-dashed"
+                      >
+                        <Camera className="w-4 h-4" />
+                        Capture Face
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        onClick={() => fileInputRef.current?.click()}
+                        className="h-14 gap-2 flex items-center justify-center border-dashed"
+                      >
+                        <Upload className="w-4 h-4" />
+                        Upload Photo
+                      </Button>
+                    </div>
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">Required for attendance verification</p>
@@ -912,19 +956,19 @@ const StaffSettingsPage: React.FC = () => {
                 />
               </div>
 
-              <div className="flex gap-2 pt-4">
-                <Button variant="outline" className="flex-1" onClick={() => setShowAddStaff(false)}>
-                  Cancel
-                </Button>
-                <Button 
-                  className="flex-1" 
-                  onClick={handleAddStaff}
-                  disabled={isLoading}
-                >
-                  {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                  Add Staff
-                </Button>
-              </div>
+            </div>
+            <div className="flex gap-2 pt-4 border-t border-border mt-4">
+              <Button variant="outline" className="flex-1" onClick={() => setShowAddStaff(false)}>
+                Cancel
+              </Button>
+              <Button 
+                className="flex-1" 
+                onClick={handleAddStaff}
+                disabled={isLoading}
+              >
+                {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                Add Staff
+              </Button>
             </div>
           </DialogContent>
         </Dialog>

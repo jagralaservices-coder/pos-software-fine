@@ -24,7 +24,8 @@ import {
   Camera,
   Clock,
   Calendar,
-  Fingerprint
+  Fingerprint,
+  Upload
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -124,6 +125,20 @@ export const StoreStaffSettings: React.FC = () => {
   const [facePhotoBlob, setFacePhotoBlob] = useState<Blob | null>(null);
   const [facePhotoPreview, setFacePhotoPreview] = useState<string | null>(null);
   const [isUploadingFace, setIsUploadingFace] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setFacePhotoBlob(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFacePhotoPreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const canManageSettings = isOwner() || isAdmin();
   const isStoreManager = hasRole(['store_manager']);
@@ -785,36 +800,68 @@ export const StoreStaffSettings: React.FC = () => {
                 <X className="w-5 h-5" />
               </Button>
             </div>
-            <div className="space-y-5">
+            <div className="space-y-5 max-h-[55vh] overflow-y-auto pr-2">
               {/* Face Photo Capture */}
+               {/* Face Photo Capture & Upload */}
               <div>
                 <label className="text-sm font-medium mb-2 block">Face Photo *</label>
-                {facePhotoPreview ? (
-                  <div className="flex items-center gap-4">
-                    <img 
-                      src={facePhotoPreview} 
-                      alt="Face preview" 
-                      className="w-20 h-20 rounded-full object-cover border-2 border-primary"
-                    />
-                    <Button 
-                      variant="outline" 
-                      onClick={() => setShowFaceCapture(true)}
-                      className="gap-2"
-                    >
-                      <Camera className="w-4 h-4" />
-                      Retake Photo
-                    </Button>
-                  </div>
-                ) : (
-                  <Button 
-                    variant="outline" 
-                    onClick={() => setShowFaceCapture(true)}
-                    className="w-full h-20 border-dashed gap-2"
-                  >
-                    <Camera className="w-5 h-5" />
-                    Capture Face Photo
-                  </Button>
-                )}
+                <div className="mt-1 flex flex-col gap-2">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    ref={fileInputRef}
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                  {facePhotoPreview ? (
+                    <div className="flex items-center gap-4 bg-secondary/30 p-2.5 rounded-xl border border-border">
+                      <img 
+                        src={facePhotoPreview} 
+                        alt="Face preview" 
+                        className="w-20 h-20 rounded-full object-cover border-2 border-primary bg-background flex-shrink-0"
+                      />
+                      <div className="flex flex-col gap-1.5">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="h-8 gap-1.5 text-xs"
+                          onClick={() => setShowFaceCapture(true)}
+                        >
+                          <Camera className="w-3.5 h-3.5" />
+                          Retake Photo (Camera)
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="h-8 gap-1.5 text-xs"
+                          onClick={() => fileInputRef.current?.click()}
+                        >
+                          <Upload className="w-3.5 h-3.5" />
+                          Upload Different Image
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button 
+                        variant="outline" 
+                        onClick={() => setShowFaceCapture(true)}
+                        className="h-14 gap-2 flex items-center justify-center border-dashed"
+                      >
+                        <Camera className="w-4 h-4" />
+                        Capture Face
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        onClick={() => fileInputRef.current?.click()}
+                        className="h-14 gap-2 flex items-center justify-center border-dashed"
+                      >
+                        <Upload className="w-4 h-4" />
+                        Upload Photo
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </div>
               
               <div>
@@ -994,6 +1041,8 @@ export const StoreStaffSettings: React.FC = () => {
                   </button>
                 </div>
               </div>
+            </div>
+            <div className="pt-4 border-t border-border mt-4">
               <Button onClick={handleAddStaff} className="w-full h-11" disabled={isUploadingFace}>
                 {isUploadingFace ? (
                   <>

@@ -9,13 +9,23 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useSubscription } from '@/hooks/useSubscription';
+import { directPrint } from '@/lib/printUtils';
+import { generateProfessionalBill, generateKOTContent } from '@/lib/billTemplate';
+import { sendBillViaWhatsApp, sendBillViaEmail } from '@/lib/billShareUtils';
 
 const SearchBillPage: React.FC = () => {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const { orders } = usePOS();
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchType, setSearchType] = useState<'bill' | 'customer' | 'kot'>('bill');
+  const [searchType, setSearchType] = useState<'bill' | 'customer' | 'kot'>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const type = params.get('type');
+    if (type === 'kot' || type === 'customer' || type === 'bill') {
+      return type;
+    }
+    return 'bill';
+  });
   const { canAccess } = useSubscription();
   const showKot = canAccess('kot');
 
@@ -25,25 +35,92 @@ const SearchBillPage: React.FC = () => {
     
     switch (searchType) {
       case 'bill':
-        return order.id.toLowerCase().includes(query);
+        return (
+          order.id.toLowerCase().includes(query) ||
+          order.billNumber?.toLowerCase().includes(query)
+        );
       case 'customer':
         return (
           order.customerName?.toLowerCase().includes(query) ||
           order.customerPhone?.includes(query)
         );
       case 'kot':
-        return order.id.toLowerCase().includes(query) && order.kotPrinted;
+        return (
+          order.id.toLowerCase().includes(query) ||
+          order.kotNumber?.toLowerCase().includes(query)
+        );
       default:
         return true;
     }
   });
 
   const handlePrint = (orderId: string) => {
-    toast.success(`Printing bill #${orderId.slice(-6).toUpperCase()}`);
+    const order = orders.find(o => o.id === orderId);
+    if (!order) return;
+    
+    if (searchType === 'kot') {
+      const kotNo = order.kotNumber || orderId.slice(-6).toUpperCase();
+      const kotContent = generateKOTContent({
+        ...order,
+        createdAt: order.createdAt instanceof Date ? order.createdAt.toISOString() : (order.createdAt || new Date().toISOString()),
+        subtotal: order.subtotal || 0,
+        tax: order.tax || 0,
+        discount: order.discount || 0,
+        total: order.total || 0,
+        paymentMethod: order.paymentMethod || 'cash'
+      });
+      directPrint(kotContent, () => {
+        toast.success(`Printing KOT #${kotNo}`);
+      });
+    } else {
+      const billNo = order.billNumber || orderId.slice(-6).toUpperCase();
+      const billContent = generateProfessionalBill({
+        ...order,
+        paymentMethod: order.paymentMethod || 'cash',
+        customerName: order.customerName,
+        customerPhone: order.customerPhone,
+        customerEmail: order.customerEmail,
+        customerAddress: order.customerAddress,
+      });
+      
+      directPrint(billContent, () => {
+        toast.success(`Printing bill #${billNo}`);
+      });
+    }
   };
 
   const handleEBill = (orderId: string) => {
-    toast.success('E-Bill sent successfully');
+    const order = orders.find(o => o.id === orderId);
+    if (!order) return;
+    
+    const billNo = order.billNumber || orderId.slice(-6).toUpperCase();
+    if (order.customerPhone) {
+      sendBillViaWhatsApp({
+        customerName: order.customerName,
+        customerPhone: order.customerPhone,
+        customerEmail: order.customerEmail,
+        billNumber: billNo,
+        total: order.total,
+        items: order.items,
+        subtotal: order.subtotal,
+        tax: order.tax,
+        discount: order.discount,
+      });
+    } else if (order.customerEmail) {
+      sendBillViaEmail({
+        customerName: order.customerName,
+        customerPhone: order.customerPhone,
+        customerEmail: order.customerEmail,
+        billNumber: billNo,
+        total: order.total,
+        items: order.items,
+        subtotal: order.subtotal,
+        tax: order.tax,
+        discount: order.discount,
+      });
+    } else {
+      toast.error('No phone or email configured for this customer');
+    }
   };
 
   return (
@@ -125,7 +202,9 @@ const SearchBillPage: React.FC = () => {
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <p className="font-bold text-lg text-foreground">
-                      #{order.id.slice(-6).toUpperCase()}
+                      {searchType === 'kot' 
+                        ? `KOT #${order.kotNumber || order.id.slice(-6).toUpperCase()}`
+                        : `#${order.billNumber || order.id.slice(-6).toUpperCase()}`}
                     </p>
                     <p className="text-sm text-muted-foreground">
                       {new Date(order.createdAt).toLocaleString('en-IN')}
@@ -173,8 +252,17 @@ const SearchBillPage: React.FC = () => {
                     onClick={() => handlePrint(order.id)}
                     className="flex-1 h-12 text-base"
                   >
-                    <Printer className="w-5 h-5 mr-2" />
-                    Print
+                    {searchType === 'kot' ? (
+                      <>
+                        <FileText className="w-5 h-5 mr-2" />
+                        Print KOT
+                      </>
+                    ) : (
+                      <>
+                        <Printer className="w-5 h-5 mr-2" />
+                        Print
+                      </>
+                    )}
                   </Button>
                   <Button
                     variant="secondary"
