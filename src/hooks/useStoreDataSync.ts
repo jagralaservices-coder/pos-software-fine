@@ -7,6 +7,7 @@ import {
   setExpenses,
   setHeldBills,
   setTables,
+  safeMerge,
 } from '@/lib/store';
 
 const SYNC_INTERVAL = 90000; // 90 seconds
@@ -165,13 +166,9 @@ export const useStoreDataSync = () => {
       }
       // Fetch from cloud
       const data = await callSyncFunction({ action: 'fetch', store_id: storeId, data_type: 'inventory' });
-      if (data?.items?.length) {
+      if (data?.items) {
         const cloudItems = data.items.map(dbToLocalInventory);
-        // Merge: cloud wins
-        const mergedMap = new Map<string, InventoryItem>();
-        localItems.forEach(i => mergedMap.set(i.id, i));
-        cloudItems.forEach(i => mergedMap.set(i.id, i));
-        const merged = Array.from(mergedMap.values());
+        const merged = safeMerge(localItems, cloudItems);
         setInventory(merged);
         return merged;
       }
@@ -191,12 +188,9 @@ export const useStoreDataSync = () => {
         await callSyncFunction({ action: 'save', store_id: storeId, data_type: 'expenses', items: localItems });
       }
       const data = await callSyncFunction({ action: 'fetch', store_id: storeId, data_type: 'expenses' });
-      if (data?.items?.length) {
+      if (data?.items) {
         const cloudItems = data.items.map(dbToLocalExpense);
-        const mergedMap = new Map<string, Expense>();
-        localItems.forEach(i => mergedMap.set(i.id, i));
-        cloudItems.forEach(i => mergedMap.set(i.id, i));
-        const merged = Array.from(mergedMap.values());
+        const merged = safeMerge(localItems, cloudItems);
         setExpenses(merged);
         return merged;
       }
@@ -216,12 +210,9 @@ export const useStoreDataSync = () => {
         await callSyncFunction({ action: 'save', store_id: storeId, data_type: 'held_bills', items: localItems });
       }
       const data = await callSyncFunction({ action: 'fetch', store_id: storeId, data_type: 'held_bills' });
-      if (data?.items?.length) {
+      if (data?.items) {
         const cloudItems = data.items.map(dbToLocalHeldBill);
-        const mergedMap = new Map<string, HeldBill>();
-        localItems.forEach(i => mergedMap.set(i.id, i));
-        cloudItems.forEach(i => mergedMap.set(i.id, i));
-        const merged = Array.from(mergedMap.values());
+        const merged = safeMerge(localItems, cloudItems);
         setHeldBills(merged);
         return merged;
       }
@@ -241,12 +232,9 @@ export const useStoreDataSync = () => {
         await callSyncFunction({ action: 'save', store_id: storeId, data_type: 'tables', items: localItems });
       }
       const data = await callSyncFunction({ action: 'fetch', store_id: storeId, data_type: 'tables' });
-      if (data?.items?.length) {
+      if (data?.items) {
         const cloudItems = data.items as Table[];
-        const mergedMap = new Map<string, Table>();
-        localItems.forEach(i => mergedMap.set(i.id, i));
-        cloudItems.forEach(i => mergedMap.set(i.id, i));
-        const merged = Array.from(mergedMap.values());
+        const merged = safeMerge(localItems, cloudItems);
         setTables(merged);
         return merged;
       }

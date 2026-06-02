@@ -2147,6 +2147,57 @@ export type Database = {
           },
         ]
       }
+      store_whatsapp_config: {
+        Row: {
+          id: string
+          store_id: string
+          owner_id: string
+          whatsapp_number: string
+          instance_id: string
+          api_key: string
+          is_verified: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          store_id: string
+          owner_id: string
+          whatsapp_number: string
+          instance_id: string
+          api_key: string
+          is_verified?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          store_id?: string
+          owner_id?: string
+          whatsapp_number?: string
+          instance_id?: string
+          api_key?: string
+          is_verified?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "store_whatsapp_config_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: true
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "store_whatsapp_config_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
     }
     Views: {
       stores_safe: {

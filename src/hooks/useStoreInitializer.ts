@@ -3,7 +3,8 @@ import { useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { 
   setOrders, setInventory, setExpenses, setHeldBills, setTables,
-  Order, InventoryItem, Expense, HeldBill, Table
+  getOrders, getInventory, getExpenses, getHeldBills, getTables,
+  Order, InventoryItem, Expense, HeldBill, Table, safeMerge
 } from '@/lib/store';
 import { toast } from 'sonner';
 
@@ -74,9 +75,11 @@ export const useStoreInitializer = () => {
             isDirectBill: true,
             storeId: o.store_id,
           }));
-          setOrders(orders);
-          callbacks.onOrders(orders);
-          console.log('[StoreInit] Downloaded', orders.length, 'orders');
+          const existingOrders = getOrders();
+          const mergedOrders = safeMerge(existingOrders, orders);
+          setOrders(mergedOrders);
+          callbacks.onOrders(mergedOrders);
+          console.log('[StoreInit] Merged and saved', mergedOrders.length, 'orders');
         }
         
         // Fetch inventory, expenses, held_bills via sync-store-data
@@ -88,24 +91,36 @@ export const useStoreInitializer = () => {
             
             if (data?.items) {
               switch (dataType) {
-                case 'inventory':
-                  setInventory(data.items);
-                  callbacks.onInventory(data.items);
+                case 'inventory': {
+                  const existing = getInventory();
+                  const merged = safeMerge(existing, data.items);
+                  setInventory(merged);
+                  callbacks.onInventory(merged);
                   break;
-                case 'expenses':
-                  setExpenses(data.items);
-                  callbacks.onExpenses(data.items);
+                }
+                case 'expenses': {
+                  const existing = getExpenses();
+                  const merged = safeMerge(existing, data.items);
+                  setExpenses(merged);
+                  callbacks.onExpenses(merged);
                   break;
-                case 'held_bills':
-                  setHeldBills(data.items);
-                  callbacks.onHeldBills(data.items);
+                }
+                case 'held_bills': {
+                  const existing = getHeldBills();
+                  const merged = safeMerge(existing, data.items);
+                  setHeldBills(merged);
+                  callbacks.onHeldBills(merged);
                   break;
-                case 'tables':
-                  setTables(data.items);
-                  callbacks.onTables(data.items);
+                }
+                case 'tables': {
+                  const existing = getTables();
+                  const merged = safeMerge(existing, data.items);
+                  setTables(merged);
+                  callbacks.onTables(merged);
                   break;
+                }
               }
-              console.log('[StoreInit] Downloaded', data.items.length, dataType);
+              console.log('[StoreInit] Merged and saved', dataType);
             }
           } catch (err) {
             console.warn('[StoreInit] Failed to download', dataType, ':', err);
@@ -148,9 +163,11 @@ export const useStoreInitializer = () => {
             isDirectBill: true,
             storeId: o.store_id,
           }));
-          setOrders(orders);
-          callbacks.onOrders(orders);
-          console.log('[StoreInit] Downloaded', orders.length, 'orders via direct DB');
+          const existingOrders = getOrders();
+          const mergedOrders = safeMerge(existingOrders, orders);
+          setOrders(mergedOrders);
+          callbacks.onOrders(mergedOrders);
+          console.log('[StoreInit] Merged and saved', mergedOrders.length, 'orders via direct DB');
         }
 
         // Fetch inventory
@@ -171,8 +188,10 @@ export const useStoreInitializer = () => {
             productionYieldUnit: i.production_yield_unit || undefined,
             lastUpdated: new Date(i.updated_at),
           }));
-          setInventory(items);
-          callbacks.onInventory(items);
+          const existing = getInventory();
+          const merged = safeMerge(existing, items);
+          setInventory(merged);
+          callbacks.onInventory(merged);
         }
 
         // Fetch expenses
@@ -189,8 +208,10 @@ export const useStoreInitializer = () => {
             date: new Date(e.date),
             paidBy: e.paid_by || '',
           }));
-          setExpenses(expenses);
-          callbacks.onExpenses(expenses);
+          const existing = getExpenses();
+          const merged = safeMerge(existing, expenses);
+          setExpenses(merged);
+          callbacks.onExpenses(merged);
         }
 
         // Fetch held bills
@@ -206,8 +227,10 @@ export const useStoreInitializer = () => {
             customerName: b.customer_name || undefined,
             heldAt: new Date(b.held_at),
           }));
-          setHeldBills(bills);
-          callbacks.onHeldBills(bills);
+          const existing = getHeldBills();
+          const merged = safeMerge(existing, bills);
+          setHeldBills(merged);
+          callbacks.onHeldBills(merged);
         }
       }
 

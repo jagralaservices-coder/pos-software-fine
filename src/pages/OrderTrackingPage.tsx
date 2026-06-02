@@ -25,6 +25,43 @@ const OrderTrackingPage: React.FC = () => {
     fetchOrder();
   }, [storeCode, orderNumber]);
 
+  const playChimeSound = () => {
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) return;
+      const ctx = new AudioContextClass();
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
+
+      // High-quality Doorbell chime synthesized dynamically: 523.25Hz (C5) and 659.25Hz (E5)
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(523.25, ctx.currentTime);
+      gain1.gain.setValueAtTime(0.35, ctx.currentTime);
+      gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start();
+      osc1.stop(ctx.currentTime + 0.45);
+
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(659.25, ctx.currentTime + 0.22);
+      gain2.gain.setValueAtTime(0.001, ctx.currentTime);
+      gain2.gain.setValueAtTime(0.35, ctx.currentTime + 0.22);
+      gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.65);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(ctx.currentTime + 0.22);
+      osc2.stop(ctx.currentTime + 0.7);
+    } catch (err) {
+      console.warn('[OrderTracking] Web Audio chime play blocked:', err);
+    }
+  };
+
   // Realtime subscription
   useEffect(() => {
     if (!order?.id) return;
@@ -40,18 +77,34 @@ const OrderTrackingPage: React.FC = () => {
         const updated = payload.new as any;
         setOrder(updated);
 
-        // Notify customer when order is ready
-        if (updated.status === 'ready' && prevStatus.current !== 'ready') {
-          // Play sound
-          try {
-            const audio = new Audio('/notification.mp3');
-            audio.play().catch(() => {});
-          } catch {}
+        // Chime alert and notification triggers on order state transition
+        if (prevStatus.current && updated.status !== prevStatus.current) {
+          playChimeSound();
 
-          // Browser notification
+          // Browser notifications
           if ('Notification' in window && Notification.permission === 'granted') {
-            new Notification('🔔 Your order is READY!', {
-              body: `Order #${updated.order_number} is ready for pickup`,
+            let title = '🔔 Order Status Updated';
+            let body = `Your order status changed to ${updated.status}`;
+
+            if (updated.status === 'ready') {
+              title = '🔔 Your order is READY! 🎉';
+              body = `Order #${updated.order_number} is ready for pickup/dine-in.`;
+            } else if (updated.status === 'accepted') {
+              title = '🔔 Order Accepted! ✅';
+              body = `Order #${updated.order_number} has been accepted by the kitchen.`;
+            } else if (updated.status === 'preparing') {
+              title = '🔔 Preparing Order! 🍳';
+              body = `Kitchen is preparing your order #${updated.order_number}.`;
+            } else if (updated.status === 'completed') {
+              title = '🔔 Order Completed! 🍕';
+              body = `Order #${updated.order_number} is marked completed. Thank you!`;
+            } else if (updated.status === 'cancelled') {
+              title = '🔔 Order Cancelled ❌';
+              body = `Order #${updated.order_number} has been cancelled by the store.`;
+            }
+
+            new Notification(title, {
+              body,
               icon: '/favicon.ico',
             });
           }

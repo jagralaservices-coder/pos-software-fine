@@ -12,7 +12,7 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { store_code, customer_name, customer_phone, items, notes } = body;
+    const { store_code, customer_name, customer_phone, items, notes, table_number } = body;
 
     if (!store_code || !items || !Array.isArray(items) || items.length === 0) {
       return new Response(
@@ -66,6 +66,7 @@ Deno.serve(async (req) => {
         order_number: orderNumber,
         customer_name: customer_name?.trim() || null,
         customer_phone: customer_phone?.trim() || null,
+        table_number: table_number?.trim() || null,
         items: items,
         subtotal,
         tax,

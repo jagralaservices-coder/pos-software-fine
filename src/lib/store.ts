@@ -257,20 +257,78 @@ export const storage = {
   },
 };
 
+// Safe Merge Utility to prevent data resets/overwrites and handle multi-device sync
+export const safeMerge = <T extends { id?: string | number; category_id?: string | number; updated_at?: string; lastUpdated?: Date | string }>(
+  localItems: T[],
+  cloudItems: T[],
+  keyField: keyof T = 'id'
+): T[] => {
+  if (!cloudItems || !Array.isArray(cloudItems)) {
+    return localItems;
+  }
+  // Ignore empty cloud payloads to protect local data from resets
+  if (cloudItems.length === 0) {
+    return localItems;
+  }
+
+  const mergedMap = new Map<string, T>();
+
+  const getKey = (item: T): string => String(item[keyField] || item.id || item.category_id || '');
+
+  // 1. Add all existing local items first
+  localItems.forEach((item) => {
+    const key = getKey(item);
+    if (key) {
+      mergedMap.set(key, item);
+    }
+  });
+
+  // 2. Merge cloud items based on timestamp
+  cloudItems.forEach((cloudItem) => {
+    const key = getKey(cloudItem);
+    if (!key) return;
+
+    if (mergedMap.has(key)) {
+      const localItem = mergedMap.get(key)!;
+
+      const getTimestamp = (item: T) => {
+        const val = item.updated_at || item.lastUpdated;
+        if (!val) return 0;
+        return new Date(val).getTime();
+      };
+
+      const localTime = getTimestamp(localItem);
+      const cloudTime = getTimestamp(cloudItem);
+
+      // Cloud wins if it is newer or equal
+      if (cloudTime >= localTime) {
+        mergedMap.set(key, cloudItem);
+      }
+    } else {
+      // Missing in local, add it
+      mergedMap.set(key, cloudItem);
+    }
+  });
+
+  return Array.from(mergedMap.values());
+};
+
 // Initialize default data - only if not already present
 // IMPORTANT: Does NOT overwrite existing data
 export const initializeData = () => {
-  // These are unscoped (global app defaults, only set once ever)
-  if (!localStorage.getItem(STORAGE_KEYS.MENU_ITEMS)) {
-    storage.set(STORAGE_KEYS.MENU_ITEMS, defaultMenuItems);
+  // Scoped default data - initialize only if absent for current store
+  const scopedMenuItems = getScopedKey(STORAGE_KEYS.MENU_ITEMS);
+  if (!localStorage.getItem(scopedMenuItems)) {
+    storage.set(scopedMenuItems, defaultMenuItems);
   }
-  if (!localStorage.getItem(STORAGE_KEYS.CATEGORIES)) {
-    storage.set(STORAGE_KEYS.CATEGORIES, defaultCategories);
+  const scopedCategories = getScopedKey(STORAGE_KEYS.CATEGORIES);
+  if (!localStorage.getItem(scopedCategories)) {
+    storage.set(scopedCategories, defaultCategories);
   }
-  if (!localStorage.getItem(STORAGE_KEYS.TABLES)) {
-    storage.set(STORAGE_KEYS.TABLES, defaultTables);
+  const scopedTables = getScopedKey(STORAGE_KEYS.TABLES);
+  if (!localStorage.getItem(scopedTables)) {
+    storage.set(scopedTables, defaultTables);
   }
-  // Scoped data - initialize only if absent for current store
   const scopedOrders = getScopedKey(STORAGE_KEYS.ORDERS);
   if (!localStorage.getItem(scopedOrders)) {
     storage.set(scopedOrders, []);
@@ -279,8 +337,9 @@ export const initializeData = () => {
   if (!localStorage.getItem(scopedHeldBills)) {
     storage.set(scopedHeldBills, []);
   }
-  if (!localStorage.getItem(STORAGE_KEYS.STAFF)) {
-    storage.set(STORAGE_KEYS.STAFF, []);
+  const scopedStaff = getScopedKey(STORAGE_KEYS.STAFF);
+  if (!localStorage.getItem(scopedStaff)) {
+    storage.set(scopedStaff, []);
   }
   const scopedInventory = getScopedKey(STORAGE_KEYS.INVENTORY);
   if (!localStorage.getItem(scopedInventory)) {
@@ -292,12 +351,12 @@ export const initializeData = () => {
   }
 };
 
-// Data access functions
-export const getMenuItems = (): MenuItem[] => storage.get(STORAGE_KEYS.MENU_ITEMS, defaultMenuItems);
-export const setMenuItems = (items: MenuItem[]) => storage.set(STORAGE_KEYS.MENU_ITEMS, items);
+// Data access functions - now fully scoped per store to enforce multi-device isolation
+export const getMenuItems = (): MenuItem[] => storage.get(getScopedKey(STORAGE_KEYS.MENU_ITEMS), defaultMenuItems);
+export const setMenuItems = (items: MenuItem[]) => storage.set(getScopedKey(STORAGE_KEYS.MENU_ITEMS), items);
 
-export const getCategories = (): Category[] => storage.get(STORAGE_KEYS.CATEGORIES, defaultCategories);
-export const setCategories = (categories: Category[]) => storage.set(STORAGE_KEYS.CATEGORIES, categories);
+export const getCategories = (): Category[] => storage.get(getScopedKey(STORAGE_KEYS.CATEGORIES), defaultCategories);
+export const setCategories = (categories: Category[]) => storage.set(getScopedKey(STORAGE_KEYS.CATEGORIES), categories);
 
 // Orders, held bills, inventory, expenses are store-scoped
 export const getOrders = (): Order[] => storage.get(getScopedKey(STORAGE_KEYS.ORDERS), []);
@@ -311,11 +370,11 @@ export const addOrder = (order: Order) => {
 export const getHeldBills = (): HeldBill[] => storage.get(getScopedKey(STORAGE_KEYS.HELD_BILLS), []);
 export const setHeldBills = (bills: HeldBill[]) => storage.set(getScopedKey(STORAGE_KEYS.HELD_BILLS), bills);
 
-export const getTables = (): Table[] => storage.get(STORAGE_KEYS.TABLES, defaultTables);
-export const setTables = (tables: Table[]) => storage.set(STORAGE_KEYS.TABLES, tables);
+export const getTables = (): Table[] => storage.get(getScopedKey(STORAGE_KEYS.TABLES), defaultTables);
+export const setTables = (tables: Table[]) => storage.set(getScopedKey(STORAGE_KEYS.TABLES), tables);
 
-export const getStaff = (): Staff[] => storage.get(STORAGE_KEYS.STAFF, []);
-export const setStaff = (staff: Staff[]) => storage.set(STORAGE_KEYS.STAFF, staff);
+export const getStaff = (): Staff[] => storage.get(getScopedKey(STORAGE_KEYS.STAFF), []);
+export const setStaff = (staff: Staff[]) => storage.set(getScopedKey(STORAGE_KEYS.STAFF), staff);
 
 export const getInventory = (): InventoryItem[] => storage.get(getScopedKey(STORAGE_KEYS.INVENTORY), []);
 export const setInventory = (items: InventoryItem[]) => storage.set(getScopedKey(STORAGE_KEYS.INVENTORY), items);

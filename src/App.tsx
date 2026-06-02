@@ -87,6 +87,7 @@ const CreditLedgerPage = lazy(() => import("./pages/CreditLedgerPage"));
 const UICustomizationPage = lazy(() => import("./pages/UICustomizationPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 import { PWAInstallPrompt } from "./components/pos/PWAInstallPrompt";
+import { BackgroundQROrderManager } from "./components/pos/BackgroundQROrderManager";
 
 const queryClient = new QueryClient();
 
@@ -454,6 +455,7 @@ const App = () => {
                   <Sonner />
                   <OfflineIndicator />
                   <BrowserRouter>
+                    <BackgroundQROrderManager />
                     <AppRoutes />
                     <PWAInstallPrompt />
                   </BrowserRouter>

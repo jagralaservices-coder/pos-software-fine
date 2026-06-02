@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
 import { useLocale } from '@/contexts/LocaleContext';
 import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
@@ -30,7 +31,11 @@ import {
   UtensilsCrossed,
   Truck,
   ShoppingBag,
-  Grid3X3
+  Grid3X3,
+  QrCode,
+  VolumeX,
+  Play,
+  Upload
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -50,6 +55,8 @@ import { useSubscription } from '@/hooks/useSubscription';
 import { cn } from '@/lib/utils';
 import { useFeatureToggles } from '@/hooks/useFeatureToggles';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { usePOS } from '@/contexts/POSContext';
+import { QRAutomationSettings, DEFAULT_QR_SETTINGS } from '@/components/pos/BackgroundQROrderManager';
 
 // Settings section item component
 const SettingRow: React.FC<{
@@ -122,6 +129,43 @@ export const SettingsPage: React.FC = () => {
   const isMobile = useIsMobile();
   const { toggles, updateToggle } = useFeatureToggles();
   const [activeSection, setActiveSection] = useState('general');
+
+  const { activeStore } = usePOS();
+  const storeId = activeStore?.id;
+  const [qrSettings, setQrSettings] = useState<QRAutomationSettings>(DEFAULT_QR_SETTINGS);
+
+  useEffect(() => {
+    if (!storeId) return;
+    try {
+      const saved = localStorage.getItem(`qr_automation_settings_${storeId}`);
+      if (saved) {
+        setQrSettings(JSON.parse(saved));
+      }
+    } catch {}
+  }, [storeId]);
+
+  const saveQRSetting = async (updated: Partial<QRAutomationSettings>) => {
+    if (!storeId) return;
+    const newSettings = { ...qrSettings, ...updated };
+    setQrSettings(newSettings);
+    localStorage.setItem(`qr_automation_settings_${storeId}`, JSON.stringify(newSettings));
+    
+    try {
+      await supabase
+        .from('store_settings')
+        .upsert({
+          store_id: storeId,
+          setting_key: 'qr_automation',
+          setting_value: newSettings as any,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'store_id,setting_key' });
+    } catch (e) {
+      console.error('Failed to sync QR settings to Supabase:', e);
+    }
+
+    window.dispatchEvent(new Event('qr-settings-updated'));
+    toast.success('QR Settings updated');
+  };
   
   // Settings state backed by DB
   const [notifSettings, setNotifSettings] = useState({ newOrder: true, lowStock: true, cancelled: true });
@@ -179,6 +223,7 @@ export const SettingsPage: React.FC = () => {
   const sections = [
     { id: 'general', label: t('settings.general'), icon: SettingsIcon, color: 'text-blue-400' },
     { id: 'features', label: 'Features', icon: ToggleLeft, color: 'text-emerald-400' },
+    { id: 'qr_automation', label: 'QR Order Settings', icon: QrCode, color: 'text-orange-400' },
     { id: 'display', label: t('settings.display'), icon: Palette, color: 'text-purple-400' },
     { id: 'notifications', label: t('settings.notifications'), icon: Bell, color: 'text-amber-400' },
     { id: 'security', label: t('settings.security'), icon: Shield, color: 'text-green-400' },
@@ -249,6 +294,212 @@ export const SettingsPage: React.FC = () => {
                 💡 <strong>General Store Mode:</strong> KOT, Tables & Dine-In are auto-disabled. Billing focuses on direct sales with barcode scanning, cash/card payments.
               </div>
             )}
+          </div>
+        );
+
+      case 'qr_automation':
+        return (
+          <div className="space-y-4">
+            {/* QR Order Settings */}
+            <SettingsGroup title="QR Order Automation Settings" icon={QrCode} iconColor="text-orange-400">
+              <SettingRow icon={ToggleLeft} label="Enable Auto Accept" description="Automatically accept all valid incoming customer QR orders" iconColor="text-orange-400">
+                <Switch 
+                  checked={qrSettings.autoAcceptEnabled} 
+                  onCheckedChange={(v) => saveQRSetting({ autoAcceptEnabled: v })} 
+                />
+              </SettingRow>
+
+              {qrSettings.autoAcceptEnabled && (
+                <div className="py-3 px-1 border-b border-border/50">
+                  <div className="flex justify-between items-center text-sm font-medium mb-1">
+                    <Label htmlFor="autoAcceptDelay">Auto Accept Delay (Seconds)</Label>
+                    <span className="text-primary font-mono">{qrSettings.autoAcceptDelay}s</span>
+                  </div>
+                  <input
+                    type="range"
+                    id="autoAcceptDelay"
+                    min="1"
+                    max="15"
+                    value={qrSettings.autoAcceptDelay}
+                    onChange={(e) => saveQRSetting({ autoAcceptDelay: parseInt(e.target.value) })}
+                    className="w-full h-1 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
+                  />
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    Order received hone ke maximum delay time accept pipeline me run hoga.
+                  </p>
+                </div>
+              )}
+
+              <SettingRow icon={Printer} label="Enable Auto Silent Print" description="Master switch to trigger print commands automatically" iconColor="text-cyan-400">
+                <Switch 
+                  checked={qrSettings.autoSilentPrintEnabled} 
+                  onCheckedChange={(v) => saveQRSetting({ autoSilentPrintEnabled: v })} 
+                />
+              </SettingRow>
+
+              {qrSettings.autoSilentPrintEnabled && (
+                <>
+                  <SettingRow icon={Printer} label="Auto Print Kitchen Ticket (KOT)" description="Print kitchen ticket immediately when accepted" iconColor="text-teal-400">
+                    <Switch 
+                      checked={qrSettings.autoPrintKOTEnabled} 
+                      onCheckedChange={(v) => saveQRSetting({ autoPrintKOTEnabled: v })} 
+                    />
+                  </SettingRow>
+                  <SettingRow icon={Receipt} label="Auto Print Customer Bill" description="Print customer receipt immediately when accepted" iconColor="text-cyan-400">
+                    <Switch 
+                      checked={qrSettings.autoPrintBillEnabled} 
+                      onCheckedChange={(v) => saveQRSetting({ autoPrintBillEnabled: v })} 
+                    />
+                  </SettingRow>
+                </>
+              )}
+
+              <SettingRow icon={Grid3X3} label="Enable Table Selector on QR Menu" description="Let customers select their table number during checkout" iconColor="text-orange-400">
+                <Switch 
+                  checked={qrSettings.qrTableSelectionEnabled} 
+                  onCheckedChange={(v) => saveQRSetting({ qrTableSelectionEnabled: v })} 
+                />
+              </SettingRow>
+
+              {qrSettings.qrTableSelectionEnabled && (
+                <div className="py-3 px-1 border-b border-border/50">
+                  <div className="flex justify-between items-center text-sm font-medium mb-1">
+                    <Label htmlFor="activeQRTables">Active QR Tables Count</Label>
+                    <span className="text-primary font-mono">{qrSettings.activeQRTables} Tables</span>
+                  </div>
+                  <input
+                    type="range"
+                    id="activeQRTables"
+                    min="1"
+                    max="30"
+                    value={qrSettings.activeQRTables}
+                    onChange={(e) => saveQRSetting({ activeQRTables: parseInt(e.target.value) })}
+                    className="w-full h-1 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
+                  />
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    Customer select list options will be generated from Table 1 to Table {qrSettings.activeQRTables}.
+                  </p>
+                </div>
+              )}
+            </SettingsGroup>
+
+            {/* Alert Settings */}
+            <SettingsGroup title="QR Order Alert & Alarm Settings" icon={Volume2} iconColor="text-red-400">
+              <SettingRow icon={Volume2} label="Enable Incoming Alert Alarm" description="Play loud continuous sound for new pending orders" iconColor="text-red-400">
+                <Switch 
+                  checked={qrSettings.alarmEnabled} 
+                  onCheckedChange={(v) => saveQRSetting({ alarmEnabled: v })} 
+                />
+              </SettingRow>
+
+              {qrSettings.alarmEnabled && (
+                <>
+                  <div className="py-3 px-1 border-b border-border/50 space-y-2">
+                    <div className="flex justify-between items-center text-sm font-medium">
+                      <Label htmlFor="alarmVolume">Alarm Volume</Label>
+                      <span className="text-primary font-mono">{Math.round(qrSettings.alarmVolume * 100)}%</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <VolumeX className="w-4 h-4 text-muted-foreground" />
+                      <input
+                        type="range"
+                        id="alarmVolume"
+                        min="0"
+                        max="1"
+                        step="0.05"
+                        value={qrSettings.alarmVolume}
+                        onChange={(e) => saveQRSetting({ alarmVolume: parseFloat(e.target.value) })}
+                        className="flex-1 h-1 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
+                      />
+                      <Volume2 className="w-4 h-4 text-muted-foreground" />
+                    </div>
+                  </div>
+
+                  <div className="py-3 px-1 border-b border-border/50 space-y-2">
+                    <Label className="text-sm font-semibold">Sound Source</Label>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant={!qrSettings.customAlarmSound ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => saveQRSetting({ customAlarmSound: null })}
+                        className="flex-1 text-xs"
+                      >
+                        Default Beep
+                      </Button>
+                      <div className="flex-1 relative">
+                        <input
+                          type="file"
+                          accept="audio/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onload = (event) => {
+                                saveQRSetting({ customAlarmSound: event.target?.result as string });
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                          className="hidden"
+                          id="custom-audio-upload"
+                        />
+                        <Button
+                          asChild
+                          variant={qrSettings.customAlarmSound ? "default" : "outline"}
+                          size="sm"
+                          className="w-full text-xs cursor-pointer"
+                        >
+                          <label htmlFor="custom-audio-upload">
+                            <Upload className="w-3.5 h-3.5 mr-1" />
+                            {qrSettings.customAlarmSound ? 'Custom Ringtone' : 'Upload custom'}
+                          </label>
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="py-2.5 flex justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        window.dispatchEvent(
+                          new CustomEvent('qr-test-alarm', {
+                            detail: {
+                              volume: qrSettings.alarmVolume,
+                              sound: qrSettings.customAlarmSound,
+                            },
+                          })
+                        );
+                        toast.success('Test alarm triggered');
+                      }}
+                      className="text-xs"
+                    >
+                      <Play className="w-3.5 h-3.5 mr-1" /> Test Alarm
+                    </Button>
+                  </div>
+                </>
+              )}
+            </SettingsGroup>
+
+            {/* Notification Settings */}
+            <SettingsGroup title="Customer Notifications Settings" icon={Bell} iconColor="text-indigo-400">
+              <SettingRow icon={Smartphone} label="Enable WhatsApp Notifications" description="Dispatches WhatsApp order status updates to customer" iconColor="text-green-500">
+                <Switch 
+                  checked={qrSettings.whatsappNotificationsEnabled} 
+                  onCheckedChange={(v) => saveQRSetting({ whatsappNotificationsEnabled: v })} 
+                />
+              </SettingRow>
+
+              <SettingRow icon={Bell} label="Enable App Push Alerts" description="Sends browser popups if desktop tab is in background" iconColor="text-indigo-400">
+                <Switch 
+                  checked={qrSettings.customerNotificationsEnabled} 
+                  onCheckedChange={(v) => saveQRSetting({ customerNotificationsEnabled: v })} 
+                />
+              </SettingRow>
+            </SettingsGroup>
           </div>
         );
 

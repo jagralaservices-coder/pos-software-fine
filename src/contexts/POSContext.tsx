@@ -40,6 +40,9 @@ import {
   getExpenses,
   setExpenses,
   Expense,
+  getMenuItems,
+  setMenuItems,
+  safeMerge,
 } from '@/lib/store';
 
 interface POSContextType {
@@ -322,10 +325,24 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         variations: variationsMap[item.id] || [],
       }));
 
-      setMenuItemsState(items);
+      // Safe merge menu items with existing local menu items
+      const localMenuItems = getMenuItems();
+      let mergedItems = localMenuItems;
+      
+      if (items && items.length > 0) {
+        mergedItems = safeMerge(localMenuItems, items);
+        
+        // Remove default items "1", "2", "3" if real store items have been fetched/synced from the cloud
+        const hasRealItems = mergedItems.some(i => i.id !== '1' && i.id !== '2' && i.id !== '3');
+        if (hasRealItems) {
+          mergedItems = mergedItems.filter(i => i.id !== '1' && i.id !== '2' && i.id !== '3');
+        }
+        setMenuItems(mergedItems);
+      }
+      setMenuItemsState(mergedItems);
 
       // Sync categories from menu items AND save to DB
-      const uniqueCategoryIds = [...new Set(items.map(item => item.category).filter(Boolean))];
+      const uniqueCategoryIds = [...new Set(mergedItems.map(item => item.category).filter(Boolean))];
       
       const menuCategories: Category[] = uniqueCategoryIds.map(catId => ({
         id: catId,
@@ -335,7 +352,15 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }));
 
       if (menuCategories.length > 0) {
-        setCategoriesState(menuCategories);
+        const localCats = getCategories();
+        let mergedCats = safeMerge(localCats, menuCategories);
+        const hasRealCats = mergedCats.some(c => c.id !== 'general' && c.id !== 'grocery' && c.id !== 'electronics' && c.id !== 'hardware' && c.id !== 'food' && c.id !== 'stationery');
+        if (hasRealCats) {
+          mergedCats = mergedCats.filter(c => c.id !== 'general' && c.id !== 'grocery' && c.id !== 'electronics' && c.id !== 'hardware' && c.id !== 'food' && c.id !== 'stationery');
+        }
+        setCategories(mergedCats);
+        setCategoriesState(mergedCats);
+
         // Save categories to DB
         const stId = isStoreLogin 
           ? JSON.parse(localStorage.getItem('pos_active_store_data') || '{}')?.id 
@@ -552,7 +577,10 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Initialize data on mount
   useEffect(() => {
     initializeData();
-    
+
+    const storedMenuItems = getMenuItems();
+    setMenuItemsState(storedMenuItems);
+
     const cats = getCategories();
     if (cats.length === 0) {
       setCategoriesState(defaultCategories);
@@ -639,6 +667,10 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       : activeStoreId;
     
     if (storeId) {
+      // First, load local scoped items immediately so that UI is not blank!
+      const storedItems = getMenuItems();
+      setMenuItemsState(storedItems);
+
       fetchMenuItems(storeId);
       
       // Initialize store session (full cloud download on first login per store)

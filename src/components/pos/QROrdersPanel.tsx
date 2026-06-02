@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { smartPrint } from '@/lib/printUtils';
 import { generateProfessionalBill } from '@/lib/billTemplate';
+import { sendQROrderStatusWhatsApp } from '@/lib/billShareUtils';
 import {
   Dialog,
   DialogContent,
@@ -136,6 +137,19 @@ export const QROrdersPanel: React.FC = () => {
 
         // Auto-print KOT + Bill
         autoPrintOrder(newOrder);
+
+        // Send WhatsApp confirmation
+        if (newOrder.customer_phone) {
+          sendQROrderStatusWhatsApp(
+            storeId,
+            newOrder.customer_phone,
+            newOrder.customer_name || 'Valued Guest',
+            storeName,
+            newOrder.order_number,
+            'pending',
+            newOrder.total
+          ).catch(err => console.error('[QROrdersPanel] Failed to send status WhatsApp on insert:', err));
+        }
       })
       .on('postgres_changes', {
         event: 'UPDATE',
@@ -176,6 +190,22 @@ export const QROrdersPanel: React.FC = () => {
     if (error) {
       toast.error('Failed to update order');
       return;
+    }
+
+    const order = orders.find(o => o.id === orderId);
+    if (order && storeId) {
+      // Send WhatsApp status update
+      if (order.customer_phone) {
+        sendQROrderStatusWhatsApp(
+          storeId,
+          order.customer_phone,
+          order.customer_name || 'Valued Guest',
+          storeName,
+          order.order_number,
+          status,
+          order.total
+        ).catch(err => console.error('[QROrdersPanel] Failed to send status WhatsApp on update:', err));
+      }
     }
 
     // When QR order is completed, insert into main orders table for sales/reports

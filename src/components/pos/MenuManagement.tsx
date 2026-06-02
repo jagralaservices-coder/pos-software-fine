@@ -282,86 +282,88 @@ export const MenuManagement: React.FC = () => {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <Input
-              placeholder="Item Name"
-              value={newItem.name}
-              onChange={(e) => setNewItem(prev => ({ ...prev, name: e.target.value }))}
-            />
-            <MenuImageUpload imageUrl={newItemImage} onImageChange={setNewItemImage} />
-            <Input
-              type="number"
-              placeholder="Price"
-              value={newItem.price}
-              onChange={(e) => setNewItem(prev => ({ ...prev, price: e.target.value }))}
-            />
-            <select
-              value={newItem.category}
-              onChange={(e) => setNewItem(prev => ({ ...prev, category: e.target.value }))}
-              className="w-full p-3 bg-secondary rounded-lg border-none"
-            >
-              {categories.map(cat => (
-                <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
-              ))}
-            </select>
-            <div className="flex items-center gap-2">
-              <Package className="w-5 h-5 text-muted-foreground" />
+            <div className="max-h-[70vh] overflow-y-auto pr-1 space-y-4">
+              <Input
+                placeholder="Item Name"
+                value={newItem.name}
+                onChange={(e) => setNewItem(prev => ({ ...prev, name: e.target.value }))}
+              />
+              <MenuImageUpload imageUrl={newItemImage} onImageChange={setNewItemImage} />
               <Input
                 type="number"
-                placeholder="Stock Count (leave empty for unlimited)"
-                value={newItem.stock}
-                onChange={(e) => setNewItem(prev => ({ ...prev, stock: e.target.value }))}
+                placeholder="Price"
+                value={newItem.price}
+                onChange={(e) => setNewItem(prev => ({ ...prev, price: e.target.value }))}
               />
-            </div>
-            
-            {/* SKU/Barcode Field */}
-            <div className="flex items-center gap-2">
-              <Barcode className="w-5 h-5 text-muted-foreground" />
-              <Input
-                placeholder="SKU / Barcode (optional)"
-                value={newItem.sku}
-                onChange={(e) => setNewItem(prev => ({ ...prev, sku: e.target.value.toUpperCase() }))}
-                className="font-mono"
-              />
-            </div>
-            
-            {/* Inventory Linking for Add - Gold+ only */}
-            {hasRecipeAccess && (
-            <div className="border-t border-border pt-4 space-y-3">
-              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <Link2 className="w-4 h-4" />
-                <span>Inventory Linking</span>
-              </div>
               <select
-                value={newItem.linkedInventoryId}
-                onChange={(e) => setNewItem(prev => ({ ...prev, linkedInventoryId: e.target.value }))}
+                value={newItem.category}
+                onChange={(e) => setNewItem(prev => ({ ...prev, category: e.target.value }))}
                 className="w-full p-3 bg-secondary rounded-lg border-none"
               >
-                <option value="">-- No Inventory Link --</option>
-                {inventoryItems.map(inv => (
-                  <option key={inv.id} value={inv.id}>
-                    {inv.name} ({inv.quantity} {inv.unit} available)
-                  </option>
+                {categories.map(cat => (
+                  <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
                 ))}
               </select>
-              {newItem.linkedInventoryId && (
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="number"
-                    placeholder="Gramage per unit (e.g., 250)"
-                    value={newItem.gramagePerUnit}
-                    onChange={(e) => setNewItem(prev => ({ ...prev, gramagePerUnit: e.target.value }))}
-                  />
-                  <span className="text-sm text-muted-foreground whitespace-nowrap">
-                    {inventoryItems.find(i => i.id === newItem.linkedInventoryId)?.unit || 'g'} per sale
-                  </span>
+              <div className="flex items-center gap-2">
+                <Package className="w-5 h-5 text-muted-foreground" />
+                <Input
+                  type="number"
+                  placeholder="Stock Count (leave empty for unlimited)"
+                  value={newItem.stock}
+                  onChange={(e) => setNewItem(prev => ({ ...prev, stock: e.target.value }))}
+                />
+              </div>
+              
+              {/* SKU/Barcode Field */}
+              <div className="flex items-center gap-2">
+                <Barcode className="w-5 h-5 text-muted-foreground" />
+                <Input
+                  placeholder="SKU / Barcode (optional)"
+                  value={newItem.sku}
+                  onChange={(e) => setNewItem(prev => ({ ...prev, sku: e.target.value.toUpperCase() }))}
+                  className="font-mono"
+                />
+              </div>
+              
+              {/* Inventory Linking for Add - Gold+ only */}
+              {hasRecipeAccess && (
+              <div className="border-t border-border pt-4 space-y-3">
+                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <Link2 className="w-4 h-4" />
+                  <span>Inventory Linking</span>
                 </div>
+                <select
+                  value={newItem.linkedInventoryId}
+                  onChange={(e) => setNewItem(prev => ({ ...prev, linkedInventoryId: e.target.value }))}
+                  className="w-full p-3 bg-secondary rounded-lg border-none"
+                >
+                  <option value="">-- No Inventory Link --</option>
+                  {inventoryItems.map(inv => (
+                    <option key={inv.id} value={inv.id}>
+                      {inv.name} ({inv.quantity} {inv.unit} available)
+                    </option>
+                  ))}
+                </select>
+                {newItem.linkedInventoryId && (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      placeholder="Gramage per unit (e.g., 250)"
+                      value={newItem.gramagePerUnit}
+                      onChange={(e) => setNewItem(prev => ({ ...prev, gramagePerUnit: e.target.value }))}
+                    />
+                    <span className="text-sm text-muted-foreground whitespace-nowrap">
+                      {inventoryItems.find(i => i.id === newItem.linkedInventoryId)?.unit || 'g'} per sale
+                    </span>
+                  </div>
+                )}
+              </div>
               )}
+              
+              <Button onClick={handleAddItem} className="w-full">
+                <Plus className="w-4 h-4 mr-2" /> Add Item
+              </Button>
             </div>
-            )}
-            
-            <Button onClick={handleAddItem} className="w-full">
-              <Plus className="w-4 h-4 mr-2" /> Add Item
-            </Button>
           </div>
         </div>
       )}
@@ -376,139 +378,141 @@ export const MenuManagement: React.FC = () => {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <Input
-              placeholder="Item Name"
-              value={editItem.name}
-              onChange={(e) => setEditItem(prev => ({ ...prev, name: e.target.value }))}
-            />
-            <MenuImageUpload imageUrl={editItem.image} onImageChange={(url) => setEditItem(prev => ({ ...prev, image: url }))} />
-            <Input
-              type="number"
-              placeholder="Price"
-              value={editItem.price}
-              onChange={(e) => setEditItem(prev => ({ ...prev, price: e.target.value }))}
-            />
-            <select
-              value={editItem.category}
-              onChange={(e) => setEditItem(prev => ({ ...prev, category: e.target.value }))}
-              className="w-full p-3 bg-secondary rounded-lg border-none"
-            >
-              {categories.map(cat => (
-                <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
-              ))}
-            </select>
-            <div className="flex items-center gap-2">
-              <Package className="w-5 h-5 text-muted-foreground" />
+            <div className="max-h-[70vh] overflow-y-auto pr-1 space-y-4">
+              <Input
+                placeholder="Item Name"
+                value={editItem.name}
+                onChange={(e) => setEditItem(prev => ({ ...prev, name: e.target.value }))}
+              />
+              <MenuImageUpload imageUrl={editItem.image} onImageChange={(url) => setEditItem(prev => ({ ...prev, image: url }))} />
               <Input
                 type="number"
-                placeholder="Global Stock (leave empty for unlimited)"
-                value={editItem.stock}
-                onChange={(e) => setEditItem(prev => ({ ...prev, stock: e.target.value }))}
+                placeholder="Price"
+                value={editItem.price}
+                onChange={(e) => setEditItem(prev => ({ ...prev, price: e.target.value }))}
               />
-            </div>
-            
-            {/* Store-wise Stock */}
-            {stores.length > 0 && (
-              <div className="border-t border-border pt-4 space-y-3">
-                <p className="text-sm font-medium text-foreground">Store-wise Stock</p>
-                {stores.map(store => (
-                  <div key={store.id} className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground w-24 truncate">{store.name}:</span>
-                    <Input
-                      type="number"
-                      placeholder="Stock"
-                      value={editItem.storeStocks[store.id] || ''}
-                      onChange={(e) => setEditItem(prev => ({
-                        ...prev,
-                        storeStocks: { ...prev.storeStocks, [store.id]: e.target.value }
-                      }))}
-                      className="flex-1"
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-            
-            {/* Inventory Linking - Gold+ only */}
-            {hasRecipeAccess && (
-            <div className="border-t border-border pt-4 space-y-3">
-              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <Link2 className="w-4 h-4" />
-                <span>Inventory Linking</span>
-              </div>
               <select
-                value={editItem.linkedInventoryId}
-                onChange={(e) => setEditItem(prev => ({ ...prev, linkedInventoryId: e.target.value }))}
+                value={editItem.category}
+                onChange={(e) => setEditItem(prev => ({ ...prev, category: e.target.value }))}
                 className="w-full p-3 bg-secondary rounded-lg border-none"
               >
-                <option value="">-- No Inventory Link --</option>
-                {inventoryItems.map(inv => (
-                  <option key={inv.id} value={inv.id}>
-                    {inv.name} ({inv.quantity} {inv.unit} available)
-                  </option>
+                {categories.map(cat => (
+                  <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
                 ))}
               </select>
-              {editItem.linkedInventoryId && (
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="number"
-                    placeholder="Gramage per unit (e.g., 250)"
-                    value={editItem.gramagePerUnit}
-                    onChange={(e) => setEditItem(prev => ({ ...prev, gramagePerUnit: e.target.value }))}
-                  />
-                  <span className="text-sm text-muted-foreground whitespace-nowrap">
-                    {inventoryItems.find(i => i.id === editItem.linkedInventoryId)?.unit || 'g'} per sale
-                  </span>
+              <div className="flex items-center gap-2">
+                <Package className="w-5 h-5 text-muted-foreground" />
+                <Input
+                  type="number"
+                  placeholder="Global Stock (leave empty for unlimited)"
+                  value={editItem.stock}
+                  onChange={(e) => setEditItem(prev => ({ ...prev, stock: e.target.value }))}
+                />
+              </div>
+              
+              {/* Store-wise Stock */}
+              {stores.length > 0 && (
+                <div className="border-t border-border pt-4 space-y-3">
+                  <p className="text-sm font-medium text-foreground">Store-wise Stock</p>
+                  {stores.map(store => (
+                    <div key={store.id} className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground w-24 truncate">{store.name}:</span>
+                      <Input
+                        type="number"
+                        placeholder="Stock"
+                        value={editItem.storeStocks[store.id] || ''}
+                        onChange={(e) => setEditItem(prev => ({
+                          ...prev,
+                          storeStocks: { ...prev.storeStocks, [store.id]: e.target.value }
+                        }))}
+                        className="flex-1"
+                      />
+                    </div>
+                  ))}
                 </div>
               )}
-              <p className="text-xs text-muted-foreground">
-                Link to inventory item and specify how much is used per unit sold.
-              </p>
-            </div>
-            )}
-            {/* SKU/Barcode Field */}
-            <div className="border-t border-border pt-4 space-y-3">
-              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <Barcode className="w-4 h-4" />
-                <span>SKU / Barcode</span>
+              
+              {/* Inventory Linking - Gold+ only */}
+              {hasRecipeAccess && (
+              <div className="border-t border-border pt-4 space-y-3">
+                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <Link2 className="w-4 h-4" />
+                  <span>Inventory Linking</span>
+                </div>
+                <select
+                  value={editItem.linkedInventoryId}
+                  onChange={(e) => setEditItem(prev => ({ ...prev, linkedInventoryId: e.target.value }))}
+                  className="w-full p-3 bg-secondary rounded-lg border-none"
+                >
+                  <option value="">-- No Inventory Link --</option>
+                  {inventoryItems.map(inv => (
+                    <option key={inv.id} value={inv.id}>
+                      {inv.name} ({inv.quantity} {inv.unit} available)
+                    </option>
+                  ))}
+                </select>
+                {editItem.linkedInventoryId && (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      placeholder="Gramage per unit (e.g., 250)"
+                      value={editItem.gramagePerUnit}
+                      onChange={(e) => setEditItem(prev => ({ ...prev, gramagePerUnit: e.target.value }))}
+                    />
+                    <span className="text-sm text-muted-foreground whitespace-nowrap">
+                      {inventoryItems.find(i => i.id === editItem.linkedInventoryId)?.unit || 'g'} per sale
+                    </span>
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Link to inventory item and specify how much is used per unit sold.
+                </p>
               </div>
-              <Input
-                placeholder="Enter SKU or barcode value"
-                value={editItem.sku}
-                onChange={(e) => setEditItem(prev => ({ ...prev, sku: e.target.value.toUpperCase() }))}
-                className="font-mono"
-              />
-              <p className="text-xs text-muted-foreground">
-                Used for barcode scanning. Leave empty to auto-generate from item ID.
-              </p>
-            </div>
+              )}
+              {/* SKU/Barcode Field */}
+              <div className="border-t border-border pt-4 space-y-3">
+                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <Barcode className="w-4 h-4" />
+                  <span>SKU / Barcode</span>
+                </div>
+                <Input
+                  placeholder="Enter SKU or barcode value"
+                  value={editItem.sku}
+                  onChange={(e) => setEditItem(prev => ({ ...prev, sku: e.target.value.toUpperCase() }))}
+                  className="font-mono"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Used for barcode scanning. Leave empty to auto-generate from item ID.
+                </p>
+              </div>
 
-            {/* Stock Alert Threshold */}
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-warning" />
-              <Input
-                type="number"
-                placeholder="Stock Alert Threshold (optional)"
-                value={editItem.stockAlertThreshold}
-                onChange={(e) => setEditItem(prev => ({ ...prev, stockAlertThreshold: e.target.value }))}
-              />
+              {/* Stock Alert Threshold */}
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-warning" />
+                <Input
+                  type="number"
+                  placeholder="Stock Alert Threshold (optional)"
+                  value={editItem.stockAlertThreshold}
+                  onChange={(e) => setEditItem(prev => ({ ...prev, stockAlertThreshold: e.target.value }))}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Alert when stock falls below this value. Leave empty for no alert.
+              </p>
+              
+              <p className="text-sm text-muted-foreground">
+                Current stock: {editingItem.stock !== undefined ? editingItem.stock : 'Unlimited'}
+                {editingItem.stockAlertThreshold !== undefined && (
+                  <span className="ml-2 text-warning">• Alert at: {editingItem.stockAlertThreshold}</span>
+                )}
+                {hasRecipeAccess && editingItem.linkedInventoryId && (
+                  <span className="ml-2 text-primary">• Linked to inventory</span>
+                )}
+              </p>
+              <Button onClick={handleEditItem} className="w-full">
+                <Edit className="w-4 h-4 mr-2" /> Update Item
+              </Button>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Alert when stock falls below this value. Leave empty for no alert.
-            </p>
-            
-            <p className="text-sm text-muted-foreground">
-              Current stock: {editingItem.stock !== undefined ? editingItem.stock : 'Unlimited'}
-              {editingItem.stockAlertThreshold !== undefined && (
-                <span className="ml-2 text-warning">• Alert at: {editingItem.stockAlertThreshold}</span>
-              )}
-              {hasRecipeAccess && editingItem.linkedInventoryId && (
-                <span className="ml-2 text-primary">• Linked to inventory</span>
-              )}
-            </p>
-            <Button onClick={handleEditItem} className="w-full">
-              <Edit className="w-4 h-4 mr-2" /> Update Item
-            </Button>
           </div>
         </div>
       )}
