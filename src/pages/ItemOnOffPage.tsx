@@ -33,7 +33,8 @@ const ItemOnOffPage: React.FC = () => {
 
   const filterProducts = (products: typeof menuItems) => {
     return products.filter(item =>
-      item.name.toLowerCase().includes(searchQuery.toLowerCase())
+      item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (item.sku && item.sku.toLowerCase().includes(searchQuery.toLowerCase()))
     );
   };
 

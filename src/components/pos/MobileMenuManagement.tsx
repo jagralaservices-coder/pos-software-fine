@@ -44,7 +44,7 @@ import {
 
 export const MobileMenuManagement: React.FC = () => {
   const navigate = useNavigate();
-  const { menuItems, categories, toggleItemAvailability, activeCategory, setActiveCategory, addMenuItems, deleteMenuItem, updateMenuItem, syncCategoriesFromMenu, lowStockItems, stores, activeStore, setActiveStoreId, getStoreSales } = usePOS();
+  const { menuItems, categories, toggleItemAvailability, activeCategory, setActiveCategory, addMenuItems, deleteMenuItem, updateMenuItem, syncCategoriesFromMenu, lowStockItems, stores, activeStore, setActiveStoreId, getStoreSales, addCategory } = usePOS();
   const { canAccess: canAccessFeature } = useSubscription();
   const hasRecipeAccess = canAccessFeature('recipeInventory');
   const [searchQuery, setSearchQuery] = useState('');
@@ -66,6 +66,12 @@ export const MobileMenuManagement: React.FC = () => {
   const [newItem, setNewItem] = useState({ name: '', price: '', category: 'starters', sku: '', stock: '', linkedInventoryId: '', gramagePerUnit: '' });
   const [editItem, setEditItem] = useState({ name: '', price: '', category: '', sku: '', stock: '', storeStocks: {} as { [key: string]: string }, stockAlertThreshold: '', linkedInventoryId: '', gramagePerUnit: '' });
   
+  // Category creation states
+  const [showAddCategory, setShowAddCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [newCategoryIcon, setNewCategoryIcon] = useState('🍽️');
+  const [categorySource, setCategorySource] = useState<'new' | 'edit'>('new');
+  
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
 
   useEffect(() => {
@@ -74,10 +80,33 @@ export const MobileMenuManagement: React.FC = () => {
 
   const filteredItems = menuItems.filter(item => {
     const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         item.nameHindi?.toLowerCase().includes(searchQuery.toLowerCase());
+                         item.nameHindi?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         (item.sku && item.sku.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchesCategory = activeCategory === 'all' || item.category === activeCategory;
     return matchesSearch && matchesCategory;
   });
+
+  const handleCreateCategory = async () => {
+    if (!newCategoryName.trim()) return;
+    const catId = newCategoryName.toLowerCase().trim().replace(/\s+/g, '-');
+    await addCategory({
+      id: catId,
+      name: newCategoryName.trim(),
+      icon: newCategoryIcon.trim() || '🍽️'
+    });
+    
+    // Auto-select the newly created category
+    if (categorySource === 'new') {
+      setNewItem(prev => ({ ...prev, category: catId }));
+    } else {
+      setEditItem(prev => ({ ...prev, category: catId }));
+    }
+    
+    setShowAddCategory(false);
+    setNewCategoryName('');
+    setNewCategoryIcon('🍽️');
+    toast.success('Category added successfully!');
+  };
 
   const handleAddItem = () => {
     if (!newItem.name || !newItem.price) {
@@ -431,10 +460,24 @@ export const MobileMenuManagement: React.FC = () => {
             </div>
             <Input placeholder="Item Name" value={newItem.name} onChange={(e) => setNewItem(prev => ({ ...prev, name: e.target.value }))} className="h-12 text-base" />
             <Input type="number" placeholder="Price" value={newItem.price} onChange={(e) => setNewItem(prev => ({ ...prev, price: e.target.value }))} className="h-12 text-base" />
-            <select value={newItem.category} onChange={(e) => setNewItem(prev => ({ ...prev, category: e.target.value }))} className="w-full p-3 h-12 bg-secondary rounded-xl border-none text-base">
+            <select 
+              value={newItem.category} 
+              onChange={(e) => {
+                if (e.target.value === 'add_new_category') {
+                  setCategorySource('new');
+                  setNewCategoryName('');
+                  setNewCategoryIcon('🍽️');
+                  setShowAddCategory(true);
+                } else {
+                  setNewItem(prev => ({ ...prev, category: e.target.value }));
+                }
+              }} 
+              className="w-full p-3 h-12 bg-secondary rounded-xl border-none text-base"
+            >
               {categories.map(cat => (
                 <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
               ))}
+              <option value="add_new_category">+ Add Category</option>
             </select>
             
             {/* Stock */}
@@ -486,10 +529,24 @@ export const MobileMenuManagement: React.FC = () => {
             </div>
             <Input placeholder="Item Name" value={editItem.name} onChange={(e) => setEditItem(prev => ({ ...prev, name: e.target.value }))} className="h-12 text-base" />
             <Input type="number" placeholder="Price" value={editItem.price} onChange={(e) => setEditItem(prev => ({ ...prev, price: e.target.value }))} className="h-12 text-base" />
-            <select value={editItem.category} onChange={(e) => setEditItem(prev => ({ ...prev, category: e.target.value }))} className="w-full p-3 h-12 bg-secondary rounded-xl border-none text-base">
+            <select 
+              value={editItem.category} 
+              onChange={(e) => {
+                if (e.target.value === 'add_new_category') {
+                  setCategorySource('edit');
+                  setNewCategoryName('');
+                  setNewCategoryIcon('🍽️');
+                  setShowAddCategory(true);
+                } else {
+                  setEditItem(prev => ({ ...prev, category: e.target.value }));
+                }
+              }} 
+              className="w-full p-3 h-12 bg-secondary rounded-xl border-none text-base"
+            >
               {categories.map(cat => (
                 <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
               ))}
+              <option value="add_new_category">+ Add Category</option>
             </select>
 
             {/* Stock */}
@@ -583,6 +640,49 @@ export const MobileMenuManagement: React.FC = () => {
         onOpenChange={setShowBarcodeDialog}
         menuItem={barcodeMenuItem}
       />
+
+      {showAddCategory && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-card rounded-xl w-full max-w-sm p-6 space-y-4 shadow-xl border border-border">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-bold">Add Category</h3>
+              <button 
+                onClick={() => {
+                  setShowAddCategory(false);
+                  // Reset select fields to default category or empty so they aren't stuck on "add_new_category"
+                  if (categorySource === 'new') {
+                    setNewItem(prev => ({ ...prev, category: categories[0]?.id || 'general' }));
+                  } else {
+                    setEditItem(prev => ({ ...prev, category: editingItem?.category || categories[0]?.id || 'general' }));
+                  }
+                }} 
+                className="p-2 hover:bg-secondary rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <Input
+                placeholder="Category Name (e.g., Drinks)"
+                value={newCategoryName}
+                onChange={(e) => setNewCategoryName(e.target.value)}
+              />
+              <Input
+                placeholder="Category Icon/Emoji (e.g., 🍹)"
+                value={newCategoryIcon}
+                onChange={(e) => setNewCategoryIcon(e.target.value)}
+              />
+            </div>
+            <Button 
+              onClick={handleCreateCategory} 
+              className="w-full"
+              disabled={!newCategoryName.trim()}
+            >
+              Add Category
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

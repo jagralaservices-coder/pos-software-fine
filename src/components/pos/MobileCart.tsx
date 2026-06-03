@@ -50,6 +50,12 @@ export const MobileCart: React.FC = () => {
     currentOrderType,
     setCurrentOrderType,
     directBillPrint,
+    taxPercent,
+    setTaxPercent,
+    customTax,
+    setCustomTax,
+    discount,
+    setDiscount,
   } = usePOS();
 
   const [showPayment, setShowPayment] = useState(false);
@@ -59,18 +65,7 @@ export const MobileCart: React.FC = () => {
   const [isComplimentary, setIsComplimentary] = useState(false);
   const [complimentaryNote, setComplimentaryNote] = useState('');
   const [showComplimentaryDialog, setShowComplimentaryDialog] = useState(false);
-  const [taxPercent, setTaxPercentState] = useState(() => {
-    const saved = localStorage.getItem('pos_tax_percent');
-    return saved ? Number(saved) : 0;
-  });
-  const [customTax, setCustomTax] = useState<number | null>(null);
   const [showTaxDialog, setShowTaxDialog] = useState(false);
-  
-  // Save tax percent to localStorage when changed
-  const setTaxPercent = (percent: number) => {
-    setTaxPercentState(percent);
-    localStorage.setItem('pos_tax_percent', String(percent));
-  };
   const [showMorePaymentSheet, setShowMorePaymentSheet] = useState(false);
   const [showPartPaymentDialog, setShowPartPaymentDialog] = useState(false);
   const [showSplitBillDialog, setShowSplitBillDialog] = useState(false);
@@ -79,11 +74,12 @@ export const MobileCart: React.FC = () => {
   const { canAccess } = useSubscription();
   
   // Additional charges state
-  const [discount, setDiscount] = useState(0);
   const [deliveryCharge, setDeliveryCharge] = useState(currentOrderType === 'delivery' ? 40 : 0);
   const [containerCharge, setContainerCharge] = useState(currentOrderType !== 'dine-in' ? 10 : 0);
   const [tip, setTip] = useState(0);
   const [customerPaid, setCustomerPaid] = useState(0);
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
   
   // Calculate custom tax
   const calculatedTax = customTax !== null ? customTax : (cartSubtotal * taxPercent / 100);
@@ -143,8 +139,17 @@ export const MobileCart: React.FC = () => {
   };
 
   const handleConfirmPrint = async (isPaid: boolean) => {
+    if (selectedPaymentMethod === 'credit' && (!customerName.trim() || !customerPhone.trim())) {
+      toast.error('Customer details required!', {
+        description: 'Please add Customer Name and Phone Number for credit (Khata) bills.'
+      });
+      return;
+    }
     setShowPaidConfirm(false);
-    const order = await directBillPrint(selectedPaymentMethod);
+    const order = await directBillPrint(
+      selectedPaymentMethod,
+      selectedPaymentMethod === 'credit' ? { name: customerName, phone: customerPhone } : undefined
+    );
     if (order) {
       toast.success(isPaid ? 'Bill printed - Paid!' : 'Bill printed - Payment pending', {
         description: `Bill #${order.billNumber || order.id.slice(-6).toUpperCase()}`
@@ -565,6 +570,26 @@ export const MobileCart: React.FC = () => {
                     <span className="text-[10px] font-medium">More</span>
                   </button>
                 </div>
+
+                {selectedPaymentMethod === 'credit' && (
+                  <div className="space-y-3 p-3 bg-amber-500/10 rounded-xl mb-4 border border-amber-500/20">
+                    <p className="text-xs font-semibold text-amber-600">Credit (Khata) Customer Details Required</p>
+                    <input
+                      type="text"
+                      placeholder="Customer Name"
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Customer Phone"
+                      value={customerPhone}
+                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                )}
 
                 {/* It's Paid Confirmation Popup */}
                 {showPaidConfirm ? (

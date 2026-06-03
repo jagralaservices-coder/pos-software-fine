@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { usePOS } from '@/contexts/POSContext';
 import { useLocale } from '@/contexts/LocaleContext';
 import { formatCurrency as formatCurrencyLib, MenuItem, MenuItemVariation } from '@/lib/store';
@@ -103,6 +103,12 @@ export const POSBillingPage: React.FC = () => {
     cartSubtotal,
     cartTax,
     cartTotal,
+    discount,
+    setDiscount,
+    taxPercent,
+    setTaxPercent,
+    customTax,
+    setCustomTax,
     currentOrderType,
     setCurrentOrderType,
     selectedTable,
@@ -116,33 +122,28 @@ export const POSBillingPage: React.FC = () => {
   } = usePOS();
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const [showHeldBills, setShowHeldBills] = useState(false);
   const [showQROrders, setShowQROrders] = useState(false);
+
   const [selectedPayment, setSelectedPayment] = useState<'cash' | 'card' | 'upi' | 'due' | 'part' | 'wallet' | 'credit' | null>(null);
+  const [activeSection, setActiveSection] = useState<'products' | 'cart' | 'payments' | 'actions'>('products');
+  const [cartHighlightIndex, setCartHighlightIndex] = useState(0);
+  const [paymentHighlightIndex, setPaymentHighlightIndex] = useState(0);
+  const [actionHighlightIndex, setActionHighlightIndex] = useState(0);
+  const [sheetPaymentHighlightIndex, setSheetPaymentHighlightIndex] = useState(0);
   const [showBillingSummary, setShowBillingSummary] = useState(false);
   const [showSplitDialog, setShowSplitDialog] = useState(false);
   const [showDiscountDialog, setShowDiscountDialog] = useState(false);
   const [showMorePayments, setShowMorePayments] = useState(false);
   const [showPartPaymentDialog, setShowPartPaymentDialog] = useState(false);
   const [partPaymentDetails, setPartPaymentDetails] = useState<{ method: string; amount: number }[]>([]);
-  const [discount, setDiscount] = useState(0);
   const [discountReason, setDiscountReason] = useState('');
   const [deliveryCharge, setDeliveryCharge] = useState(0);
   const [containerCharge, setContainerCharge] = useState(0);
   const [tip, setTip] = useState(0);
-  const [taxPercent, setTaxPercentState] = useState(() => {
-    const saved = localStorage.getItem('pos_tax_percent');
-    return saved ? Number(saved) : 5;
-  });
-  const [customTax, setCustomTax] = useState<number | null>(null);
   const [showTaxDialog, setShowTaxDialog] = useState(false);
   const [showCustomItemDialog, setShowCustomItemDialog] = useState(false);
-  
-  // Save tax percent to localStorage when changed
-  const setTaxPercent = (percent: number) => {
-    setTaxPercentState(percent);
-    localStorage.setItem('pos_tax_percent', String(percent));
-  };
   const [selectedTableId, setSelectedTableId] = useState<string | null>(selectedTable?.id || null);
   const [selectedItemForVariation, setSelectedItemForVariation] = useState<MenuItem | null>(null);
   const [variationSheetOpen, setVariationSheetOpen] = useState(false);
@@ -156,6 +157,14 @@ export const POSBillingPage: React.FC = () => {
   const [showCustomerDetails, setShowCustomerDetails] = useState(false);
   const [isProcessingSale, setIsProcessingSale] = useState(false);
   const { canAccess } = useSubscription();
+
+  const actionButtons = useMemo(() => {
+    return getGroupButtons('cart_actions').filter(btn => {
+      if (['discount', 'customer', 'qrMenu', 'qrOrders', 'heldBills'].includes(btn.id)) return false;
+      if ((btn.id === 'kot' || btn.id === 'kotPrint') && !canAccess('kot')) return false;
+      return true;
+    });
+  }, [getGroupButtons, canAccess]);
 
   // Sales Reset Warning - global listener
   const {
@@ -172,8 +181,10 @@ export const POSBillingPage: React.FC = () => {
 
   const filteredItems = useMemo(() => {
     const baseProducts = menuItems.filter(item => {
-      const matchesCategory = activeCategory === 'all' || item.category === activeCategory;
-      const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesCategory = !searchQuery || activeCategory === 'all' || item.category === activeCategory;
+      const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                           (item.sku && String(item.sku).toLowerCase().includes(searchQuery.toLowerCase())) ||
+                           (item.barcode && String(item.barcode).toLowerCase().includes(searchQuery.toLowerCase()));
       return matchesCategory && matchesSearch && item.isAvailable;
     });
 
@@ -189,10 +200,9 @@ export const POSBillingPage: React.FC = () => {
     return [othersItem, ...baseProducts];
   }, [menuItems, activeCategory, searchQuery]);
 
-  // Show simplified mobile layout on phones - AFTER all hooks
-  if (isMobile) {
-    return <MobilePOSPage />;
-  }
+
+
+
 
   // Get available tables for dropdown
   const availableTables = tables.filter(t => t.status === 'available' || t.id === selectedTableId);
@@ -320,7 +330,7 @@ export const POSBillingPage: React.FC = () => {
   };
 
   // Complete sale - called when Print/E-Bill or KOT is clicked (counts as sale)
-  const completeSale = async (action: 'print' | 'kot', existingPrintWindow?: Window | null) => {
+  const completeSale = async (action: 'print' | 'kot', overridePayment?: typeof selectedPayment, existingPrintWindow?: Window | null) => {
     if (isProcessingSale) {
       existingPrintWindow?.close();
       return;
@@ -332,26 +342,40 @@ export const POSBillingPage: React.FC = () => {
       return;
     }
     
-    if (!selectedPayment) {
+    const paymentToUse = overridePayment || selectedPayment;
+    if (!paymentToUse) {
       toast({ title: t('common.selectPayment'), description: t('msg.selectPaymentFirst'), variant: 'destructive' });
       existingPrintWindow?.close();
       return;
     }
 
+    if (paymentToUse === 'credit') {
+      if (!customer.name.trim() || !customer.phone.trim()) {
+        toast({
+          title: 'Customer Details Required',
+          description: 'Please add Customer Name and Phone Number for credit (Khata) bills.',
+          variant: 'destructive'
+        });
+        existingPrintWindow?.close();
+        setShowCustomerDetails(true);
+        return;
+      }
+    }
+
     setIsProcessingSale(true);
     try {
-      const order = await directBillPrint(selectedPayment, {
+      const order = await directBillPrint(paymentToUse, {
         name: customer.name,
         phone: customer.phone,
         email: customer.email,
         address: [customer.address, customer.city, customer.state, customer.pincode].filter(Boolean).join(', '),
-      }, selectedPayment === 'part' ? partPaymentDetails : undefined);
+      }, paymentToUse === 'part' ? partPaymentDetails : undefined);
 
       if (order) {
         if (action === 'print') {
           const billContent = generateBillContent({
             ...order,
-            paymentMethod: selectedPayment,
+            paymentMethod: paymentToUse,
             customerName: customer.name,
             customerPhone: customer.phone,
             customerEmail: customer.email,
@@ -457,6 +481,582 @@ export const POSBillingPage: React.FC = () => {
     }
   };
 
+  // Automatically reset highlightedIndex to the first actual product in the list when filter results change
+  useEffect(() => {
+    if (filteredItems.length > 1) {
+      setHighlightedIndex(1); // Default to index 1 (the first real product since index 0 is 'Others')
+    } else if (filteredItems.length > 0) {
+      setHighlightedIndex(0); // Default to 0 if only 'Others' is present
+    } else {
+      setHighlightedIndex(-1);
+    }
+  }, [filteredItems]);
+
+  const getButtonActions = useCallback(() => ({
+    split: () => setShowSplitDialog(true),
+    print: () => {
+      if (cart.length === 0) { toast({ title: t('msg.emptyCart'), description: t('msg.addItemsFirst'), variant: 'destructive' }); return; }
+      if (!selectedPayment) { toast({ title: t('common.selectPayment'), description: t('msg.selectPaymentFirst'), variant: 'destructive' }); return; }
+      preparedPrintWindowRef.current?.close();
+      preparedPrintWindowRef.current = preparePrintWindow();
+      if (!preparedPrintWindowRef.current) return;
+      const printWindow = preparedPrintWindowRef.current;
+      preparedPrintWindowRef.current = null;
+      completeSale('print', selectedPayment || 'cash', printWindow);
+    },
+    kot: () => completeSale('kot'),
+    kotPrint: () => printKOTOnly(),
+    hold: () => handleHoldBill(),
+    discount: () => setShowDiscountDialog(true),
+  }), [cart, selectedPayment, completeSale, printKOTOnly, handleHoldBill, t]);
+
+  // Reset cartHighlightIndex when cart items decrease below the index
+  useEffect(() => {
+    if (cartHighlightIndex >= cart.length) {
+      setCartHighlightIndex(Math.max(0, cart.length - 1));
+    }
+  }, [cart, cartHighlightIndex]);
+
+  // Full Keyboard Billing & Custom Section-based Navigation
+  useEffect(() => {
+    const focusNextDetailedSection = (currentSection: string, forward: boolean) => {
+      const sections = [
+        'app-sidebar',
+        'app-header',
+        'categories-sidebar',
+        'order-type-tabs',
+        'products-search',
+        'products-grid',
+        'cart-header',
+        'table-select',
+        'cart-items',
+        'show-details',
+        'complimentary-paid',
+        'payments',
+        'actions'
+      ];
+      let idx = sections.indexOf(currentSection);
+      if (idx === -1) idx = 0;
+      
+      // Try up to sections.length times to find a focusable section
+      for (let i = 1; i <= sections.length; i++) {
+        const nextIdx = (idx + (forward ? i : -i) + sections.length) % sections.length;
+        const nextSec = sections[nextIdx];
+        
+        // Check if the section is present/visible/valid
+        if (nextSec === 'app-sidebar') {
+          const container = document.querySelector('aside');
+          const firstBtn = container?.querySelector('a, button');
+          if (firstBtn && (firstBtn as HTMLElement).offsetParent !== null) {
+            (firstBtn as HTMLElement).focus();
+            setActiveSection('products');
+            return;
+          }
+        } else if (nextSec === 'app-header') {
+          const header = document.querySelector('header');
+          const firstBtn = header?.querySelector('button');
+          if (firstBtn && firstBtn.offsetParent !== null) {
+            firstBtn.focus();
+            setActiveSection('products');
+            return;
+          }
+        } else if (nextSec === 'categories-sidebar') {
+          const container = document.getElementById('categories-sidebar');
+          const activeBtn = container?.querySelector('.bg-primary') as HTMLElement || container?.querySelector('button');
+          if (activeBtn && activeBtn.offsetParent !== null) {
+            activeBtn.focus();
+            setActiveSection('products');
+            return;
+          }
+        } else if (nextSec === 'order-type-tabs') {
+          const container = document.getElementById('order-type-tabs');
+          const activeBtn = container?.querySelector('.bg-primary') as HTMLElement || container?.querySelector('button');
+          if (activeBtn && activeBtn.offsetParent !== null) {
+            activeBtn.focus();
+            setActiveSection('products');
+            return;
+          }
+        } else if (nextSec === 'products-search') {
+          const el = document.getElementById('search-product-input');
+          if (el && el.offsetParent !== null) {
+            el.focus();
+            setActiveSection('products');
+            return;
+          }
+        } else if (nextSec === 'products-grid') {
+          const items = Array.from(document.querySelectorAll('.menu-item')) as HTMLElement[];
+          const target = items[highlightedIndex] || items[0];
+          if (target && target.offsetParent !== null) {
+            target.focus();
+            setActiveSection('products');
+            return;
+          }
+        } else if (nextSec === 'cart-header') {
+          const container = document.getElementById('cart-header-actions');
+          const firstBtn = container?.querySelector('button');
+          if (firstBtn && firstBtn.offsetParent !== null) {
+            firstBtn.focus();
+            setActiveSection('cart');
+            return;
+          }
+        } else if (nextSec === 'table-select') {
+          const container = document.getElementById('table-select-container');
+          const trigger = container?.querySelector('button');
+          if (trigger && trigger.offsetParent !== null) {
+            trigger.focus();
+            setActiveSection('cart');
+            return;
+          }
+        } else if (nextSec === 'cart-items') {
+          const container = document.getElementById('right-billing-panel');
+          const firstCartBtn = container?.querySelector('.cart-item button');
+          if (firstCartBtn && (firstCartBtn as HTMLElement).offsetParent !== null) {
+            (firstCartBtn as HTMLElement).focus();
+            setActiveSection('cart');
+            return;
+          }
+        } else if (nextSec === 'show-details') {
+          const el = document.getElementById('show-details-btn');
+          if (el && el.offsetParent !== null) {
+            el.focus();
+            setActiveSection('cart');
+            return;
+          }
+        } else if (nextSec === 'complimentary-paid') {
+          const container = document.getElementById('complimentary-paid-container');
+          const firstInput = container?.querySelector('input');
+          if (firstInput && firstInput.offsetParent !== null) {
+            firstInput.focus();
+            setActiveSection('cart');
+            return;
+          }
+        } else if (nextSec === 'payments') {
+          const container = document.getElementById('payments-section');
+          const buttons = Array.from(container?.querySelectorAll('button') || []).filter(b => {
+            const htmlEl = b as HTMLElement;
+            return htmlEl.offsetParent !== null && !htmlEl.hasAttribute('disabled');
+          });
+          const targetBtn = buttons[paymentHighlightIndex] || buttons[0];
+          if (targetBtn) {
+            (targetBtn as HTMLElement).focus();
+            setActiveSection('payments');
+            return;
+          }
+        } else if (nextSec === 'actions') {
+          const container = document.getElementById('actions-section');
+          const buttons = Array.from(container?.querySelectorAll('button') || []).filter(b => {
+            const htmlEl = b as HTMLElement;
+            return htmlEl.offsetParent !== null && !htmlEl.hasAttribute('disabled');
+          });
+          const targetBtn = buttons[actionHighlightIndex] || buttons[0];
+          if (targetBtn) {
+            (targetBtn as HTMLElement).focus();
+            setActiveSection('actions');
+            return;
+          }
+        }
+      }
+    };
+
+    const handleCartArrowNavigation = (direction: 'up' | 'down') => {
+      const container = document.getElementById('right-billing-panel');
+      if (!container) return;
+
+      const focusables = Array.from(container.querySelectorAll('button, input, select, [tabindex="0"]'))
+        .filter(el => {
+          const htmlEl = el as HTMLElement;
+          if (htmlEl.offsetParent === null) return false;
+          if (htmlEl.hasAttribute('disabled')) return false;
+          if (htmlEl.closest('#payments-section') || htmlEl.closest('#actions-section')) return false;
+          return true;
+        }) as HTMLElement[];
+
+      if (focusables.length === 0) return;
+
+      const activeEl = document.activeElement as HTMLElement;
+      let currentIndex = focusables.indexOf(activeEl);
+
+      // If focus is not inside the list, default to first or last depending on direction
+      if (currentIndex === -1) {
+        if (direction === 'down') {
+          focusables[0].focus();
+        } else {
+          focusables[focusables.length - 1].focus();
+        }
+        return;
+      }
+
+      let nextIndex = direction === 'down' ? currentIndex + 1 : currentIndex - 1;
+      // Circular wrap-around
+      if (nextIndex >= focusables.length) {
+        nextIndex = 0;
+      } else if (nextIndex < 0) {
+         nextIndex = focusables.length - 1;
+      }
+
+      focusables[nextIndex].focus();
+    };
+
+    const handlePaymentsArrowNavigation = (direction: 'next' | 'prev') => {
+      const container = document.getElementById('payments-section');
+      if (!container) return;
+
+      const buttons = Array.from(container.querySelectorAll('button')).filter(b => !b.hasAttribute('disabled')) as HTMLElement[];
+      if (buttons.length === 0) return;
+
+      const activeEl = document.activeElement as HTMLElement;
+      let currentIndex = buttons.indexOf(activeEl);
+
+      if (currentIndex === -1) {
+        buttons[0].focus();
+        return;
+      }
+
+      let nextIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1;
+      if (nextIndex >= buttons.length) {
+        nextIndex = 0;
+      } else if (nextIndex < 0) {
+        nextIndex = buttons.length - 1;
+      }
+
+      buttons[nextIndex].focus();
+    };
+
+    const handleActionsArrowNavigation = (direction: 'next' | 'prev') => {
+      const container = document.getElementById('actions-section');
+      if (!container) return;
+
+      const buttons = Array.from(container.querySelectorAll('button')).filter(b => !b.hasAttribute('disabled')) as HTMLElement[];
+      if (buttons.length === 0) return;
+
+      const activeEl = document.activeElement as HTMLElement;
+      let currentIndex = buttons.indexOf(activeEl);
+
+      if (currentIndex === -1) {
+        buttons[0].focus();
+        return;
+      }
+
+      let nextIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1;
+      if (nextIndex >= buttons.length) {
+        nextIndex = 0;
+      } else if (nextIndex < 0) {
+        nextIndex = buttons.length - 1;
+      }
+
+      buttons[nextIndex].focus();
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement as HTMLElement;
+      const isInput = activeEl && (
+        activeEl.tagName === 'INPUT' ||
+        activeEl.tagName === 'TEXTAREA' ||
+        activeEl.getAttribute('contenteditable') === 'true'
+      );
+      
+      const isSearchInput = activeEl && (
+        activeEl.id === 'search-product-input' ||
+        activeEl.getAttribute('placeholder') === 'Search Product...'
+      );
+
+      // 1. Handle Tab / Shift+Tab globally (cycles detailed sections)
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        
+        let currentSection = 'products-search';
+        if (activeEl) {
+          if (activeEl.closest('aside')) {
+            currentSection = 'app-sidebar';
+          } else if (activeEl.closest('header')) {
+            currentSection = 'app-header';
+          } else if (activeEl.closest('#categories-sidebar')) {
+            currentSection = 'categories-sidebar';
+          } else if (activeEl.closest('#order-type-tabs')) {
+            currentSection = 'order-type-tabs';
+          } else if (activeEl.id === 'search-product-input') {
+            currentSection = 'products-search';
+          } else if (activeEl.closest('.menu-item')) {
+            currentSection = 'products-grid';
+          } else if (activeEl.closest('#cart-header-actions')) {
+            currentSection = 'cart-header';
+          } else if (activeEl.closest('#table-select-container') || activeEl.id === 'table-select-container') {
+            currentSection = 'table-select';
+          } else if (activeEl.closest('.cart-item')) {
+            currentSection = 'cart-items';
+          } else if (activeEl.id === 'show-details-btn') {
+            currentSection = 'show-details';
+          } else if (activeEl.closest('#complimentary-paid-container') || activeEl.id === 'complimentary-paid-container') {
+            currentSection = 'complimentary-paid';
+          } else if (activeEl.closest('#payments-section')) {
+            currentSection = 'payments';
+          } else if (activeEl.closest('#actions-section')) {
+            currentSection = 'actions';
+          } else if (activeEl.closest('#right-billing-panel')) {
+            currentSection = 'cart-items';
+          }
+        }
+        
+        focusNextDetailedSection(currentSection, !e.shiftKey);
+        return;
+      }
+      
+      // If typing in other input elements (e.g. table number, customer details, discount), ignore other keyboard shortcuts
+      if (isInput && !isSearchInput) {
+        return;
+      }
+
+      // If F-key, prevent default browser actions
+      if (e.key.startsWith('F')) {
+        e.preventDefault();
+      }
+
+      // 2. Arrow Key Grid/List Navigation based on activeSection
+      if (activeSection === 'products') {
+        const isMenuOrSearch = activeEl && (
+          activeEl.id === 'search-product-input' ||
+          activeEl.closest('.menu-item') ||
+          activeEl.getAttribute('placeholder') === 'Search Product...'
+        );
+        if (isMenuOrSearch) {
+          const cols = uiConfig.layout.menuGridCols || 4;
+          if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            setHighlightedIndex(prev => Math.min(filteredItems.length - 1, prev + 1));
+          } else if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            setHighlightedIndex(prev => Math.max(0, prev - 1));
+          } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setHighlightedIndex(prev => Math.min(filteredItems.length - 1, prev + cols));
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setHighlightedIndex(prev => Math.max(0, prev - cols));
+          }
+        }
+      } else if (activeSection === 'cart') {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+          e.preventDefault();
+          handleCartArrowNavigation('down');
+        } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+          e.preventDefault();
+          handleCartArrowNavigation('up');
+        }
+      } else if (activeSection === 'payments') {
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+          e.preventDefault();
+          handlePaymentsArrowNavigation('next');
+        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          handlePaymentsArrowNavigation('prev');
+        }
+      } else if (activeSection === 'actions') {
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+          e.preventDefault();
+          handleActionsArrowNavigation('next');
+        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          handleActionsArrowNavigation('prev');
+        }
+      }
+
+      // 3. Enter Selection based on activeSection
+      if (e.key === 'Enter') {
+        // If focusing a button, checkbox, select or link (except search input), let default click happen
+        if (activeEl && activeEl !== document.body && activeEl.id !== 'search-product-input') {
+          const tagName = activeEl.tagName;
+          const typeAttr = activeEl.getAttribute('type');
+          if (tagName === 'BUTTON' || tagName === 'SELECT' || tagName === 'A' || typeAttr === 'checkbox' || typeAttr === 'radio') {
+            return;
+          }
+        }
+        e.preventDefault();
+        if (activeSection === 'products' || isSearchInput) {
+          let selectedItem = null;
+          // Check for exact SKU or barcode match first (case-insensitive, trimmed)
+          const exactSkuMatch = menuItems.find(item => 
+            (item.sku && item.sku.toLowerCase() === searchQuery.toLowerCase().trim()) ||
+            (item.barcode && item.barcode.toLowerCase() === searchQuery.toLowerCase().trim())
+          );
+          if (exactSkuMatch) {
+            selectedItem = exactSkuMatch;
+          } else if (highlightedIndex >= 0 && highlightedIndex < filteredItems.length) {
+            selectedItem = filteredItems[highlightedIndex];
+          }
+          if (selectedItem) {
+            handleItemClick(selectedItem);
+            setSearchQuery('');
+            // Ensure focus stays in the search box
+            const searchInput = document.querySelector('input[placeholder="Search Product..."]') as HTMLInputElement;
+            if (searchInput) {
+              setTimeout(() => searchInput.focus(), 10);
+            }
+          }
+        } else if (activeSection === 'payments') {
+          if (showMorePayments) {
+            const sheetOptions: ('cash' | 'upi' | 'card' | 'due' | 'part' | 'wallet' | 'credit')[] = ['cash', 'upi', 'card', 'due', 'part', 'wallet', 'credit'];
+            const selectedOpt = sheetOptions[sheetPaymentHighlightIndex];
+            if (selectedOpt === 'part') {
+              setShowMorePayments(false);
+              setShowPartPaymentDialog(true);
+            } else {
+              handlePaymentSelect(selectedOpt);
+              setShowMorePayments(false);
+            }
+          } else {
+            if (paymentHighlightIndex === 0) handlePaymentSelect('cash');
+            else if (paymentHighlightIndex === 1) handlePaymentSelect('card');
+            else if (paymentHighlightIndex === 2) handlePaymentSelect('upi');
+            else if (paymentHighlightIndex === 3) {
+              setShowMorePayments(true);
+              setSheetPaymentHighlightIndex(0);
+            }
+          }
+        } else if (activeSection === 'actions') {
+          const btn = actionButtons[actionHighlightIndex];
+          if (btn) {
+            const buttonActions = getButtonActions();
+            if (buttonActions[btn.id]) {
+              buttonActions[btn.id]();
+            }
+          }
+        }
+        return;
+      }
+
+      // 4. Escape to clear/close
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setSearchQuery('');
+        setShowMorePayments(false);
+        return;
+      }
+
+      // 5. Quantity / Item adjustments (+, -, Delete, Backspace)
+      const targetCartItem = activeSection === 'cart' && cart.length > 0 
+        ? cart[cartHighlightIndex] 
+        : (cart.length > 0 ? cart[cart.length - 1] : null);
+
+      if (targetCartItem) {
+        if (e.key === '+' || e.key === '=') {
+          e.preventDefault();
+          updateCartQuantity(targetCartItem.id, targetCartItem.quantity + 1);
+        } else if (e.key === '-') {
+          e.preventDefault();
+          if (targetCartItem.quantity > 1) {
+            updateCartQuantity(targetCartItem.id, targetCartItem.quantity - 1);
+          } else {
+            removeFromCart(targetCartItem.id);
+            if (activeSection === 'cart') {
+              setCartHighlightIndex(prev => Math.max(0, prev - 1));
+            }
+          }
+        } else if (e.key === 'Delete' || (e.key === 'Backspace' && !isInput)) {
+          e.preventDefault();
+          removeFromCart(targetCartItem.id);
+          if (activeSection === 'cart') {
+            setCartHighlightIndex(prev => Math.max(0, prev - 1));
+          }
+        }
+      }
+
+      // 6. Keep F-keys shortcuts for power users (but remove Alt payment method shortcuts)
+      if (e.key === 'F1') {
+        if (cart.length > 0) completeSale('print', 'cash');
+      } else if (e.key === 'F2') {
+        if (cart.length > 0) completeSale('print', selectedPayment || 'cash');
+      } else if (e.key === 'F3') {
+        if (cart.length > 0) printKOTOnly();
+      } else if (e.key === 'F6') {
+        if (cart.length > 0) completeSale('kot', selectedPayment || 'cash');
+      } else if (e.key === 'F9') {
+        setCurrentOrderType('delivery');
+      } else if (e.key === 'F11') {
+        setCurrentOrderType('dine-in');
+      } else if (e.key === 'F12') {
+        setCurrentOrderType('takeaway');
+      }
+    };
+
+    const handleFocusIn = (e: FocusEvent) => {
+      const activeEl = e.target as HTMLElement;
+      if (!activeEl) return;
+
+      if (activeEl.id === 'search-product-input' || activeEl.closest('.menu-item')) {
+        setActiveSection('products');
+        if (activeEl.closest('.menu-item')) {
+          const menuItemsList = Array.from(document.querySelectorAll('.menu-item'));
+          const index = menuItemsList.indexOf(activeEl.closest('.menu-item')!);
+          if (index !== -1) {
+            setHighlightedIndex(index);
+          }
+        }
+      } else if (activeEl.closest('#payments-section')) {
+        setActiveSection('payments');
+        const paymentBtns = Array.from(document.querySelectorAll('#payments-section button'));
+        const index = paymentBtns.indexOf(activeEl);
+        if (index !== -1) {
+          setPaymentHighlightIndex(index);
+        }
+      } else if (activeEl.closest('#actions-section')) {
+        setActiveSection('actions');
+        const actionBtns = Array.from(document.querySelectorAll('#actions-section button'));
+        const index = actionBtns.indexOf(activeEl);
+        if (index !== -1) {
+          setActionHighlightIndex(index);
+        }
+      } else if (activeEl.closest('#right-billing-panel')) {
+        setActiveSection('cart');
+        const cartItemEl = activeEl.closest('.cart-item') as HTMLElement;
+        if (cartItemEl && cartItemEl.dataset.cartIndex !== undefined) {
+          setCartHighlightIndex(Number(cartItemEl.dataset.cartIndex));
+        }
+      } else if (activeEl.closest('#categories-sidebar') || activeEl.closest('#order-type-tabs') || activeEl.closest('header') || activeEl.closest('aside')) {
+        setActiveSection('products');
+      } else if (activeEl.id === 'show-details-btn' || activeEl.closest('#complimentary-paid-container') || activeEl.closest('#table-select-container') || activeEl.closest('#cart-header-actions')) {
+        setActiveSection('cart');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('focusin', handleFocusIn);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('focusin', handleFocusIn);
+    };
+  }, [
+    filteredItems,
+    highlightedIndex,
+    cart,
+    cartHighlightIndex,
+    paymentHighlightIndex,
+    actionHighlightIndex,
+    sheetPaymentHighlightIndex,
+    selectedPayment,
+    currentOrderType,
+    uiConfig.layout.menuGridCols,
+    completeSale,
+    updateCartQuantity,
+    removeFromCart,
+    setCurrentOrderType,
+    setSelectedPayment,
+    handleHoldBill,
+    t,
+    setShowPartPaymentDialog,
+    activeSection,
+    showMorePayments,
+    menuItems,
+    searchQuery,
+    actionButtons,
+    getButtonActions,
+    printKOTOnly
+  ]);
+
+  // Show simplified mobile layout on phones - AFTER all hooks
+  if (isMobile) {
+    return <MobilePOSPage />;
+  }
+
   return (
     <>
     {/* Edit Mode Toolbar */}
@@ -554,7 +1154,7 @@ export const POSBillingPage: React.FC = () => {
 
     <div className={cn("h-[calc(100vh-56px)] flex overflow-hidden", editMode.isEditMode && "mt-[88px] h-[calc(100vh-56px-88px)]")}>
       {/* Left Panel - Categories (Vertical) */}
-      <div className="w-24 bg-card border-r border-border flex flex-col overflow-hidden">
+      <div id="categories-sidebar" className="w-24 bg-card border-r border-border flex flex-col overflow-hidden">
         <div className="p-2 flex-1 overflow-y-auto no-scrollbar">
           <button
             onClick={() => setActiveCategory('all')}
@@ -586,11 +1186,11 @@ export const POSBillingPage: React.FC = () => {
       </div>
 
       {/* Center Panel - Menu Items */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className={cn("flex-1 flex flex-col overflow-hidden transition-all duration-200", activeSection === 'products' && "ring-2 ring-primary ring-inset bg-primary/[0.005]")}>
         {/* Order Type & Search */}
         <div className="p-3 bg-card border-b border-border space-y-3">
           {/* Order Type Tabs */}
-          <div className="flex gap-2">
+          <div id="order-type-tabs" className="flex gap-2">
             {orderTypes.map(type => (
               <button
                 key={type.id}
@@ -618,9 +1218,11 @@ export const POSBillingPage: React.FC = () => {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
+                id="search-product-input"
                 placeholder="Search Product..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                onFocus={() => setActiveSection('products')}
                 className="pl-10 h-10"
               />
             </div>
@@ -639,15 +1241,20 @@ export const POSBillingPage: React.FC = () => {
               gridTemplateColumns: `repeat(${uiConfig.layout.menuGridCols}, minmax(0, 1fr))`,
             }}
           >
-            {filteredItems.map(item => (
+            {filteredItems.map((item, idx) => (
               <button
                 key={item.id}
-                onClick={() => handleItemClick(item)}
+                onClick={() => {
+                  setHighlightedIndex(idx);
+                  handleItemClick(item);
+                }}
                 className={cn(
-                  'menu-item text-left relative rounded-lg bg-card overflow-hidden ring-1 ring-border',
-                  item.id.startsWith('others-')
-                    ? 'ring-2 ring-dashed ring-primary/30 hover:ring-primary p-3'
-                    : 'text-foreground shadow-sm hover:ring-primary hover:shadow-md'
+                  'menu-item text-left relative rounded-lg bg-card overflow-hidden ring-1 ring-border transition-all duration-150',
+                  idx === highlightedIndex
+                    ? 'ring-4 ring-primary border-primary bg-primary/5 scale-[1.02] shadow-md z-10'
+                    : item.id.startsWith('others-')
+                      ? 'ring-2 ring-dashed ring-primary/30 hover:ring-primary p-3'
+                      : 'text-foreground shadow-sm hover:ring-primary hover:shadow-md'
                 )}
               >
                 {item.id.startsWith('others-') ? (
@@ -702,13 +1309,13 @@ export const POSBillingPage: React.FC = () => {
       </div>
 
       {/* Right Panel - Cart & Billing */}
-      <div className="w-[600px] flex-shrink-0 overflow-hidden border-l border-border bg-card flex flex-col">
+      <div id="right-billing-panel" className="w-[600px] flex-shrink-0 overflow-hidden border-l border-border bg-card flex flex-col">
         {/* Cart Header with Table Select */}
         <div className="p-2 border-b border-border space-y-2">
           <div className="flex items-center justify-between gap-1">
             <h2 className="font-semibold text-sm whitespace-nowrap">{t('common.currentOrder')}</h2>
             <TooltipProvider delayDuration={300}>
-               <div className="flex items-center gap-1 flex-nowrap">
+               <div id="cart-header-actions" className="flex items-center gap-1 flex-nowrap">
                 {isButtonVisible('customer') && (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -799,7 +1406,7 @@ export const POSBillingPage: React.FC = () => {
 
           {/* Table Selection */}
           {canAccess('tableManagement') && currentOrderType === 'dine-in' && (
-            <div className="flex items-center gap-2">
+            <div id="table-select-container" className="flex items-center gap-2">
               <MapPin className="w-4 h-4 text-muted-foreground" />
               <Select value={selectedTableId || ''} onValueChange={handleTableChange}>
                 <SelectTrigger className="flex-1 h-9">
@@ -853,17 +1460,23 @@ export const POSBillingPage: React.FC = () => {
         )}
 
         {/* Cart Items */}
-        <div className="flex-1 min-h-[100px] overflow-y-auto p-3 space-y-2">
+        <div className={cn("flex-1 min-h-[100px] overflow-y-auto p-3 space-y-2 transition-all duration-200", activeSection === 'cart' && "ring-2 ring-primary ring-inset bg-primary/[0.005]")}>
           {cart.length === 0 ? (
             <div className="flex min-h-[220px] items-center justify-center text-center text-muted-foreground text-sm">
               {t('pos.emptyCart')}
             </div>
           ) : (
-            cart.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center gap-2 rounded-lg border border-border bg-card p-2 text-foreground"
-              >
+            cart.map((item, index) => {
+              const isHighlighted = activeSection === 'cart' && cartHighlightIndex === index;
+              return (
+                <div
+                  key={item.id}
+                  data-cart-index={index}
+                  className={cn(
+                    "cart-item flex items-center gap-2 rounded-lg border bg-card p-2 text-foreground transition-all duration-200",
+                    isHighlighted ? "border-primary ring-2 ring-primary/40 bg-primary/5 scale-[1.01]" : "border-border"
+                  )}
+                >
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-xs leading-tight break-words text-foreground">{item.name}</p>
                   <p className="text-[11px] text-muted-foreground">
@@ -892,7 +1505,8 @@ export const POSBillingPage: React.FC = () => {
                   </button>
                 </div>
               </div>
-            ))
+              );
+            })
           )}
         </div>
 
@@ -901,6 +1515,7 @@ export const POSBillingPage: React.FC = () => {
         <div>
           {/* Toggle Button */}
           <button
+            id="show-details-btn"
             onClick={() => setShowBillingSummary(!showBillingSummary)}
             className="w-full p-2 flex items-center justify-center gap-2 text-sm text-muted-foreground hover:bg-muted transition-colors"
           >
@@ -1008,9 +1623,8 @@ export const POSBillingPage: React.FC = () => {
 
           {/* Complimentary & Total */}
           <div className="space-y-2 border-t border-border p-2">
-            {/* Complimentary & Paid Toggle */}
             <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
+              <div id="complimentary-paid-container" className="flex items-center gap-4">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input 
                     type="checkbox" 
@@ -1062,17 +1676,18 @@ export const POSBillingPage: React.FC = () => {
           </div>
 
           {/* Payment Methods */}
-          <div className="border-t border-border p-2">
+          <div id="payments-section" className={cn("border-t border-border p-2 transition-all duration-200", activeSection === 'payments' && "ring-2 ring-primary ring-inset bg-primary/[0.005]")}>
             <p className="text-xs text-muted-foreground mb-2">{t('common.selectPayment').toUpperCase()}</p>
             <div className="grid grid-cols-4 gap-2">
               <button
                 onClick={() => handlePaymentSelect('cash')}
                 disabled={cart.length === 0}
                 className={cn(
-                  'h-11 rounded-xl flex items-center justify-center gap-2 border shadow-sm transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] text-xs md:text-sm font-semibold',
+                  'h-11 rounded-xl flex items-center justify-center gap-2 border shadow-sm transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] text-xs md:text-sm font-semibold border-border',
                   selectedPayment === 'cash' 
                     ? 'border-primary bg-primary/10 text-primary' 
-                    : 'border-border hover:border-primary/50',
+                    : 'hover:border-primary/50',
+                  activeSection === 'payments' && paymentHighlightIndex === 0 && 'ring-2 ring-primary ring-offset-1 border-primary scale-[1.02]',
                   cart.length === 0 && 'opacity-50 cursor-not-allowed'
                 )}
               >
@@ -1083,10 +1698,11 @@ export const POSBillingPage: React.FC = () => {
                 onClick={() => handlePaymentSelect('card')}
                 disabled={cart.length === 0}
                 className={cn(
-                  'h-11 rounded-xl flex items-center justify-center gap-2 border shadow-sm transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] text-xs md:text-sm font-semibold',
+                  'h-11 rounded-xl flex items-center justify-center gap-2 border shadow-sm transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] text-xs md:text-sm font-semibold border-border',
                   selectedPayment === 'card' 
                     ? 'border-primary bg-primary/10 text-primary' 
-                    : 'border-border hover:border-primary/50',
+                    : 'hover:border-primary/50',
+                  activeSection === 'payments' && paymentHighlightIndex === 1 && 'ring-2 ring-primary ring-offset-1 border-primary scale-[1.02]',
                   cart.length === 0 && 'opacity-50 cursor-not-allowed'
                 )}
               >
@@ -1097,10 +1713,11 @@ export const POSBillingPage: React.FC = () => {
                 onClick={() => handlePaymentSelect('upi')}
                 disabled={cart.length === 0}
                 className={cn(
-                  'h-11 rounded-xl flex items-center justify-center gap-2 border shadow-sm transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] text-xs md:text-sm font-semibold',
+                  'h-11 rounded-xl flex items-center justify-center gap-2 border shadow-sm transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] text-xs md:text-sm font-semibold border-border',
                   selectedPayment === 'upi' 
                     ? 'border-primary bg-primary/10 text-primary' 
-                    : 'border-border hover:border-primary/50',
+                    : 'hover:border-primary/50',
+                  activeSection === 'payments' && paymentHighlightIndex === 2 && 'ring-2 ring-primary ring-offset-1 border-primary scale-[1.02]',
                   cart.length === 0 && 'opacity-50 cursor-not-allowed'
                 )}
               >
@@ -1111,10 +1728,11 @@ export const POSBillingPage: React.FC = () => {
                 onClick={() => setShowMorePayments(true)}
                 disabled={cart.length === 0}
                 className={cn(
-                  'h-11 rounded-xl flex items-center justify-center gap-2 border shadow-sm transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] text-xs md:text-sm font-semibold',
+                  'h-11 rounded-xl flex items-center justify-center gap-2 border shadow-sm transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] text-xs md:text-sm font-semibold border-border',
                   ['due', 'part', 'wallet', 'credit'].includes(selectedPayment || '')
                     ? 'border-primary bg-primary/10 text-primary' 
-                    : 'border-border hover:border-primary/50',
+                    : 'hover:border-primary/50',
+                  activeSection === 'payments' && paymentHighlightIndex === 3 && 'ring-2 ring-primary ring-offset-1 border-primary scale-[1.02]',
                   cart.length === 0 && 'opacity-50 cursor-not-allowed'
                 )}
               >
@@ -1125,25 +1743,16 @@ export const POSBillingPage: React.FC = () => {
           </div>
 
           {/* Action Buttons - Drag & Drop in Edit Mode */}
-          <div className={cn("border-t border-border p-2.5", editMode.isEditMode && "ring-2 ring-primary/30 ring-inset bg-primary/5 relative")}>
+          <div id="actions-section" className={cn("border-t border-border p-2.5", editMode.isEditMode && "ring-2 ring-primary/30 ring-inset bg-primary/5 relative")}>
             {editMode.isEditMode && (
               <div className="text-[10px] font-bold uppercase tracking-wider text-primary mb-1.5">⚡ Action Buttons — Drag to reorder</div>
             )}
             <DraggableButtonGrid
-              buttons={getGroupButtons('cart_actions').filter(btn => {
-                if (['discount', 'customer', 'qrMenu', 'qrOrders', 'heldBills'].includes(btn.id)) return false;
-                if ((btn.id === 'kot' || btn.id === 'kotPrint') && !canAccess('kot')) return false;
-                return true;
-              })}
+              buttons={actionButtons}
               isEditMode={editMode.isEditMode}
               onReorder={(from, to) => {
-                const visibleButtons = getGroupButtons('cart_actions').filter(btn => {
-                  if (['discount', 'customer', 'qrMenu', 'qrOrders', 'heldBills'].includes(btn.id)) return false;
-                  if ((btn.id === 'kot' || btn.id === 'kotPrint') && !canAccess('kot')) return false;
-                  return true;
-                });
-                const fromBtn = visibleButtons[from];
-                const toBtn = visibleButtons[to];
+                const fromBtn = actionButtons[from];
+                const toBtn = actionButtons[to];
                 const allCartButtons = getGroupButtons('cart_actions');
                 const fromIndex = allCartButtons.findIndex(b => b.id === fromBtn.id);
                 const toIndex = allCartButtons.findIndex(b => b.id === toBtn.id);
@@ -1156,7 +1765,7 @@ export const POSBillingPage: React.FC = () => {
                 toggleButton(id);
                 editMode.markChanged();
               }}
-              renderButton={(btn) => {
+              renderButton={(btn, idx) => {
                 const buttonActions: Record<string, () => void> = {
                   split: () => setShowSplitDialog(true),
                   print: () => {
@@ -1167,7 +1776,7 @@ export const POSBillingPage: React.FC = () => {
                     if (!preparedPrintWindowRef.current) return;
                     const printWindow = preparedPrintWindowRef.current;
                     preparedPrintWindowRef.current = null;
-                    completeSale('print', printWindow);
+                    completeSale('print', selectedPayment || 'cash', printWindow);
                   },
                   kot: () => completeSale('kot'),
                   kotPrint: () => printKOTOnly(),
@@ -1183,13 +1792,17 @@ export const POSBillingPage: React.FC = () => {
                   discount: <Percent className="w-4 h-4" />,
                 };
                 const isActionBtn = ['print', 'kot', 'kotPrint'].includes(btn.id);
+                const isHighlighted = activeSection === 'actions' && actionHighlightIndex === idx;
                 return (
                   <Button
                     variant={isActionBtn && selectedPayment ? "default" : "outline"}
                     size="default"
                     onClick={buttonActions[btn.id] || (() => {})}
                     disabled={cart.length === 0 || isProcessingSale}
-                    className="h-11 w-full gap-2 px-3 text-xs md:text-sm font-semibold shadow-sm transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] rounded-xl"
+                    className={cn(
+                      "h-11 w-full gap-2 px-3 text-xs md:text-sm font-semibold shadow-sm transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] rounded-xl border border-border",
+                      isHighlighted && "ring-2 ring-primary ring-offset-1 border-primary scale-[1.02]"
+                    )}
                   >
                     {iconMap[btn.id]}
                     {btn.label}
@@ -1244,7 +1857,7 @@ export const POSBillingPage: React.FC = () => {
           <SheetHeader className="pb-4">
             <SheetTitle>{t('common.paymentOptions')}</SheetTitle>
           </SheetHeader>
-          <div className="grid grid-cols-3 gap-3 pb-4">
+          <div className="grid grid-cols-4 gap-3 pb-4">
             {/* Cash */}
             <button
               onClick={() => {
@@ -1255,7 +1868,8 @@ export const POSBillingPage: React.FC = () => {
                 'h-16 rounded-lg flex flex-col items-center justify-center gap-1 border-2 transition-all',
                 selectedPayment === 'cash' 
                   ? 'border-primary bg-primary/10 text-primary' 
-                  : 'border-border hover:border-primary/50'
+                  : 'border-border hover:border-primary/50',
+                activeSection === 'payments' && showMorePayments && sheetPaymentHighlightIndex === 0 && 'ring-2 ring-primary ring-offset-1 border-primary scale-[1.02]'
               )}
             >
               <Banknote className="w-5 h-5" />
@@ -1272,7 +1886,8 @@ export const POSBillingPage: React.FC = () => {
                 'h-16 rounded-lg flex flex-col items-center justify-center gap-1 border-2 transition-all',
                 selectedPayment === 'upi' 
                   ? 'border-primary bg-primary/10 text-primary' 
-                  : 'border-border hover:border-primary/50'
+                  : 'border-border hover:border-primary/50',
+                activeSection === 'payments' && showMorePayments && sheetPaymentHighlightIndex === 1 && 'ring-2 ring-primary ring-offset-1 border-primary scale-[1.02]'
               )}
             >
               <Smartphone className="w-5 h-5" />
@@ -1289,7 +1904,8 @@ export const POSBillingPage: React.FC = () => {
                 'h-16 rounded-lg flex flex-col items-center justify-center gap-1 border-2 transition-all',
                 selectedPayment === 'card' 
                   ? 'border-primary bg-primary/10 text-primary' 
-                  : 'border-border hover:border-primary/50'
+                  : 'border-border hover:border-primary/50',
+                activeSection === 'payments' && showMorePayments && sheetPaymentHighlightIndex === 2 && 'ring-2 ring-primary ring-offset-1 border-primary scale-[1.02]'
               )}
             >
               <CreditCard className="w-5 h-5" />
@@ -1306,7 +1922,8 @@ export const POSBillingPage: React.FC = () => {
                 'h-16 rounded-lg flex flex-col items-center justify-center gap-1 border-2 transition-all',
                 selectedPayment === 'due' 
                   ? 'border-primary bg-primary/10 text-primary' 
-                  : 'border-border hover:border-primary/50'
+                  : 'border-border hover:border-primary/50',
+                activeSection === 'payments' && showMorePayments && sheetPaymentHighlightIndex === 3 && 'ring-2 ring-primary ring-offset-1 border-primary scale-[1.02]'
               )}
             >
               <Clock className="w-5 h-5" />
@@ -1323,11 +1940,48 @@ export const POSBillingPage: React.FC = () => {
                 'h-16 rounded-lg flex flex-col items-center justify-center gap-1 border-2 transition-all',
                 selectedPayment === 'part' 
                   ? 'border-primary bg-primary/10 text-primary' 
-                  : 'border-border hover:border-primary/50'
+                  : 'border-border hover:border-primary/50',
+                activeSection === 'payments' && showMorePayments && sheetPaymentHighlightIndex === 4 && 'ring-2 ring-primary ring-offset-1 border-primary scale-[1.02]'
               )}
             >
               <SplitSquareHorizontal className="w-5 h-5" />
               <span className="text-sm font-medium">{t('common.partPayment')}</span>
+            </button>
+
+            {/* Wallet */}
+            <button
+              onClick={() => {
+                handlePaymentSelect('wallet');
+                setShowMorePayments(false);
+              }}
+              className={cn(
+                'h-16 rounded-lg flex flex-col items-center justify-center gap-1 border-2 transition-all',
+                selectedPayment === 'wallet' 
+                  ? 'border-primary bg-primary/10 text-primary' 
+                  : 'border-border hover:border-primary/50',
+                activeSection === 'payments' && showMorePayments && sheetPaymentHighlightIndex === 5 && 'ring-2 ring-primary ring-offset-1 border-primary scale-[1.02]'
+              )}
+            >
+              <Wallet className="w-5 h-5 text-blue-500" />
+              <span className="text-sm font-medium">{t('common.wallet')}</span>
+            </button>
+            
+            {/* Credit */}
+            <button
+              onClick={() => {
+                handlePaymentSelect('credit');
+                setShowMorePayments(false);
+              }}
+              className={cn(
+                'h-16 rounded-lg flex flex-col items-center justify-center gap-1 border-2 transition-all',
+                selectedPayment === 'credit' 
+                  ? 'border-primary bg-primary/10 text-primary' 
+                  : 'border-border hover:border-primary/50',
+                activeSection === 'payments' && showMorePayments && sheetPaymentHighlightIndex === 6 && 'ring-2 ring-primary ring-offset-1 border-primary scale-[1.02]'
+              )}
+            >
+              <Receipt className="w-5 h-5 text-amber-500" />
+              <span className="text-sm font-medium">{t('common.credit')}</span>
             </button>
           </div>
         </SheetContent>

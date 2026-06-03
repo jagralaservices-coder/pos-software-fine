@@ -15,6 +15,10 @@ export const useKeyboardShortcuts = () => {
   const location = useLocation();
 
   const handleShortcut = useCallback((e: KeyboardEvent) => {
+    if (location.pathname === '/pos') {
+      return;
+    }
+
     const shortcuts: ShortcutAction[] = [
       // F-key shortcuts
       { key: 'F1', description: 'Save Order', action: () => toast.info('Save Order triggered') },

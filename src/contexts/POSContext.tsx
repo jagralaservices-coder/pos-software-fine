@@ -69,6 +69,10 @@ interface POSContextType {
   cartTotal: number;
   discount: number;
   setDiscount: (amount: number) => void;
+  taxPercent: number;
+  setTaxPercent: (percent: number) => void;
+  customTax: number | null;
+  setCustomTax: (amount: number | null) => void;
 
   // Orders
   orders: Order[];
@@ -686,9 +690,20 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }, [activeStoreId, isStoreLogin, fetchMenuItems, initializeStoreSession]);
 
+  const [taxPercent, setTaxPercentState] = useState(() => {
+    const saved = localStorage.getItem('pos_tax_percent');
+    return saved ? Number(saved) : 5;
+  });
+  const [customTax, setCustomTax] = useState<number | null>(null);
+
+  const setTaxPercent = (percent: number) => {
+    setTaxPercentState(percent);
+    localStorage.setItem('pos_tax_percent', String(percent));
+  };
+
   // Cart calculations
   const cartSubtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const cartTax = Math.round(cartSubtotal * 0.05); // 5% GST
+  const cartTax = customTax !== null ? customTax : Math.round(cartSubtotal * taxPercent / 100);
   const cartTotal = cartSubtotal + cartTax - discount;
 
   // Today's stats - only count orders with billPrinted = true (actual sales)
@@ -797,7 +812,11 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         sku: item.sku || undefined,
       }));
       
-      setMenuItemsState(prev => [...prev, ...newItems]);
+      setMenuItemsState(prev => {
+        const updated = [...prev, ...newItems];
+        setMenuItems(updated);
+        return updated;
+      });
       toast.success(`${newItems.length} item(s) added`);
     } else {
       const dbItems = items.map(item => ({
@@ -839,7 +858,11 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         gramagePerUnit: item.gramage_per_unit ? Number(item.gramage_per_unit) : undefined,
       }));
       
-      setMenuItemsState(prev => [...prev, ...newItems]);
+      setMenuItemsState(prev => {
+        const updated = [...prev, ...newItems];
+        setMenuItems(updated);
+        return updated;
+      });
       toast.success(`${newItems.length} item(s) added`);
     }
   };
@@ -911,7 +934,11 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }
 
-    setMenuItemsState(prev => prev.filter(item => item.id !== id));
+    setMenuItemsState(prev => {
+      const updated = prev.filter(item => item.id !== id);
+      setMenuItems(updated);
+      return updated;
+    });
     toast.success('Item deleted');
   };
 
@@ -987,9 +1014,13 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }
 
-    setMenuItemsState(prev => prev.map(item => 
-      item.id === id ? { ...item, ...updates } : item
-    ));
+    setMenuItemsState(prev => {
+      const updated = prev.map(item => 
+        item.id === id ? { ...item, ...updates } : item
+      );
+      setMenuItems(updated);
+      return updated;
+    });
   };
 
   // Sync categories based on menu items - ONLY show categories from menu
@@ -1602,6 +1633,15 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   ): Promise<Order | null> => {
     if (cart.length === 0) return null;
 
+    if (paymentMethod === 'credit') {
+      if (!customerInfo?.name?.trim() || !customerInfo?.phone?.trim()) {
+        toast.error('Customer details required!', {
+          description: 'Please add Customer Name and Phone Number for credit (Khata) bills.'
+        });
+        return null;
+      }
+    }
+
     const billNumber = await generateBillNumberFromDB();
     
     // Build payment breakdown object for storage
@@ -2097,6 +2137,10 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         cartTotal,
         discount,
         setDiscount,
+        taxPercent,
+        setTaxPercent,
+        customTax,
+        setCustomTax,
         orders,
         recentBills,
         currentOrderType,

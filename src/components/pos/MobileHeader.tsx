@@ -23,7 +23,8 @@ import {
   Truck,
   Calculator,
   Sun,
-  Moon
+  Moon,
+  QrCode
 } from 'lucide-react';
 import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
 import { usePOS, usePOSSafe } from '@/contexts/POSContext';
@@ -84,7 +85,8 @@ export const MobileHeader: React.FC = () => {
     { path: '/kitchen', icon: ChefHat, labelKey: 'nav.kitchen', roles: ['admin', 'owner', 'store_manager'], featureKey: 'dineIn' },
     { path: '/inventory', icon: Package, labelKey: 'nav.inventory', roles: ['admin', 'owner', 'store_manager'], featureKey: 'basicInventory' },
     { path: '/menu', icon: FileText, labelKey: 'nav.menu', roles: ['admin', 'owner', 'store_manager'], featureKey: '' },
-    { path: '/reports', icon: Calculator, labelKey: 'nav.reports', roles: ['admin', 'owner'], featureKey: 'basicReports' },
+    { path: '/reports', icon: Calculator, labelKey: 'nav.reports', roles: ['admin', 'owner', 'store_manager'], featureKey: 'basicReports' },
+    { path: '/qr-orders', icon: QrCode, labelKey: 'Menu Orders', roles: ['admin', 'owner', 'store_manager'], featureKey: 'qrMenuOrdering' },
     { path: '/delivery', icon: Truck, labelKey: 'nav.delivery', roles: ['admin', 'owner', 'store_manager'], featureKey: 'deliveryTracking' },
     { path: '/operations', icon: Wrench, labelKey: 'nav.operations', roles: ['admin', 'owner', 'store_manager'], featureKey: '' },
     { path: '/chat', icon: MessageCircle, labelKey: 'common.teamChat', roles: ['admin', 'owner', 'store_manager'], featureKey: 'teamChat' },

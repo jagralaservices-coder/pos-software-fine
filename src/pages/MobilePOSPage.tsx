@@ -56,10 +56,11 @@ const MobilePOSPage: React.FC = () => {
 
   const filteredItems = useMemo(() => {
     const baseProducts = menuItems.filter(item => {
-      const matchesCategory = activeCategory === 'all' || item.category === activeCategory;
+      const matchesCategory = !searchQuery || activeCategory === 'all' || item.category === activeCategory;
       const matchesSearch = !searchQuery ||
         item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.nameHindi?.includes(searchQuery);
+        item.nameHindi?.includes(searchQuery) ||
+        (item.sku && String(item.sku).toLowerCase().includes(searchQuery.toLowerCase()));
       return matchesCategory && matchesSearch;
     });
 
@@ -99,6 +100,22 @@ const MobilePOSPage: React.FC = () => {
                 placeholder="Search products or SKU..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    // Check exact SKU or barcode match globally first (case-insensitive, trimmed)
+                    const exactMatch = menuItems.find(item => 
+                      (item.sku && String(item.sku).toLowerCase() === searchQuery.toLowerCase().trim()) ||
+                      (item.barcode && String(item.barcode).toLowerCase() === searchQuery.toLowerCase().trim())
+                    );
+                    const match = exactMatch || filteredItems.find(item => !item.id.startsWith('others-') && item.isAvailable);
+                    if (match) {
+                      handleItemClick(match);
+                      setSearchQuery('');
+                      (e.target as HTMLInputElement).focus();
+                    }
+                  }
+                }}
                 className="w-full pl-12 pr-10 py-3.5 bg-secondary rounded-xl text-base border-0 focus:outline-none focus:ring-2 focus:ring-primary"
               />
               {searchQuery && (
@@ -320,28 +337,8 @@ const MobilePOSPage: React.FC = () => {
               </div>
             )}
 
-            {/* Payment Methods + Charge Button */}
+            {/* Persistent Bottom Cart Button */}
             <div className="px-4 pb-4 pt-2 space-y-3">
-              {/* Payment Method Icons */}
-              <div className="flex gap-2">
-                <button className="flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl bg-secondary/80 border border-border transition-all active:scale-[0.97]">
-                  <Banknote className="w-5 h-5 text-success" />
-                  <span className="text-[10px] font-medium text-foreground">Cash</span>
-                </button>
-                <button className="flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl bg-secondary/80 border border-border transition-all active:scale-[0.97]">
-                  <CreditCard className="w-5 h-5 text-primary" />
-                  <span className="text-[10px] font-medium text-foreground">Card</span>
-                </button>
-                <button className="flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl bg-secondary/80 border border-border transition-all active:scale-[0.97]">
-                  <Smartphone className="w-5 h-5 text-info" />
-                  <span className="text-[10px] font-medium text-foreground">UPI</span>
-                </button>
-                <button className="flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl bg-secondary/80 border border-border transition-all active:scale-[0.97]">
-                  <Scissors className="w-5 h-5 text-warning" />
-                  <span className="text-[10px] font-medium text-foreground">Split</span>
-                </button>
-              </div>
-
               {/* Charge Button */}
               <button
                 onClick={() => setShowInlineCart(false)}
