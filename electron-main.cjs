@@ -1,4 +1,4 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain } = require('electron');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -81,7 +81,8 @@ async function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: true
+      sandbox: true,
+      preload: path.join(__dirname, 'preload.cjs')
     }
   });
 
@@ -109,4 +110,29 @@ app.on('activate', () => {
   if (mainWindow === null) {
     createWindow();
   }
+});
+
+ipcMain.on('print-silent', (event, htmlContent) => {
+  let workerWindow = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true
+    }
+  });
+
+  workerWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(htmlContent));
+
+  workerWindow.webContents.on('did-finish-load', () => {
+    workerWindow.webContents.print({
+      silent: true,
+      printBackground: true
+    }, (success, errorType) => {
+      if (!success) {
+        console.error('[Electron] Silent print failed:', errorType);
+      }
+      workerWindow.destroy();
+      workerWindow = null;
+    });
+  });
 });

@@ -38,7 +38,7 @@ const keyboardShortcuts = [
   { key: 'F9', description: 'Select Delivery mode on Billing screen' },
   { key: 'F11', description: 'Select Dine In mode on Billing screen' },
   { key: 'F12', description: 'Select Pick Up mode on Billing screen' },
-  { key: 'Tab / Shift + Tab', description: 'Cycle forward / backward through billing sections: Products, Cart, Payments, Actions' },
+  { key: 'Tab / Shift + Tab', description: 'Cycle forward through billing sections: Products, Cart, Payments, Actions' },
   { key: 'Arrow Keys', description: 'Navigate between items/buttons within the currently active section' },
   { key: 'Enter', description: 'Select/add highlighted item in active section (or search exact SKU and add if in search input)' },
   { key: '+ or =', description: 'Increase quantity of the highlighted cart item (or last item if cart section not active)' },

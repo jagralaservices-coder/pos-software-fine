@@ -797,7 +797,7 @@ export const POSBillingPage: React.FC = () => {
           }
         }
         
-        focusNextDetailedSection(currentSection, !e.shiftKey);
+        focusNextDetailedSection(currentSection, true);
         return;
       }
       

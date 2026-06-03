@@ -362,6 +362,16 @@ export const directPrint = (content: string, onComplete?: () => void, existingWi
     return;
   }
 
+  // Check if running in Electron environment for silent printing
+  if ((window as any).electronAPI?.isElectron) {
+    console.log('[Print] Electron environment detected, using silent print');
+    const styledContent = injectThermalStyles(content);
+    (window as any).electronAPI.print(styledContent);
+    existingWindow?.close();
+    onComplete?.();
+    return;
+  }
+
   if (isNativeApp()) {
     const styledContent = injectThermalStyles(content);
     nativePrint(styledContent).then(success => {
