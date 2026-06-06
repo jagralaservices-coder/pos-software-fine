@@ -26,6 +26,7 @@ import {
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { testPrint } from '@/lib/printUtils';
+import { usePOS } from '@/contexts/POSContext';
 
 const languages = [
   { code: 'en', name: 'English', native: 'English' },
@@ -88,6 +89,7 @@ const sections: SettingSection[] = [
 ];
 
 export const SettingsPage: React.FC = () => {
+  const { taxPercent, setTaxPercent, activeStore, updateStore } = usePOS();
   const [activeSection, setActiveSection] = useState('store');
   const [selectedLanguage, setSelectedLanguage] = useState('en');
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
@@ -178,6 +180,14 @@ export const SettingsPage: React.FC = () => {
     if (savedPrintSettings) setPrintSettings(JSON.parse(savedPrintSettings));
   }, []);
 
+  // Sync taxRate with POSContext taxPercent
+  useEffect(() => {
+    setStoreDetails(prev => ({
+      ...prev,
+      taxRate: String(taxPercent)
+    }));
+  }, [taxPercent]);
+
   // Toggle theme
   const toggleTheme = (newTheme: 'light' | 'dark') => {
     setTheme(newTheme);
@@ -189,6 +199,13 @@ export const SettingsPage: React.FC = () => {
   // Save store details
   const saveStoreDetails = () => {
     localStorage.setItem('pos_store_details', JSON.stringify(storeDetails));
+    const newTax = Number(storeDetails.taxRate) || 0;
+    setTaxPercent(newTax);
+    if (activeStore) {
+      updateStore(activeStore.id, {
+        taxPercentage: newTax
+      });
+    }
     toast.success('Store details saved!');
   };
 

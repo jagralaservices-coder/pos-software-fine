@@ -18,7 +18,19 @@ import {
   MessageSquare,
   Bike,
   Clock,
-  Wallet
+  Wallet,
+  KeyRound,
+  Building,
+  RotateCcw,
+  RefreshCw,
+  Database,
+  Trash2,
+  FileArchive,
+  HardDrive,
+  ScrollText,
+  Cpu,
+  QrCode,
+  SlidersHorizontal
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,7 +50,20 @@ import DuePaymentSettings from '@/components/pos/DuePaymentSettings';
 import FeedbackSettings from '@/components/pos/FeedbackSettings';
 import DeliveryBoySettings from '@/components/pos/DeliveryBoySettings';
 import StaffShiftSettings from '@/components/pos/StaffShiftSettings';
+import ChangePasswordSettings from '@/components/pos/ChangePasswordSettings';
+import { RestaurantConfigSettings } from '@/components/pos/RestaurantConfigSettings';
+import { ResetBillDialog } from '@/components/pos/ResetBillDialog';
+import { ResetSyncCodeDialog } from '@/components/pos/ResetSyncCodeDialog';
+import { DatabaseMigrationDialog } from '@/components/pos/DatabaseMigrationDialog';
+import { RemoveAllOrdersDialog } from '@/components/pos/RemoveAllOrdersDialog';
+import { RemoveBackupFilesDialog } from '@/components/pos/RemoveBackupFilesDialog';
+import { LogsViewer } from '@/components/pos/LogsViewer';
+import { CheckMachineDialog } from '@/components/pos/CheckMachineDialog';
+import { GenerateCodeDialog } from '@/components/pos/GenerateCodeDialog';
+import { SalesResetSettings } from '@/components/pos/SalesResetSettings';
+import { PaymentSoundSettings } from '@/components/pos/PaymentSoundSettings';
 import { useOwnerStore } from '@/hooks/useOwnerStore';
+import { useLocale } from '@/contexts/LocaleContext';
 
 interface SettingItem {
   id: string;
@@ -53,15 +78,25 @@ interface SettingSection {
   items: SettingItem[];
 }
 
-type ActiveView = 'main' | 'display' | 'calculations' | 'linkedServices' | 'print' | 'customer' | 'onlineOrder' | 'billingSystem' | 'storeLocation' | 'locale' | 'cash' | 'tables' | 'duePayment' | 'feedback' | 'deliveryBoys' | 'staffShifts';
+type ActiveView = 'main' | 'display' | 'calculations' | 'linkedServices' | 'print' | 'customer' | 'onlineOrder' | 'billingSystem' | 'storeLocation' | 'locale' | 'cash' | 'tables' | 'duePayment' | 'feedback' | 'deliveryBoys' | 'staffShifts' | 'changePassword' | 'salesReset' | 'diagnostics';
 
 const OwnerSettingsPage: React.FC = () => {
   const navigate = useNavigate();
+  const { t } = useLocale();
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
   const viewParam = searchParams.get('view') as ActiveView | null;
   const [activeView, setActiveView] = useState<ActiveView>(viewParam && viewParam !== 'main' ? viewParam : 'main');
   const { selectedStoreId, selectedStoreName } = useOwnerStore();
+
+  const [showResetBillDialog, setShowResetBillDialog] = useState(false);
+  const [showResetSyncCodeDialog, setShowResetSyncCodeDialog] = useState(false);
+  const [showDatabaseMigrationDialog, setShowDatabaseMigrationDialog] = useState(false);
+  const [showRemoveAllOrdersDialog, setShowRemoveAllOrdersDialog] = useState(false);
+  const [showRemoveBackupFilesDialog, setShowRemoveBackupFilesDialog] = useState(false);
+  const [showCheckMachineDialog, setShowCheckMachineDialog] = useState(false);
+  const [showGenerateCodeDialog, setShowGenerateCodeDialog] = useState(false);
+  const [diagnosticsSubView, setDiagnosticsSubView] = useState<'restaurant-config' | 'logs' | null>(null);
 
   // Update activeView when URL changes
   useEffect(() => {
@@ -231,6 +266,44 @@ const OwnerSettingsPage: React.FC = () => {
           action: () => handleSetActiveView('locale')
         },
       ]
+    },
+    {
+      title: 'Security',
+      items: [
+        {
+          id: 'change-password',
+          icon: KeyRound,
+          title: 'Change Password',
+          description: 'Update your account password securely.',
+          action: () => handleSetActiveView('changePassword')
+        },
+      ]
+    },
+    {
+      title: 'System Diagnostics & Tools',
+      items: [
+        {
+          id: 'sales-reset',
+          icon: RotateCcw,
+          title: 'Sales Reset & Sounds',
+          description: 'Reset daily sales, bill numbers, and configure payment sound alerts.',
+          action: () => handleSetActiveView('salesReset')
+        },
+        {
+          id: 'backup-recovery',
+          icon: HardDrive,
+          title: 'Backup & Recovery',
+          description: 'Create cloud backups, view local history, and restore snapshots.',
+          action: () => navigate('/backup?tab=backup')
+        },
+        {
+          id: 'diagnostics',
+          icon: SlidersHorizontal,
+          title: 'System Diagnostics',
+          description: 'Access database migration, reset bill/sync code, remove orders, backups, and logs.',
+          action: () => handleSetActiveView('diagnostics')
+        }
+      ]
     }
   ];
 
@@ -273,6 +346,15 @@ const OwnerSettingsPage: React.FC = () => {
   if (activeView === 'storeLocation') {
     // Get store ID from context or localStorage
     let storeId = selectedStoreId;
+    if (!storeId) {
+      const activeStoreData = localStorage.getItem('pos_active_store_data');
+      if (activeStoreData) {
+        try {
+          const parsed = JSON.parse(activeStoreData);
+          storeId = parsed.id || parsed.storeId;
+        } catch (e) {}
+      }
+    }
     if (!storeId) {
       const storeLogin = localStorage.getItem('store_login');
       if (storeLogin) {
@@ -352,19 +434,137 @@ const OwnerSettingsPage: React.FC = () => {
     return <DeliveryBoySettings onBack={() => handleSetActiveView('main')} />;
   }
 
+  if (activeView === 'changePassword') {
+    return (
+      <div className="min-h-screen bg-background p-4 md:p-6">
+        <ChangePasswordSettings onBack={() => handleSetActiveView('main')} />
+      </div>
+    );
+  }
+
+
+  if (activeView === 'salesReset') {
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="sticky top-0 z-10 bg-background border-b border-border">
+          <div className="flex items-center gap-4 p-4">
+            <Button variant="ghost" size="icon" onClick={() => handleSetActiveView('main')}>
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
+            <h1 className="text-xl font-bold">Sales Reset & Sounds</h1>
+          </div>
+        </div>
+        <div className="max-w-3xl mx-auto p-4 md:p-6 space-y-8">
+          <SalesResetSettings />
+          <div className="border-t border-border pt-6">
+            <PaymentSoundSettings />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (activeView === 'diagnostics') {
+    if (diagnosticsSubView === 'restaurant-config') {
+      return <RestaurantConfigSettings onBack={() => setDiagnosticsSubView(null)} />;
+    }
+    if (diagnosticsSubView === 'logs') {
+      return <LogsViewer onBack={() => setDiagnosticsSubView(null)} />;
+    }
+
+    const diagnosticsItems = [
+      { id: 'restaurant-config', icon: Building, label: t ? t('operations.restaurantConfig') : 'Restaurant Config' },
+      { id: 'reset-bill', icon: RotateCcw, label: t ? t('operations.resetBillNo') : 'Reset Bill Number' },
+      { id: 'reset-sync', icon: RefreshCw, label: t ? t('operations.resetSyncCode') : 'Reset Sync Code' },
+      { id: 'db-migration', icon: Database, label: t ? t('operations.dbMigration') : 'Database Migration' },
+      { id: 'remove-orders', icon: Trash2, label: t ? t('operations.removeOrders') : 'Remove All Orders' },
+      { id: 'remove-backup', icon: FileArchive, label: t ? t('operations.removeBackup') : 'Remove Backup Files' },
+      { id: 'logs', icon: ScrollText, label: t ? t('operations.logs') : 'System Logs' },
+      { id: 'check-machine', icon: Cpu, label: t ? t('operations.checkMachine') : 'Check Machine' },
+      { id: 'generate-code', icon: QrCode, label: t ? t('operations.generateCode') : 'Generate Code' },
+    ];
+
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="sticky top-0 z-10 bg-background border-b border-border">
+          <div className="flex items-center gap-4 p-4">
+            <Button variant="ghost" size="icon" onClick={() => handleSetActiveView('main')}>
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
+            <h1 className="text-xl font-bold">System Diagnostics & Tools</h1>
+          </div>
+        </div>
+
+        <div className="max-w-5xl mx-auto p-4 md:p-6 space-y-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+            {diagnosticsItems.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => {
+                  if (item.id === 'restaurant-config') {
+                    setDiagnosticsSubView('restaurant-config');
+                  } else if (item.id === 'reset-bill') {
+                    setShowResetBillDialog(true);
+                  } else if (item.id === 'reset-sync') {
+                    setShowResetSyncCodeDialog(true);
+                  } else if (item.id === 'db-migration') {
+                    setShowDatabaseMigrationDialog(true);
+                  } else if (item.id === 'remove-orders') {
+                    setShowRemoveAllOrdersDialog(true);
+                  } else if (item.id === 'remove-backup') {
+                    setShowRemoveBackupFilesDialog(true);
+                  } else if (item.id === 'logs') {
+                    setDiagnosticsSubView('logs');
+                  } else if (item.id === 'check-machine') {
+                    setShowCheckMachineDialog(true);
+                  } else if (item.id === 'generate-code') {
+                    setShowGenerateCodeDialog(true);
+                  } else {
+                    toast.info(`${item.label} coming soon`);
+                  }
+                }}
+                className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl border border-border bg-card hover:bg-accent hover:border-primary/50 active:scale-95 transition-all duration-200 min-h-[100px] group"
+              >
+                <item.icon className="w-6 h-6 text-foreground group-hover:text-primary transition-colors" />
+                <span className="text-xs text-center text-foreground font-medium leading-tight">{item.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Dialog Components */}
+        <ResetBillDialog isOpen={showResetBillDialog} onClose={() => setShowResetBillDialog(false)} />
+        <ResetSyncCodeDialog isOpen={showResetSyncCodeDialog} onClose={() => setShowResetSyncCodeDialog(false)} />
+        <DatabaseMigrationDialog isOpen={showDatabaseMigrationDialog} onClose={() => setShowDatabaseMigrationDialog(false)} />
+        <RemoveAllOrdersDialog isOpen={showRemoveAllOrdersDialog} onClose={() => setShowRemoveAllOrdersDialog(false)} />
+        <RemoveBackupFilesDialog isOpen={showRemoveBackupFilesDialog} onClose={() => setShowRemoveBackupFilesDialog(false)} />
+        <CheckMachineDialog isOpen={showCheckMachineDialog} onClose={() => setShowCheckMachineDialog(false)} />
+        <GenerateCodeDialog isOpen={showGenerateCodeDialog} onClose={() => setShowGenerateCodeDialog(false)} />
+      </div>
+    );
+  }
 
   if (activeView === 'staffShifts') {
     // Get store ID and customer ID from context or localStorage
     let storeId = selectedStoreId;
     let customerId = '';
     
+    const activeStoreData = localStorage.getItem('pos_active_store_data');
+    if (activeStoreData) {
+      try {
+        const parsed = JSON.parse(activeStoreData);
+        storeId = storeId || parsed.id || parsed.storeId;
+        customerId = parsed.customerId || parsed.customer_id || '';
+      } catch (e) {}
+    }
+
     if (!storeId) {
       const storeLogin = localStorage.getItem('store_login');
       if (storeLogin) {
         try {
           const parsed = JSON.parse(storeLogin);
           storeId = parsed.store_id;
-          customerId = parsed.customer_id;
+          customerId = customerId || parsed.customer_id || '';
         } catch (e) {}
       }
     }

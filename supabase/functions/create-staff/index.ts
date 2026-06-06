@@ -20,16 +20,110 @@ serve(async (req) => {
     })
 
     const body = await req.json()
-    const { name, email: providedEmail, role, store_id, customer_id, pin, store_login_id, password: providedPassword, face_photo_url, work_start_time, work_end_time, fingerprint_enabled, salary } = body
+    const { 
+      name, 
+      email: providedEmail, 
+      role, 
+      store_id, 
+      customer_id, 
+      pin, 
+      password: providedPassword, 
+      face_photo_url, 
+      work_start_time, 
+      work_end_time, 
+      fingerprint_enabled, 
+      salary,
+      phone,
+      address_line1,
+      locality,
+      city,
+      state,
+      pincode,
+      aadhaar_number,
+      aadhaar_name,
+      aadhaar_front_url,
+      aadhaar_back_url
+    } = body
 
-    if (!name || !store_id || !providedEmail) {
+    // Validate general required fields
+    if (!name || !store_id || !providedEmail || !phone) {
       return new Response(
-        JSON.stringify({ error: 'Name, email and store are required' }),
+        JSON.stringify({ error: 'Name, email, mobile, and store are required' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Validate complete address fields
+    if (!address_line1 || !locality || !city || !state || !pincode) {
+      return new Response(
+        JSON.stringify({ error: 'Complete address (Address Line 1, Locality, City, State, and Pincode) is required' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Validate Aadhaar fields
+    if (!aadhaar_number || !aadhaar_name || !aadhaar_front_url || !aadhaar_back_url) {
+      return new Response(
+        JSON.stringify({ error: 'All Aadhaar verification fields are required (Number, Name, Front Image, and Back Image)' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Validate Aadhaar Format: 12 digits, numeric
+    const cleanAadhaar = String(aadhaar_number).trim()
+    if (!/^\d{12}$/.test(cleanAadhaar)) {
+      return new Response(
+        JSON.stringify({ error: 'Aadhaar Number must be exactly 12 digits and numeric' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
     const staffEmail = providedEmail.trim().toLowerCase()
+
+    // Authenticate and verify role (Only Admin or Owner can create staff)
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader || authHeader === 'Bearer null') {
+      return new Response(
+        JSON.stringify({ error: 'Authorization header is required' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const token = authHeader.replace('Bearer ', '')
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token)
+    
+    if (userError || !user) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized: Invalid token' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+    
+    const { data: roleData, error: roleError } = await supabaseAdmin
+      .from('user_roles')
+      .select('role, customer_id')
+      .eq('user_id', user.id)
+      .in('role', ['admin', 'owner'])
+      .eq('is_active', true)
+      .maybeSingle()
+
+    if (roleError || !roleData) {
+      return new Response(
+        JSON.stringify({ error: 'Forbidden: Only administrators or owners can create staff accounts' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+    
+    const effectiveCustomerId = customer_id || roleData.customer_id
+    
+    if (!effectiveCustomerId) {
+      return new Response(
+        JSON.stringify({ error: 'Customer ID is required' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    console.log('Creating staff user:', { email: staffEmail, name, role, store_id, customer_id: effectiveCustomerId })
 
     const generateNumericCode = (length: number) =>
       Array.from({ length }, () => Math.floor(Math.random() * 10)).join('')
@@ -43,75 +137,6 @@ serve(async (req) => {
     const password = providedPasswordValue.length >= 6 
       ? providedPasswordValue 
       : `${crypto.randomUUID()}Aa!1`
-
-    let effectiveCustomerId = customer_id
-    let isAuthorizedViaStore = false
-
-    // Check store login authorization
-    if (store_login_id) {
-      console.log('Store login mode - verifying store:', store_login_id)
-      const { data: storeData, error: storeError } = await supabaseAdmin
-        .from('stores')
-        .select('id, customer_id, is_active')
-        .eq('id', store_login_id)
-        .eq('is_active', true)
-        .maybeSingle()
-      
-      if (storeError || !storeData) {
-        return new Response(
-          JSON.stringify({ error: 'Invalid store login' }),
-          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
-      }
-      
-      if (storeData.id !== store_id) {
-        return new Response(
-          JSON.stringify({ error: 'Can only create staff for your own store' }),
-          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
-      }
-      
-      effectiveCustomerId = storeData.customer_id
-      isAuthorizedViaStore = true
-    }
-
-    // If not authorized via store login, check JWT authorization
-    if (!isAuthorizedViaStore) {
-      const authHeader = req.headers.get('Authorization')
-      
-      if (authHeader && authHeader !== 'Bearer null') {
-        const token = authHeader.replace('Bearer ', '')
-        const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token)
-        
-        if (!userError && user) {
-          const { data: roleData } = await supabaseAdmin
-            .from('user_roles')
-            .select('role, customer_id')
-            .eq('user_id', user.id)
-            .in('role', ['admin', 'owner', 'store_manager'])
-            .eq('is_active', true)
-            .maybeSingle()
-
-          if (!roleData) {
-            return new Response(
-              JSON.stringify({ error: 'Only owners or managers can create staff accounts' }),
-              { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            )
-          }
-          
-          effectiveCustomerId = customer_id || roleData.customer_id
-        }
-      }
-    }
-    
-    if (!effectiveCustomerId) {
-      return new Response(
-        JSON.stringify({ error: 'Customer ID is required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
-    console.log('Creating staff user:', { email: staffEmail, name, role, store_id, customer_id: effectiveCustomerId })
 
     // Try to create auth user, or reuse existing one
     let userId: string
@@ -161,7 +186,6 @@ serve(async (req) => {
           .select('id')
           .eq('user_id', userId)
           .eq('store_id', store_id)
-          .eq('is_active', true)
           .maybeSingle()
         
         if (existingRole) {
@@ -177,7 +201,12 @@ serve(async (req) => {
               work_end_time: work_end_time || '18:00:00',
               fingerprint_enabled: fingerprint_enabled || false,
               salary: salary || 0,
-              is_active: true,
+              is_active: false, // Remains inactive until Aadhaar is verified by Admin
+              aadhaar_number: cleanAadhaar,
+              aadhaar_name: aadhaar_name.trim(),
+              aadhaar_front_url,
+              aadhaar_back_url,
+              aadhaar_verification_status: 'pending',
             })
             .eq('id', existingRole.id)
             .select('staff_code')
@@ -190,6 +219,17 @@ serve(async (req) => {
               { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
             )
           }
+
+          // Update profile details
+          await supabaseAdmin.from('profiles').update({
+            full_name: name,
+            phone: phone || null,
+            address_line1: address_line1.trim(),
+            locality: locality.trim(),
+            city: city.trim(),
+            state: state.trim(),
+            pincode: pincode.trim(),
+          }).eq('id', userId)
           
           return new Response(
             JSON.stringify({ 
@@ -197,7 +237,7 @@ serve(async (req) => {
               staff_code: updatedRole?.staff_code,
               password,
               pin: staffPin,
-              message: `Staff account updated for ${name}`
+              message: `Staff account updated and set to pending verification for ${name}`
             }),
             { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           )
@@ -221,12 +261,17 @@ serve(async (req) => {
       customer_id: effectiveCustomerId,
       store_id,
       pin: staffPin,
-      is_active: true,
+      is_active: false, // Default to false until verified by Admin
       face_photo_url: face_photo_url,
       work_start_time: work_start_time || '09:00:00',
       work_end_time: work_end_time || '18:00:00',
       fingerprint_enabled: fingerprint_enabled || false,
-      salary: salary || 0
+      salary: salary || 0,
+      aadhaar_number: cleanAadhaar,
+      aadhaar_name: aadhaar_name.trim(),
+      aadhaar_front_url,
+      aadhaar_back_url,
+      aadhaar_verification_status: 'pending'
     }).select('staff_code').single()
 
     if (roleInsertError) {
@@ -243,10 +288,16 @@ serve(async (req) => {
     
     // Update profile
     await supabaseAdmin.from('profiles').update({
-      full_name: name
+      full_name: name,
+      phone: phone || null,
+      address_line1: address_line1.trim(),
+      locality: locality.trim(),
+      city: city.trim(),
+      state: state.trim(),
+      pincode: pincode.trim(),
     }).eq('id', userId)
 
-    console.log('Staff created successfully:', { staff_code: newRole?.staff_code, pin: plainPin })
+    console.log('Staff created successfully as pending verification:', { staff_code: newRole?.staff_code, pin: plainPin })
 
     return new Response(
       JSON.stringify({ 
@@ -254,7 +305,7 @@ serve(async (req) => {
         staff_code: newRole?.staff_code,
         password: plainPassword,
         pin: plainPin,
-        message: `Staff account created for ${name}`
+        message: `Staff account created as pending verification for ${name}`
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )

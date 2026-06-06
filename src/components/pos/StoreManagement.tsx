@@ -69,6 +69,7 @@ export const StoreManagement: React.FC = () => {
     businessType: 'restaurant' as 'restaurant' | 'retail',
     country: 'India' as CountryName,
     taxPercentage: 0,
+    password: '',
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showCreatedPassword, setShowCreatedPassword] = useState(false);
@@ -134,12 +135,23 @@ export const StoreManagement: React.FC = () => {
   const handleEditStore = () => {
     if (!editingStore || !editStore.name) { toast.error('Store name is required'); return; }
     const config = COUNTRY_CONFIG[editStore.country];
-    updateStore(editingStore.id, {
+    
+    const updates: any = {
       name: editStore.name, address: editStore.address || undefined,
       phone: editStore.phone || undefined, businessType: editStore.businessType,
       country: editStore.country, currencyCode: config.currency,
       taxType: config.taxType, taxPercentage: editStore.taxPercentage,
-    });
+    };
+
+    if (editStore.password && editStore.password.trim()) {
+      if (editStore.password.trim().length < 6) {
+        toast.error('Password must be at least 6 characters');
+        return;
+      }
+      updates.password = editStore.password.trim();
+    }
+
+    updateStore(editingStore.id, updates);
     toast.success('Store updated!');
     setShowEditStore(false);
     setEditingStore(null);
@@ -202,6 +214,7 @@ export const StoreManagement: React.FC = () => {
       businessType: store.businessType || 'restaurant',
       country: (store.country || 'India') as CountryName,
       taxPercentage: store.taxPercentage ?? 0,
+      password: '',
     });
     setShowEditStore(true);
   };
@@ -292,6 +305,17 @@ export const StoreManagement: React.FC = () => {
             <label className="text-sm font-medium mb-1.5 block">Password *</label>
             <div className="relative">
               <Input type={showPassword ? 'text' : 'password'} placeholder="Min 6 characters" value={(formData as typeof newStore).password} onChange={(e) => setFormData((prev: any) => ({ ...prev, password: e.target.value }))} className="h-11 pr-10" />
+              <Button type="button" variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8" onClick={() => setShowPassword(!showPassword)}>
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </Button>
+            </div>
+          </div>
+        )}
+        {isEdit && (
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Change Password (Optional)</label>
+            <div className="relative">
+              <Input type={showPassword ? 'text' : 'password'} placeholder="Leave blank to keep current password" value={(formData as any).password || ''} onChange={(e) => setFormData((prev: any) => ({ ...prev, password: e.target.value }))} className="h-11 pr-10" />
               <Button type="button" variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8" onClick={() => setShowPassword(!showPassword)}>
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </Button>
@@ -418,7 +442,7 @@ export const StoreManagement: React.FC = () => {
                     ✉️ {store.loginEmail || 'No email'}
                   </p>
                   <p className="text-xs text-muted-foreground font-mono">
-                    ID: {store.storeCode} • Region: {region.substring(0, 20)}
+                    Region: {region.substring(0, 20)}
                   </p>
                 </div>
                 {getStatusBadge(status)}

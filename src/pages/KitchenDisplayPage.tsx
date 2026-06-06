@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { 
   Clock, Search, Settings, History, Play, CheckCircle2,
-  UtensilsCrossed, ChefHat, Flame
+  UtensilsCrossed, ChefHat, Flame, ArrowLeft
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -37,6 +37,7 @@ export const KitchenDisplayPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [now, setNow] = useState(new Date());
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeKdsTab, setActiveKdsTab] = useState<'pending' | 'preparing' | 'ready'>('pending');
 
   useEffect(() => {
     const interval = setInterval(() => setNow(new Date()), 30000);
@@ -185,7 +186,10 @@ export const KitchenDisplayPage: React.FC = () => {
       <div className="sticky top-0 z-30 bg-background/95 backdrop-blur-md border-b border-border/50 px-4 py-3">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary/15 flex items-center justify-center">
+            <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" onClick={() => navigate('/')}>
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <div className="w-10 h-10 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
               <UtensilsCrossed className="w-5 h-5 text-primary" />
             </div>
             <div>
@@ -208,46 +212,70 @@ export const KitchenDisplayPage: React.FC = () => {
       </div>
 
       {/* Column Layout (horizontal scroll on mobile) */}
-      <div className="flex gap-4 p-4 overflow-x-auto min-h-[calc(100vh-120px)] pb-24">
+      <div className={cn(
+        "flex p-4 min-h-[calc(100vh-120px)] pb-24",
+        isMobile ? "flex-col w-full" : "flex-row gap-4 overflow-x-auto"
+      )}>
         {/* Pending Column */}
-        <div className="min-w-[300px] flex-1">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-2.5 h-2.5 rounded-full bg-muted-foreground" />
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase">Pending</h2>
-            <span className="text-xs bg-muted/80 text-muted-foreground px-2 py-0.5 rounded-full font-medium">{pendingOrders.length}</span>
+        {(!isMobile || activeKdsTab === 'pending') && (
+          <div className={cn("flex-1", isMobile ? "w-full" : "min-w-[300px]")}>
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-2.5 h-2.5 rounded-full bg-muted-foreground" />
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase">Pending</h2>
+              <span className="text-xs bg-muted/80 text-muted-foreground px-2 py-0.5 rounded-full font-medium">{pendingOrders.length}</span>
+            </div>
+            <div className="space-y-3">
+              {pendingOrders.map(renderOrderCard)}
+              {pendingOrders.length === 0 && (
+                <div className="py-12 text-center text-muted-foreground text-sm border border-dashed rounded-xl bg-card">
+                  No pending orders
+                </div>
+              )}
+            </div>
           </div>
-          <div className="space-y-3">
-            {pendingOrders.map(renderOrderCard)}
-          </div>
-        </div>
+        )}
 
         {/* Preparing Column */}
-        <div className="min-w-[300px] flex-1">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-2.5 h-2.5 rounded-full bg-primary" />
-            <h2 className="text-sm font-semibold text-primary uppercase">Preparing</h2>
-            <span className="text-xs bg-primary/15 text-primary px-2 py-0.5 rounded-full font-medium">{preparingOrders.length}</span>
+        {(!isMobile || activeKdsTab === 'preparing') && (
+          <div className={cn("flex-1", isMobile ? "w-full" : "min-w-[300px]", isMobile ? "mt-0" : "")}>
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-2.5 h-2.5 rounded-full bg-primary" />
+              <h2 className="text-sm font-semibold text-primary uppercase">Preparing</h2>
+              <span className="text-xs bg-primary/15 text-primary px-2 py-0.5 rounded-full font-medium">{preparingOrders.length}</span>
+            </div>
+            <div className="space-y-3">
+              {preparingOrders.map(renderOrderCard)}
+              {preparingOrders.length === 0 && (
+                <div className="py-12 text-center text-muted-foreground text-sm border border-dashed rounded-xl bg-card">
+                  No preparing orders
+                </div>
+              )}
+            </div>
           </div>
-          <div className="space-y-3">
-            {preparingOrders.map(renderOrderCard)}
-          </div>
-        </div>
+        )}
 
         {/* Ready Column */}
-        <div className="min-w-[300px] flex-1">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-2.5 h-2.5 rounded-full bg-green-500" />
-            <h2 className="text-sm font-semibold text-green-400 uppercase">Ready</h2>
-            <span className="text-xs bg-green-500/15 text-green-400 px-2 py-0.5 rounded-full font-medium">{readyOrders.length}</span>
+        {(!isMobile || activeKdsTab === 'ready') && (
+          <div className={cn("flex-1", isMobile ? "w-full" : "min-w-[300px]", isMobile ? "mt-0" : "")}>
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-2.5 h-2.5 rounded-full bg-green-500" />
+              <h2 className="text-sm font-semibold text-green-400 uppercase">Ready</h2>
+              <span className="text-xs bg-green-500/15 text-green-400 px-2 py-0.5 rounded-full font-medium">{readyOrders.length}</span>
+            </div>
+            <div className="space-y-3">
+              {readyOrders.map(renderOrderCard)}
+              {readyOrders.length === 0 && (
+                <div className="py-12 text-center text-muted-foreground text-sm border border-dashed rounded-xl bg-card">
+                  No ready orders
+                </div>
+              )}
+            </div>
           </div>
-          <div className="space-y-3">
-            {readyOrders.map(renderOrderCard)}
-          </div>
-        </div>
+        )}
 
         {/* Empty State */}
         {orders.length === 0 && !isLoading && (
-          <div className="flex-1 flex items-center justify-center text-center">
+          <div className="flex-1 flex items-center justify-center text-center py-12">
             <div>
               <ChefHat className="w-16 h-16 mx-auto mb-4 text-muted-foreground/30" />
               <p className="text-lg font-medium text-muted-foreground">No active orders</p>
@@ -261,23 +289,36 @@ export const KitchenDisplayPage: React.FC = () => {
       <div className="fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur-md border-t border-border/50 z-30 pb-safe">
         <div className="flex justify-around py-2">
           {[
-            { icon: Flame, label: 'PENDING', active: true, path: '/kitchen' },
-            { icon: ChefHat, label: 'PREPARING', active: false, path: '/kitchen' },
-            { icon: CheckCircle2, label: 'READY', active: false, path: '/kitchen' },
-            { icon: Settings, label: 'MORE', active: false, path: '/settings' },
-          ].map((nav) => (
-            <button
-              key={nav.label}
-              onClick={() => navigate(nav.path)}
-              className={cn(
-                'flex flex-col items-center gap-0.5 px-3 py-1',
-                nav.active ? 'text-primary' : 'text-muted-foreground'
-              )}
-            >
-              <nav.icon className="w-5 h-5" />
-              <span className="text-[9px] font-bold tracking-wider">{nav.label}</span>
-            </button>
-          ))}
+            { icon: Flame, label: 'PENDING', id: 'pending' as const, path: '/kitchen' },
+            { icon: ChefHat, label: 'PREPARING', id: 'preparing' as const, path: '/kitchen' },
+            { icon: CheckCircle2, label: 'READY', id: 'ready' as const, path: '/kitchen' },
+            { icon: Settings, label: 'MORE', id: 'more' as const, path: '/settings' },
+          ].map((nav) => {
+            const isActive = isMobile ? (nav.id === 'more' ? false : activeKdsTab === nav.id) : (nav.id === 'pending');
+            return (
+              <button
+                key={nav.label}
+                onClick={() => {
+                  if (nav.id === 'more') {
+                    navigate(nav.path);
+                  } else {
+                    if (isMobile) {
+                      setActiveKdsTab(nav.id);
+                    } else {
+                      navigate(nav.path);
+                    }
+                  }
+                }}
+                className={cn(
+                  'flex flex-col items-center gap-0.5 px-3 py-1',
+                  isActive ? 'text-primary' : 'text-muted-foreground'
+                )}
+              >
+                <nav.icon className="w-5 h-5" />
+                <span className="text-[9px] font-bold tracking-wider">{nav.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>

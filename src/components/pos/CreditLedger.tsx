@@ -16,29 +16,8 @@ import { ArrowLeft, CreditCard, IndianRupee, User, Clock, Plus, Printer, Phone }
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { generateProfessionalBill } from '@/lib/billTemplate';
-
-interface CreditEntry {
-  id: string;
-  customer_name: string;
-  customer_phone: string | null;
-  bill_number: string | null;
-  total_amount: number;
-  paid_amount: number;
-  due_amount: number;
-  payment_status: string;
-  notes: string | null;
-  created_at: string;
-}
-
-interface CreditPayment {
-  id: string;
-  credit_id: string;
-  amount: number;
-  payment_method: string;
-  received_by: string | null;
-  notes: string | null;
-  created_at: string;
-}
+import { getCreditLedger, setCreditLedger, getCreditPayments, setCreditPayments, CreditEntry, CreditPayment, safeMerge, getOrders } from '@/lib/store';
+import { useStoreDataSync } from '@/hooks/useStoreDataSync';
 
 interface CustomerGroup {
   key: string;
@@ -60,6 +39,8 @@ export const CreditLedger: React.FC = () => {
   const { activeStore } = usePOS();
   const storeId = activeStore?.id;
 
+  const { syncCreditLedger, syncCreditPayments, saveCreditEntryToCloud, saveCreditPaymentToCloud } = useStoreDataSync();
+
   const [entries, setEntries] = useState<CreditEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerGroup | null>(null);
@@ -72,14 +53,22 @@ export const CreditLedger: React.FC = () => {
   const fetchEntries = useCallback(async () => {
     if (!storeId) return;
     setLoading(true);
-    const { data, error } = await supabase
-      .from('credit_ledger')
-      .select('*')
-      .eq('store_id', storeId)
-      .order('created_at', { ascending: false });
-    if (!error && data) setEntries(data as CreditEntry[]);
+    
+    // Load local cache immediately
+    const local = getCreditLedger();
+    if (local.length > 0) {
+      setEntries(local);
+      setLoading(false);
+    }
+    
+    try {
+      const merged = await syncCreditLedger(local);
+      setEntries(merged);
+    } catch (e) {
+      console.warn('[Offline] Failed to sync credit entries, using local cache:', e);
+    }
     setLoading(false);
-  }, [storeId]);
+  }, [storeId, syncCreditLedger]);
 
   useEffect(() => { fetchEntries(); }, [fetchEntries]);
 
@@ -121,12 +110,20 @@ export const CreditLedger: React.FC = () => {
 
   const fetchPaymentsForCustomer = async (creditIds: string[]) => {
     if (creditIds.length === 0) { setPayments([]); return; }
-    const { data } = await supabase
-      .from('credit_payments')
-      .select('*')
-      .in('credit_id', creditIds)
-      .order('created_at', { ascending: false });
-    if (data) setPayments(data as CreditPayment[]);
+    
+    // Load local cache immediately
+    const localPayments = getCreditPayments().filter(p => creditIds.includes(p.credit_id));
+    if (localPayments.length > 0) {
+      setPayments(localPayments);
+    }
+
+    try {
+      const allPayments = await syncCreditPayments(getCreditPayments());
+      const filtered = allPayments.filter(p => creditIds.includes(p.credit_id));
+      setPayments(filtered);
+    } catch (e) {
+      console.warn('[Offline] Failed to sync credit payments, using local cache:', e);
+    }
   };
 
   const handleSelectCustomer = async (group: CustomerGroup) => {
@@ -146,36 +143,71 @@ export const CreditLedger: React.FC = () => {
       .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
     let remaining = amount;
+    const paymentsToInsert: CreditPayment[] = [];
+    const updatedEntries: CreditEntry[] = [];
+
+    const allLocalEntries = getCreditLedger();
+    const allLocalPayments = getCreditPayments();
+
     for (const entry of sorted) {
       if (remaining <= 0) break;
       const entryDue = Number(entry.due_amount);
       const apply = Math.min(remaining, entryDue);
 
-      const { error: payError } = await supabase.from('credit_payments').insert({
+      const payId = Date.now().toString() + Math.random().toString(36).substr(2, 4);
+      const localPay: CreditPayment = {
+        id: payId,
         credit_id: entry.id,
         store_id: storeId,
         amount: apply,
         payment_method: payMethod,
-      } as any);
-      if (payError) { toast.error('Payment failed: ' + payError.message); return; }
+        created_at: new Date().toISOString(),
+        lastUpdated: new Date().toISOString(),
+        pendingSync: true
+      };
 
       const newPaid = Number(entry.paid_amount) + apply;
       const newDue = Number(entry.total_amount) - newPaid;
       const newStatus = newDue <= 0 ? 'paid' : 'partial';
-      await supabase.from('credit_ledger').update({
+
+      const localEntryUpdate: CreditEntry = {
+        ...entry,
         paid_amount: newPaid,
         due_amount: Math.max(0, newDue),
         payment_status: newStatus,
-      } as any).eq('id', entry.id);
+        lastUpdated: new Date().toISOString(),
+        pendingSync: true
+      };
 
+      paymentsToInsert.push(localPay);
+      updatedEntries.push(localEntryUpdate);
       remaining -= apply;
     }
 
-    toast.success(`${formatCurrency(amount)} payment recorded!`);
+    // Apply updates locally first
+    const newLocalEntries = allLocalEntries.map(e => {
+      const match = updatedEntries.find(u => u.id === e.id);
+      return match ? match : e;
+    });
+    const newLocalPayments = [...paymentsToInsert, ...allLocalPayments];
+
+    setCreditLedger(newLocalEntries);
+    setCreditPayments(newLocalPayments);
+    setEntries(newLocalEntries);
+    setPayments(newLocalPayments.filter(p => selectedCustomer.entries.some(e => e.id === p.credit_id)));
+    toast.success(`${formatCurrency(amount)} payment recorded locally!`);
     setShowPayDialog(false);
     setPayAmount('');
+
+    // Trigger cloud updates in background
+    try {
+      await saveCreditPaymentToCloud(paymentsToInsert);
+      await saveCreditEntryToCloud(updatedEntries);
+    } catch (err) {
+      console.warn('[Offline] Saved payment collection locally, cloud sync will retry.', err);
+    }
+
     await fetchEntries();
-    // refresh the selected customer view from new entries on next render
     setSelectedCustomer(null);
   };
 
@@ -184,30 +216,75 @@ export const CreditLedger: React.FC = () => {
       toast.error('No bill number on this entry');
       return;
     }
-    const { data, error } = await supabase
-      .from('orders')
-      .select('*')
-      .eq('store_id', storeId)
-      .eq('bill_number', entry.bill_number)
-      .maybeSingle();
-    if (error || !data) {
+
+    let order = null;
+    const localOrders = getOrders();
+    const matchingLocal = localOrders.find(o => o.billNumber === entry.bill_number);
+    if (matchingLocal) {
+      order = matchingLocal;
+    } else {
+      try {
+        const direct = localStorage.getItem('pos_store_code');
+        let storeCode = direct || null;
+        if (!storeCode) {
+          const storeData = localStorage.getItem('pos_active_store_data');
+          if (storeData) {
+            const parsed = JSON.parse(storeData);
+            storeCode = parsed?.storeCode || parsed?.store_code || null;
+          }
+        }
+        const { data: ordersResult } = await supabase.functions.invoke('sync-orders', {
+          body: { action: 'fetch', store_id: storeId, store_code: storeCode }
+        });
+        if (ordersResult?.orders) {
+          const matching = ordersResult.orders.find((o: any) => o.bill_number === entry.bill_number);
+          if (matching) {
+            order = {
+              id: matching.id,
+              billNumber: matching.bill_number,
+              items: matching.items || [],
+              subtotal: Number(matching.subtotal),
+              tax: Number(matching.tax),
+              discount: Number(matching.discount),
+              total: Number(matching.total),
+              status: matching.status,
+              orderType: matching.order_type,
+              tableNumber: matching.table_number ? Number(matching.table_number) : undefined,
+              customerName: matching.customer_name || undefined,
+              customerPhone: matching.customer_phone || undefined,
+              paymentMethod: matching.payment_method,
+              createdAt: new Date(matching.created_at),
+              kotPrinted: false,
+              billPrinted: matching.status === 'completed',
+              isDirectBill: true,
+              storeId: matching.store_id,
+            };
+          }
+        }
+      } catch (e) {
+        console.error('Failed to fetch order from cloud:', e);
+      }
+    }
+
+    if (!order) {
       toast.error('Original bill not found');
       return;
     }
+
     const billHtml = generateProfessionalBill({
-      id: data.id,
-      billNumber: data.bill_number,
-      createdAt: data.created_at,
-      orderType: data.order_type,
-      tableNumber: data.table_number || undefined,
-      customerName: data.customer_name || entry.customer_name,
-      customerPhone: data.customer_phone || entry.customer_phone || undefined,
-      items: data.items || [],
-      subtotal: Number(data.subtotal || 0),
-      tax: Number(data.tax || 0),
-      discount: Number(data.discount || 0),
-      total: Number(data.total || 0),
-      paymentMethod: data.payment_method || 'credit',
+      id: order.id,
+      billNumber: order.billNumber,
+      createdAt: order.createdAt,
+      orderType: order.orderType,
+      tableNumber: order.tableNumber || undefined,
+      customerName: order.customerName || entry.customer_name,
+      customerPhone: order.customerPhone || entry.customer_phone || undefined,
+      items: order.items || [],
+      subtotal: Number(order.subtotal || 0),
+      tax: Number(order.tax || 0),
+      discount: Number(order.discount || 0),
+      total: Number(order.total || 0),
+      paymentMethod: order.paymentMethod || 'credit',
     } as any);
     const w = window.open('', '_blank', 'width=420,height=800');
     if (!w) { toast.error('Please allow popups for printing'); return; }

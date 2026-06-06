@@ -1,7 +1,11 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { autoUpdater } = require('electron-updater');
+
+// Configure auto updater logging
+autoUpdater.logger = console;
 
 let mainWindow;
 let localServer;
@@ -93,7 +97,51 @@ async function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  // Check for updates after window loads
+  setTimeout(() => {
+    autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+      console.error('[Updater] Failed to check for updates:', err);
+    });
+  }, 5000);
 }
+
+// Auto Updater Events
+autoUpdater.on('checking-for-update', () => {
+  console.log('[Updater] Checking for update...');
+});
+
+autoUpdater.on('update-available', (info) => {
+  console.log('[Updater] Update available:', info.version);
+});
+
+autoUpdater.on('update-not-available', (info) => {
+  console.log('[Updater] Update not available.');
+});
+
+autoUpdater.on('error', (err) => {
+  console.error('[Updater] Error in auto-updater:', err);
+});
+
+autoUpdater.on('download-progress', (progressObj) => {
+  console.log(`[Updater] Download progress: ${progressObj.percent.toFixed(2)}% (${progressObj.transferred}/${progressObj.total} bytes)`);
+});
+
+autoUpdater.on('update-downloaded', (info) => {
+  console.log('[Updater] Update downloaded:', info.version);
+  dialog.showMessageBox({
+    type: 'info',
+    title: 'Update Available',
+    message: `A new version (${info.version}) of PayStorePOS has been downloaded. Restart the application to apply the update?`,
+    buttons: ['Restart Now', 'Later'],
+    defaultId: 0,
+    cancelId: 1
+  }).then((result) => {
+    if (result.response === 0) {
+      autoUpdater.quitAndInstall();
+    }
+  });
+});
 
 app.on('ready', createWindow);
 

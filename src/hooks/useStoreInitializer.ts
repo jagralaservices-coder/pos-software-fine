@@ -41,6 +41,38 @@ export const useStoreInitializer = () => {
   ): Promise<boolean> => {
     console.log('[StoreInit] Starting full cloud download for store:', storeId);
 
+    // Validate store exists in Supabase
+    try {
+      const storeCode = getStoreCode();
+      if (isStoreLogin) {
+        const { data: storeDetails, error } = await supabase.functions.invoke('sync-store-data', {
+          body: { action: 'fetch', store_id: storeId, data_type: 'store_details', store_code: storeCode }
+        });
+        if (error || !storeDetails?.success || !storeDetails?.store) {
+          console.error('[StoreInit] Store validation failed via edge function');
+          return false;
+        }
+      } else {
+        const { data: store, error } = await supabase
+          .from('stores')
+          .select('id')
+          .eq('id', storeId)
+          .eq('is_active', true)
+          .maybeSingle();
+        if (error || !store) {
+          console.error('[StoreInit] Store validation failed in direct DB:', error);
+          return false;
+        }
+      }
+    } catch (e) {
+      console.warn('[StoreInit] Store existence validation failed (network error or offline):', e);
+      if (!navigator.onLine) {
+        console.log('[StoreInit] Offline: bypassing store existence check');
+      } else {
+        return false;
+      }
+    }
+
     try {
       if (isStoreLogin) {
         // Use edge function for store login
@@ -125,6 +157,100 @@ export const useStoreInitializer = () => {
           } catch (err) {
             console.warn('[StoreInit] Failed to download', dataType, ':', err);
           }
+        }
+
+        // Fetch menu items
+        try {
+          const { data: menuResult } = await supabase.functions.invoke('sync-store-data', {
+            body: { action: 'fetch', store_id: storeId, data_type: 'menu_items', store_code: storeCode }
+          });
+          if (menuResult?.items) {
+            const ingredients = menuResult.ingredients || [];
+            const variations = menuResult.variations || [];
+            const { getMenuItems, setMenuItems, safeMerge } = await import('@/lib/store');
+            const parsed = menuResult.items.map((item: any) => ({
+              id: item.id,
+              name: item.name,
+              nameHindi: item.name_hindi || undefined,
+              price: Number(item.price),
+              category: item.category,
+              image: item.image_url || undefined,
+              isAvailable: item.is_available,
+              preparationTime: item.preparation_time || undefined,
+              stock: item.stock || undefined,
+              linkedInventoryId: item.linked_inventory_id || undefined,
+              gramagePerUnit: item.gramage_per_unit ? Number(item.gramage_per_unit) : undefined,
+              sku: item.sku || undefined,
+              barcode: item.barcode || undefined,
+              ingredients: ingredients.filter((ing: any) => ing.menu_item_id === item.id).map((ing: any) => ({
+                id: ing.id,
+                inventoryItemId: ing.inventory_item_id,
+                quantityRequired: Number(ing.quantity_required),
+                unit: ing.unit,
+              })),
+              variations: variations.filter((v: any) => v.menu_item_id === item.id).map((v: any) => ({
+                id: v.id,
+                menuItemId: v.menu_item_id,
+                name: v.name,
+                sku: v.sku || undefined,
+                price: Number(v.price),
+                isAvailable: v.is_available,
+                stock: v.stock || undefined,
+                sortOrder: v.sort_order,
+                unit: v.unit || undefined,
+              })),
+            }));
+            const merged = safeMerge(getMenuItems(), parsed);
+            setMenuItems(merged);
+          }
+        } catch (e) {
+          console.warn('[StoreInit] Failed to download menu items:', e);
+        }
+
+        // Fetch categories
+        try {
+          const { data: catResult } = await supabase.functions.invoke('sync-store-data', {
+            body: { action: 'fetch', store_id: storeId, data_type: 'categories', store_code: storeCode }
+          });
+          if (catResult?.items) {
+            const { getCategories, setCategories, safeMerge } = await import('@/lib/store');
+            const parsed = catResult.items.map((cat: any) => ({
+              id: cat.category_id || cat.id,
+              name: cat.name,
+              nameHindi: cat.name_hindi || undefined,
+              icon: cat.icon || '📦',
+              color: cat.color || 'cat-food',
+            }));
+            const merged = safeMerge(getCategories(), parsed);
+            setCategories(merged);
+          }
+        } catch (e) {
+          console.warn('[StoreInit] Failed to download categories:', e);
+        }
+
+        // Fetch customers
+        try {
+          const { data: custResult } = await supabase.functions.invoke('sync-store-data', {
+            body: { action: 'fetch', store_id: storeId, data_type: 'pos_customers', store_code: storeCode }
+          });
+          if (custResult?.items) {
+            const { getCustomers, setCustomers, safeMerge } = await import('@/lib/store');
+            const parsed = custResult.items.map((c: any) => ({
+              id: c.id,
+              name: c.name,
+              phone: c.phone || '',
+              email: c.email || '',
+              address: c.address || '',
+              city: c.city || '',
+              state: c.state || '',
+              pincode: c.pincode || '',
+              createdAt: c.created_at,
+            }));
+            const merged = safeMerge(getCustomers(), parsed);
+            setCustomers(merged);
+          }
+        } catch (e) {
+          console.warn('[StoreInit] Failed to download customers:', e);
         }
       } else {
         // Direct DB access for owner/admin
@@ -232,6 +358,210 @@ export const useStoreInitializer = () => {
           setHeldBills(merged);
           callbacks.onHeldBills(merged);
         }
+
+        // Fetch menu items directly
+        try {
+          const { data: dbItems } = await supabase
+            .from('menu_items')
+            .select('*')
+            .eq('store_id', storeId);
+          if (dbItems) {
+            const menuItemIds = dbItems.map(i => i.id);
+            let ingredients: any[] = [];
+            let variations: any[] = [];
+            if (menuItemIds.length > 0) {
+              const { data: ings } = await supabase.from('menu_item_ingredients').select('*').in('menu_item_id', menuItemIds);
+              ingredients = ings || [];
+              const { data: vars } = await supabase.from('menu_item_variations').select('*').in('menu_item_id', menuItemIds);
+              variations = vars || [];
+            }
+            const { getMenuItems, setMenuItems, safeMerge } = await import('@/lib/store');
+            const parsed = dbItems.map((item: any) => ({
+              id: item.id,
+              name: item.name,
+              nameHindi: item.name_hindi || undefined,
+              price: Number(item.price),
+              category: item.category,
+              image: item.image_url || undefined,
+              isAvailable: item.is_available,
+              preparationTime: item.preparation_time || undefined,
+              stock: item.stock || undefined,
+              linkedInventoryId: item.linked_inventory_id || undefined,
+              gramagePerUnit: item.gramage_per_unit ? Number(item.gramage_per_unit) : undefined,
+              sku: item.sku || undefined,
+              barcode: item.barcode || undefined,
+              ingredients: ingredients.filter((ing: any) => ing.menu_item_id === item.id).map((ing: any) => ({
+                id: ing.id,
+                inventoryItemId: ing.inventory_item_id,
+                quantityRequired: Number(ing.quantity_required),
+                unit: ing.unit,
+              })),
+              variations: variations.filter((v: any) => v.menu_item_id === item.id).map((v: any) => ({
+                id: v.id,
+                menuItemId: v.menu_item_id,
+                name: v.name,
+                sku: v.sku || undefined,
+                price: Number(v.price),
+                isAvailable: v.is_available,
+                stock: v.stock || undefined,
+                sortOrder: v.sort_order,
+                unit: v.unit || undefined,
+              })),
+            }));
+            const merged = safeMerge(getMenuItems(), parsed);
+            setMenuItems(merged);
+          }
+        } catch (e) {
+          console.warn('[StoreInit] Failed to download menu items directly:', e);
+        }
+
+        // Fetch categories directly
+        try {
+          const { data: dbCats } = await supabase
+            .from('store_categories')
+            .select('*')
+            .eq('store_id', storeId);
+          if (dbCats) {
+            const { getCategories, setCategories, safeMerge } = await import('@/lib/store');
+            const parsed = dbCats.map((cat: any) => ({
+              id: cat.category_id || cat.id,
+              name: cat.name,
+              nameHindi: cat.name_hindi || undefined,
+              icon: cat.icon || '📦',
+              color: cat.color || 'cat-food',
+            }));
+            const merged = safeMerge(getCategories(), parsed);
+            setCategories(merged);
+          }
+        } catch (e) {
+          console.warn('[StoreInit] Failed to download categories directly:', e);
+        }
+
+        // Fetch customers directly
+        try {
+          const { data: dbCusts } = await supabase
+            .from('pos_customers')
+            .select('*')
+            .eq('store_id', storeId);
+          if (dbCusts) {
+            const { getCustomers, setCustomers, safeMerge } = await import('@/lib/store');
+            const parsed = dbCusts.map((c: any) => ({
+              id: c.id,
+              name: c.name,
+              phone: c.phone || '',
+              email: c.email || '',
+              address: c.address || '',
+              city: c.city || '',
+              state: c.state || '',
+              pincode: c.pincode || '',
+              createdAt: c.created_at,
+            }));
+            const merged = safeMerge(getCustomers(), parsed);
+            setCustomers(merged);
+          }
+        } catch (e) {
+          console.warn('[StoreInit] Failed to download customers directly:', e);
+        }
+      }
+
+      const storeCode = getStoreCode();
+
+      // Fetch credit ledger (Edge Function for store login)
+      try {
+        let clData: any[] | null = null;
+        if (isStoreLogin) {
+          const { data: clResult } = await supabase.functions.invoke('sync-store-data', {
+            body: { action: 'fetch', store_id: storeId, data_type: 'credit_ledger', store_code: storeCode }
+          });
+          clData = clResult?.items || [];
+        } else {
+          const { data: dbData } = await supabase
+            .from('credit_ledger')
+            .select('*')
+            .eq('store_id', storeId);
+          clData = dbData;
+        }
+
+        if (clData) {
+          const parsed = clData.map((e: any) => ({
+            id: e.id,
+            store_id: e.store_id,
+            customer_name: e.customer_name,
+            customer_phone: e.customer_phone,
+            bill_number: e.bill_number,
+            total_amount: Number(e.total_amount),
+            paid_amount: Number(e.paid_amount),
+            due_amount: Number(e.due_amount),
+            payment_status: e.payment_status,
+            notes: e.notes,
+            created_at: new Date(e.created_at),
+            updated_at: e.updated_at,
+          }));
+          const { getCreditLedger, setCreditLedger, safeMerge } = await import('@/lib/store');
+          const merged = safeMerge(getCreditLedger(), parsed);
+          setCreditLedger(merged);
+        }
+      } catch (e) {
+        console.warn('[StoreInit] Failed to download credit ledger:', e);
+      }
+
+      // Fetch credit payments (Edge Function for store login)
+      try {
+        let cpData: any[] | null = null;
+        if (isStoreLogin) {
+          const { data: cpResult } = await supabase.functions.invoke('sync-store-data', {
+            body: { action: 'fetch', store_id: storeId, data_type: 'credit_payments', store_code: storeCode }
+          });
+          cpData = cpResult?.items || [];
+        } else {
+          const { data: dbData } = await supabase
+            .from('credit_payments')
+            .select('*')
+            .eq('store_id', storeId);
+          cpData = dbData;
+        }
+
+        if (cpData) {
+          const parsed = cpData.map((p: any) => ({
+            id: p.id,
+            credit_id: p.credit_id,
+            store_id: p.store_id,
+            amount: Number(p.amount),
+            payment_method: p.payment_method,
+            received_by: p.received_by,
+            notes: p.notes,
+            created_at: new Date(p.created_at),
+            updated_at: p.updated_at,
+          }));
+          const { getCreditPayments, setCreditPayments, safeMerge } = await import('@/lib/store');
+          const merged = safeMerge(getCreditPayments(), parsed);
+          setCreditPayments(merged);
+        }
+      } catch (e) {
+        console.warn('[StoreInit] Failed to download credit payments:', e);
+      }
+
+      // Fetch WhatsApp Config (Edge Function for store login)
+      try {
+        let waConfig: any = null;
+        if (isStoreLogin) {
+          const { data: waResult } = await supabase.functions.invoke('sync-store-data', {
+            body: { action: 'fetch', store_id: storeId, data_type: 'whatsapp_config', store_code: storeCode }
+          });
+          waConfig = waResult?.config;
+        } else {
+          const { data: dbData } = await supabase
+            .from('store_whatsapp_config')
+            .select('*')
+            .eq('store_id', storeId)
+            .maybeSingle();
+          waConfig = dbData;
+        }
+        if (waConfig) {
+          localStorage.setItem(`pos_whatsapp_config_${storeId}`, JSON.stringify(waConfig));
+        }
+      } catch (e) {
+        console.warn('[StoreInit] Failed to download WhatsApp config:', e);
       }
 
       return true;
@@ -258,24 +588,17 @@ export const useStoreInitializer = () => {
     if (initInProgress.current) return;
     initInProgress.current = true;
 
-    const initKey = `${INIT_KEY_PREFIX}${storeId}`;
-    const alreadyInitialized = localStorage.getItem(initKey);
+    console.log('[StoreInit] Initializing store session:', storeId);
+    toast.info('Syncing store data from cloud...', { duration: 3000 });
 
     try {
-      if (!alreadyInitialized) {
-        console.log('[StoreInit] First login for store', storeId, '- starting full download');
-        toast.info('Syncing store data...', { duration: 3000 });
-        
-        const success = await fullCloudDownload(storeId, isStoreLogin, callbacks);
-        
-        if (success) {
-          localStorage.setItem(initKey, new Date().toISOString());
-          toast.success('Store data synced successfully!');
-        } else {
-          toast.error('Some data failed to sync. Will retry.');
-        }
+      const success = await fullCloudDownload(storeId, isStoreLogin, callbacks);
+      if (success) {
+        const initKey = `${INIT_KEY_PREFIX}${storeId}`;
+        localStorage.setItem(initKey, new Date().toISOString());
+        toast.success('Store data synced successfully!');
       } else {
-        console.log('[StoreInit] Store', storeId, 'already initialized on this device');
+        toast.error('Some store data failed to sync. App remains functional.');
       }
     } finally {
       initInProgress.current = false;

@@ -11,6 +11,7 @@ import { BarcodeButton } from '@/components/pos/BarcodeButton';
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
 import { LinkBarcodeDialog } from '@/components/pos/LinkBarcodeDialog';
 import { CustomItemDialog } from '@/components/pos/CustomItemDialog';
+import { PromptPriceWeightDialog } from '@/components/pos/PromptPriceWeightDialog';
 import { 
   Search, 
   Plus, 
@@ -63,6 +64,7 @@ import {
 } from '@/components/ui/sheet';
 import { CustomerDetails } from '@/components/pos/CustomerDetails';
 import { autoShareBillAfterPrint } from '@/lib/billShareUtils';
+import { useStoreSettings } from '@/hooks/useStoreSettings';
 import { QRMenuGenerator } from '@/components/pos/QRMenuGenerator';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
 import { QROrdersPanel } from '@/components/pos/QROrdersPanel';
@@ -147,6 +149,7 @@ export const POSBillingPage: React.FC = () => {
   const [selectedTableId, setSelectedTableId] = useState<string | null>(selectedTable?.id || null);
   const [selectedItemForVariation, setSelectedItemForVariation] = useState<MenuItem | null>(null);
   const [variationSheetOpen, setVariationSheetOpen] = useState(false);
+  const [promptItem, setPromptItem] = useState<MenuItem | null>(null);
   const [showPaidConfirmDialog, setShowPaidConfirmDialog] = useState(false);
   const preparedPrintWindowRef = useRef<Window | null>(null);
   const [isPaid, setIsPaid] = useState(false);
@@ -157,6 +160,8 @@ export const POSBillingPage: React.FC = () => {
   const [showCustomerDetails, setShowCustomerDetails] = useState(false);
   const [isProcessingSale, setIsProcessingSale] = useState(false);
   const { canAccess } = useSubscription();
+  const { getSetting } = useStoreSettings();
+  const printerSettings = getSetting<{ printBill?: boolean; printKOT?: boolean }>('pos_settings_printer') || { printBill: true, printKOT: true };
 
   const actionButtons = useMemo(() => {
     return getGroupButtons('cart_actions').filter(btn => {
@@ -224,10 +229,11 @@ export const POSBillingPage: React.FC = () => {
 
     if (!item.isAvailable) return;
     
-    // If item has variations, show the variation selector popup
     if (item.variations && item.variations.length > 0) {
       setSelectedItemForVariation(item);
       setVariationSheetOpen(true);
+    } else if (item.preparationTime === 998 || item.preparationTime === 999) {
+      setPromptItem(item);
     } else {
       addToCart(item);
     }
@@ -247,10 +253,13 @@ export const POSBillingPage: React.FC = () => {
       name: `${item.name} (${variation.name})`,
       sku: variation.sku || item.sku,
     } : item;
-    
-    // Add item with specified quantity
-    for (let i = 0; i < quantity; i++) {
-      addToCart(itemToAdd);
+
+    if (item.preparationTime === 998 || item.preparationTime === 999) {
+      setPromptItem(itemToAdd);
+    } else {
+      for (let i = 0; i < quantity; i++) {
+        addToCart(itemToAdd);
+      }
     }
   };
 
@@ -385,7 +394,10 @@ export const POSBillingPage: React.FC = () => {
 
           console.log('[Print] Bill HTML:', billContent);
 
-          directPrint(billContent, () => {
+          const shouldPrintBill = printerSettings.printBill !== false;
+          const shouldPrintKOT = (printerSettings.printKOT !== false) && canAccess('kot');
+
+          const handleAfterBillPrint = () => {
             if (customer.phone || customer.email) {
               autoShareBillAfterPrint({
                 customerName: customer.name,
@@ -399,17 +411,34 @@ export const POSBillingPage: React.FC = () => {
                 discount: order.discount,
               });
             }
-            setTimeout(() => {
-              directPrint(kotContent, () => {
-                toast({ title: t('msg.saleComplete'), description: `${t('pos.billNumber')} #${order.billNumber || order.id.slice(-6).toUpperCase()} - ${t('msg.billKotPrinted')}` });
-              });
-            }, 500);
-          }, existingPrintWindow);
+
+            if (shouldPrintKOT) {
+              setTimeout(() => {
+                directPrint(kotContent, () => {
+                  toast({ title: t('msg.saleComplete'), description: `${t('pos.billNumber')} #${order.billNumber || order.id.slice(-6).toUpperCase()} - ${t('msg.billKotPrinted')}` });
+                });
+              }, 500);
+            } else {
+              toast({ title: t('msg.saleComplete'), description: `${t('pos.billNumber')} #${order.billNumber || order.id.slice(-6).toUpperCase()}` });
+            }
+          };
+
+          if (shouldPrintBill) {
+            directPrint(billContent, handleAfterBillPrint, existingPrintWindow);
+          } else {
+            existingPrintWindow?.close();
+            handleAfterBillPrint();
+          }
         } else if (action === 'kot') {
           const kotContent = generateKOT(order);
-          directPrint(kotContent, () => {
-            toast({ title: t('msg.saleComplete'), description: `${t('common.orderNo')} #${order.kotNumber || order.id.slice(-6).toUpperCase()} - ${t('msg.kotSentKitchen')}` });
-          });
+          const shouldPrintKOT = (printerSettings.printKOT !== false) && canAccess('kot');
+          if (shouldPrintKOT) {
+            directPrint(kotContent, () => {
+              toast({ title: t('msg.saleComplete'), description: `${t('common.orderNo')} #${order.kotNumber || order.id.slice(-6).toUpperCase()} - ${t('msg.kotSentKitchen')}` });
+            });
+          } else {
+            toast({ title: t('msg.saleComplete'), description: `${t('common.orderNo')} #${order.kotNumber || order.id.slice(-6).toUpperCase()}` });
+          }
         }
         
         // Reset states
@@ -448,9 +477,15 @@ export const POSBillingPage: React.FC = () => {
     };
 
     const kotContent = generateKOT(kotOrder);
-    directPrint(kotContent, () => {
-      toast({ title: t('msg.kotPrinted'), description: t('msg.kotNotCountedAsSale') });
-    });
+    const shouldPrintKOT = (printerSettings.printKOT !== false) && canAccess('kot');
+
+    if (shouldPrintKOT) {
+      directPrint(kotContent, () => {
+        toast({ title: t('msg.kotPrinted'), description: t('msg.kotNotCountedAsSale') });
+      });
+    } else {
+      toast({ title: 'KOT Saved', description: 'KOT saved successfully (printing is disabled)' });
+    }
   };
 
   const handleHoldBill = () => {
@@ -940,20 +975,20 @@ export const POSBillingPage: React.FC = () => {
       if (targetCartItem) {
         if (e.key === '+' || e.key === '=') {
           e.preventDefault();
-          updateCartQuantity(targetCartItem.id, targetCartItem.quantity + 1);
+          updateCartQuantity(targetCartItem.cartItemId || targetCartItem.id, targetCartItem.quantity + 1);
         } else if (e.key === '-') {
           e.preventDefault();
           if (targetCartItem.quantity > 1) {
-            updateCartQuantity(targetCartItem.id, targetCartItem.quantity - 1);
+            updateCartQuantity(targetCartItem.cartItemId || targetCartItem.id, targetCartItem.quantity - 1);
           } else {
-            removeFromCart(targetCartItem.id);
+            removeFromCart(targetCartItem.cartItemId || targetCartItem.id);
             if (activeSection === 'cart') {
               setCartHighlightIndex(prev => Math.max(0, prev - 1));
             }
           }
         } else if (e.key === 'Delete' || (e.key === 'Backspace' && !isInput)) {
           e.preventDefault();
-          removeFromCart(targetCartItem.id);
+          removeFromCart(targetCartItem.cartItemId || targetCartItem.id);
           if (activeSection === 'cart') {
             setCartHighlightIndex(prev => Math.max(0, prev - 1));
           }
@@ -1249,7 +1284,7 @@ export const POSBillingPage: React.FC = () => {
                   handleItemClick(item);
                 }}
                 className={cn(
-                  'menu-item text-left relative rounded-lg bg-card overflow-hidden ring-1 ring-border transition-all duration-150',
+                  'menu-item text-left relative rounded-2xl bg-card overflow-hidden ring-1 ring-border transition-all duration-150 p-0',
                   idx === highlightedIndex
                     ? 'ring-4 ring-primary border-primary bg-primary/5 scale-[1.02] shadow-md z-10'
                     : item.id.startsWith('others-')
@@ -1285,7 +1320,7 @@ export const POSBillingPage: React.FC = () => {
                     </div>
                     {/* Name & price */}
                     <div className="p-2.5">
-                      <h4 className="font-semibold text-xs leading-snug break-words whitespace-normal text-foreground line-clamp-1">{item.name}</h4>
+                      <h4 className="font-semibold text-xs leading-snug break-words whitespace-normal text-foreground">{item.name}</h4>
                       {item.variations && item.variations.length > 0 ? (
                         <p className="text-sm font-bold text-primary mt-1">
                           {formatCurrency(Math.min(item.price || Infinity, ...item.variations.map(v => v.price)))}+
@@ -1470,7 +1505,7 @@ export const POSBillingPage: React.FC = () => {
               const isHighlighted = activeSection === 'cart' && cartHighlightIndex === index;
               return (
                 <div
-                  key={item.id}
+                  key={item.cartItemId || item.id}
                   data-cart-index={index}
                   className={cn(
                     "cart-item flex items-center gap-2 rounded-lg border bg-card p-2 text-foreground transition-all duration-200",
@@ -1485,20 +1520,20 @@ export const POSBillingPage: React.FC = () => {
                 </div>
                 <div className="flex items-center gap-1">
                   <button
-                    onClick={() => updateCartQuantity(item.id, item.quantity - 1)}
+                    onClick={() => updateCartQuantity(item.cartItemId || item.id, item.quantity - 1)}
                     className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background text-foreground hover:bg-muted"
                   >
                     <Minus className="w-3 h-3" />
                   </button>
                   <span className="w-5 text-center text-xs font-medium text-foreground">{item.quantity}</span>
                   <button
-                    onClick={() => updateCartQuantity(item.id, item.quantity + 1)}
+                    onClick={() => updateCartQuantity(item.cartItemId || item.id, item.quantity + 1)}
                     className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background text-foreground hover:bg-muted"
                   >
                     <Plus className="w-3 h-3" />
                   </button>
                   <button
-                    onClick={() => removeFromCart(item.id)}
+                    onClick={() => removeFromCart(item.cartItemId || item.id)}
                     className="ml-1 flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background text-destructive hover:bg-muted"
                   >
                     <Trash2 className="w-3 h-3" />
@@ -2177,6 +2212,14 @@ export const POSBillingPage: React.FC = () => {
       onResetNow={handleResetNow}
       onExtend={handleExtendTime}
       onDismiss={dismissSalesResetWarning}
+    />
+
+    {/* Prompt Price & Weight Dialog */}
+    <PromptPriceWeightDialog
+      open={!!promptItem}
+      onOpenChange={(open) => !open && setPromptItem(null)}
+      item={promptItem}
+      onAdd={(item, price, weight) => addToCart(item, price, weight)}
     />
     </>
   );

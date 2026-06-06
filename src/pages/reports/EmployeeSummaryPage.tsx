@@ -119,7 +119,7 @@ const EmployeeSummaryPage: React.FC = () => {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => navigate('/reports')}>
@@ -154,22 +154,22 @@ const EmployeeSummaryPage: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="pos-card p-4">
-          <p className="text-sm text-muted-foreground">Staff Count</p>
-          <p className="text-2xl font-bold text-foreground">{employees.length}</p>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
+        <div className="pos-card p-2.5 sm:p-4 min-w-0">
+          <p className="text-xs sm:text-sm text-muted-foreground truncate">Staff Count</p>
+          <p className="text-base sm:text-2xl font-bold text-foreground truncate" title={String(employees.length)}>{employees.length}</p>
         </div>
-        <div className="pos-card p-4">
-          <p className="text-sm text-muted-foreground">{t('reports.totalOrders')}</p>
-          <p className="text-2xl font-bold text-foreground">{totalOrders}</p>
+        <div className="pos-card p-2.5 sm:p-4 min-w-0">
+          <p className="text-xs sm:text-sm text-muted-foreground truncate">{t('reports.totalOrders')}</p>
+          <p className="text-base sm:text-2xl font-bold text-foreground truncate" title={String(totalOrders)}>{totalOrders}</p>
         </div>
-        <div className="pos-card p-4">
-          <p className="text-sm text-muted-foreground">{t('reports.totalSales')}</p>
-          <p className="text-2xl font-bold text-foreground">{formatCurrency(totalSales)}</p>
+        <div className="pos-card p-2.5 sm:p-4 min-w-0">
+          <p className="text-xs sm:text-sm text-muted-foreground truncate">{t('reports.totalSales')}</p>
+          <p className="text-base sm:text-2xl font-bold text-foreground truncate" title={formatCurrency(totalSales)}>{formatCurrency(totalSales)}</p>
         </div>
-        <div className="pos-card p-4">
-          <p className="text-sm text-muted-foreground">{t('reports.tips')}</p>
-          <p className="text-2xl font-bold text-success">{formatCurrency(totalTips)}</p>
+        <div className="pos-card p-2.5 sm:p-4 min-w-0">
+          <p className="text-xs sm:text-sm text-muted-foreground truncate">{t('reports.tips')}</p>
+          <p className="text-base sm:text-2xl font-bold text-success truncate" title={formatCurrency(totalTips)}>{formatCurrency(totalTips)}</p>
         </div>
       </div>
 

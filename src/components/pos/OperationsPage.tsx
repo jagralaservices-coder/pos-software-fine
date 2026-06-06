@@ -194,12 +194,12 @@ export const OperationsPage: React.FC = () => {
     ...(canAccess('deliveryBoys') ? [{ id: 'delivery-boys', icon: Truck, label: t('operations.deliveryBoys'), path: '/owner-settings?view=deliveryBoys' }] : []),
     // Settings items - moved from Settings page
     { id: 'store-location', icon: MapPin, label: t('operations.storeLocation'), action: () => setShowLocationSettings(true) },
-    { id: 'printer-bill', icon: Printer, label: t('operations.printerBill'), action: () => setActiveSettingsView('printer') },
-    { id: 'sales-reset', icon: Settings, label: t('operations.salesReset'), action: () => setActiveSettingsView('sales-reset') },
+    { id: 'printer-bill', icon: Printer, label: t('operations.printerBill'), path: '/settings?view=print' },
+    { id: 'sales-reset', icon: Settings, label: t('operations.salesReset'), path: '/settings?view=salesReset' },
 
     ...(canAccess('teamChat') ? [{ id: 'team-chat', icon: MessageSquare, label: t('common.teamChat'), path: '/chat' }] : []),
     { id: 'ui-customization', icon: SlidersHorizontal, label: 'Customize Software', path: '/ui-customization' },
-    { id: 'blank-settings', icon: Settings, label: t('operations.settings'), action: () => setActiveSettingsView('blank') },
+    { id: 'blank-settings', icon: Settings, label: t('operations.settings'), path: '/settings' },
   ];
   // Sort operations by saved order
   const savedOpsOrder = getOperationsOrder();
@@ -438,31 +438,12 @@ export const OperationsPage: React.FC = () => {
           </div>
         ) : (
           <>
-            {/* Store & Staff IDs Card with Reports */}
             <div className="mb-4 p-4 rounded-xl border border-border bg-card">
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
-                {storeCode && (
-                  <div>
-                    <p className="text-xs text-muted-foreground">{t('common.storeCode')}</p>
-                    <p className="font-semibold text-foreground">{storeCode}</p>
-                  </div>
-                )}
-                {storeId && (
-                  <div>
-                    <p className="text-xs text-muted-foreground">{t('common.storeId')}</p>
-                    <p className="font-mono text-xs text-foreground truncate">{storeId.slice(0, 8)}...</p>
-                  </div>
-                )}
                 {billerName && (
                   <div>
                     <p className="text-xs text-muted-foreground">{t('common.biller')}</p>
                     <p className="font-semibold text-foreground">{billerName}</p>
-                  </div>
-                )}
-                {staffCode && (
-                  <div>
-                    <p className="text-xs text-muted-foreground">{t('common.staffCode')}</p>
-                    <p className="font-semibold text-foreground">{staffCode}</p>
                   </div>
                 )}
                 {/* Reports Section - visible based on plan */}

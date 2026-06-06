@@ -40,11 +40,24 @@ import { PartPaymentDialog } from './PartPaymentDialog';
 import { SplitBillDialog } from './SplitBillDialog';
 import { usePaymentSound } from '@/hooks/usePaymentSound';
 import { useSubscription } from '@/hooks/useSubscription';
+import { useStoreSettings } from '@/hooks/useStoreSettings';
 
-export const MobileCart: React.FC = () => {
+interface MobileCartProps {
+  isOpen?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}
+
+export const MobileCart: React.FC<MobileCartProps> = ({ isOpen: controlledIsOpen, onOpenChange: controlledOnOpenChange }) => {
+  const [localIsOpen, setLocalIsOpen] = useState(false);
+  const isControlled = controlledIsOpen !== undefined;
+  const isOpen = isControlled ? controlledIsOpen : localIsOpen;
+  const setIsOpen = isControlled ? controlledOnOpenChange : setLocalIsOpen;
+
   const {
     cart,
     updateCartQuantity,
+    updateCartItem,
+    removeFromCart,
     clearCart,
     cartSubtotal,
     currentOrderType,
@@ -59,7 +72,6 @@ export const MobileCart: React.FC = () => {
   } = usePOS();
 
   const [showPayment, setShowPayment] = useState(false);
-  const [isOpen, setIsOpen] = useState(false);
   const [showPaidConfirm, setShowPaidConfirm] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'cash' | 'card' | 'upi' | 'due' | 'wallet' | 'credit'>('cash');
   const [isComplimentary, setIsComplimentary] = useState(false);
@@ -72,6 +84,32 @@ export const MobileCart: React.FC = () => {
   const [showBillingSummary, setShowBillingSummary] = useState(false);
   const { playSuccessSound } = usePaymentSound();
   const { canAccess } = useSubscription();
+
+  const { getSetting } = useStoreSettings();
+  const isEditingEnabled = getSetting('billingSystemSettings')?.enableCartItemEditing ?? false;
+
+  const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
+  const [editingQtyId, setEditingQtyId] = useState<string | null>(null);
+  const [tempPrice, setTempPrice] = useState('');
+  const [tempQty, setTempQty] = useState('');
+
+  const handleSavePrice = (itemId: string) => {
+    const newPrice = Number(tempPrice);
+    if (!isNaN(newPrice) && newPrice >= 0) {
+      updateCartItem(itemId, { price: newPrice });
+    }
+    setEditingPriceId(null);
+  };
+
+  const handleSaveQty = (itemId: string) => {
+    const newQty = Number(tempQty);
+    if (!isNaN(newQty) && newQty > 0) {
+      updateCartItem(itemId, { quantity: newQty });
+    } else if (newQty === 0) {
+      removeFromCart(itemId);
+    }
+    setEditingQtyId(null);
+  };
   
   // Additional charges state
   const [deliveryCharge, setDeliveryCharge] = useState(currentOrderType === 'delivery' ? 40 : 0);
@@ -169,26 +207,28 @@ export const MobileCart: React.FC = () => {
     <>
       {/* Floating Cart Button */}
       <Drawer open={isOpen} onOpenChange={setIsOpen}>
-        <DrawerTrigger asChild>
-          <button className="fixed bottom-4 left-4 right-4 z-50 bg-primary text-primary-foreground py-4 px-6 rounded-2xl shadow-xl flex items-center justify-between active:scale-[0.98] transition-transform">
-            <div className="flex items-center gap-3">
-              <div className="relative">
-                <ShoppingCart className="w-6 h-6" />
-                <span className="absolute -top-2 -right-2 w-5 h-5 bg-white text-primary text-xs font-bold rounded-full flex items-center justify-center">
-                  {itemCount}
-                </span>
+        {!isControlled && (
+          <DrawerTrigger asChild>
+            <button className="fixed bottom-4 left-4 right-4 z-50 bg-primary text-primary-foreground py-4 px-6 rounded-2xl shadow-xl flex items-center justify-between active:scale-[0.98] transition-transform">
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <ShoppingCart className="w-6 h-6" />
+                  <span className="absolute -top-2 -right-2 w-5 h-5 bg-white text-primary text-xs font-bold rounded-full flex items-center justify-center">
+                    {itemCount}
+                  </span>
+                </div>
+                <span className="font-semibold text-lg">View Cart</span>
               </div>
-              <span className="font-semibold text-lg">View Cart</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-xl">{formatCurrency(grandTotal)}</span>
-              <ChevronUp className="w-5 h-5" />
-            </div>
-          </button>
-        </DrawerTrigger>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-xl">{formatCurrency(grandTotal)}</span>
+                <ChevronUp className="w-5 h-5" />
+              </div>
+            </button>
+          </DrawerTrigger>
+        )}
 
-        <DrawerContent className="max-h-[90vh]">
-          <DrawerHeader className="border-b border-border pb-3">
+        <DrawerContent className="max-h-[90vh] flex flex-col">
+          <DrawerHeader className="border-b border-border pb-3 flex-shrink-0">
             <div className="flex items-center justify-between">
               <DrawerTitle className="text-xl font-bold">Your Order</DrawerTitle>
               <button
@@ -203,7 +243,8 @@ export const MobileCart: React.FC = () => {
             </div>
           </DrawerHeader>
 
-          <div className="p-4 overflow-y-auto max-h-[50vh]">
+          <div className="flex-1 overflow-y-auto pb-safe">
+            <div className="p-4">
             {/* Order Type */}
             <div className="flex gap-2 mb-4">
               {orderTypes.map((type) => (
@@ -227,7 +268,7 @@ export const MobileCart: React.FC = () => {
             <div className="space-y-3">
               {cart.map((item) => (
                 <div
-                  key={item.id}
+                  key={item.cartItemId || item.id}
                   className="bg-secondary/50 rounded-xl p-3 flex items-center gap-3"
                 >
                   <div className="w-14 h-14 rounded-lg bg-muted flex items-center justify-center text-2xl flex-shrink-0">
@@ -240,12 +281,43 @@ export const MobileCart: React.FC = () => {
                   
                   <div className="flex-1 min-w-0">
                     <h4 className="font-medium text-foreground truncate">{item.name}</h4>
-                    <p className="text-primary font-bold">{formatCurrency(item.price * item.quantity)}</p>
+                    {(isEditingEnabled || item.preparationTime === 999 || item.preparationTime === 998) ? (
+                      editingPriceId === (item.cartItemId || item.id) ? (
+                        <input
+                          type="number"
+                          value={tempPrice}
+                          onChange={(e) => setTempPrice(e.target.value)}
+                          onBlur={() => handleSavePrice(item.cartItemId || item.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSavePrice(item.cartItemId || item.id);
+                            if (e.key === 'Escape') setEditingPriceId(null);
+                          }}
+                          className="w-20 h-5 px-1 py-0.5 mt-0.5 text-xs border border-primary rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                          autoFocus
+                          min="0"
+                          step="0.01"
+                        />
+                      ) : (
+                        <div 
+                          className="flex items-center gap-1 cursor-pointer group/price text-xs text-muted-foreground hover:text-primary transition-colors mt-0.5"
+                          onClick={() => {
+                            setEditingPriceId(item.cartItemId || item.id);
+                            setTempPrice(String(item.price));
+                          }}
+                        >
+                          <span>{formatCurrency(item.price)}</span>
+                          <span className="text-[9px] bg-primary/10 px-1 py-0.2 rounded text-primary">Edit</span>
+                        </div>
+                      )
+                    ) : (
+                      <p className="text-xs text-muted-foreground">{formatCurrency(item.price)}</p>
+                    )}
+                    <p className="text-primary font-bold text-sm mt-0.5">{formatCurrency(item.price * item.quantity)}</p>
                   </div>
 
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => updateCartQuantity(item.id, item.quantity - 1)}
+                      onClick={() => updateCartQuantity(item.cartItemId || item.id, item.quantity - 1)}
                       className="w-9 h-9 rounded-lg bg-background flex items-center justify-center"
                     >
                       {item.quantity === 1 ? (
@@ -254,9 +326,38 @@ export const MobileCart: React.FC = () => {
                         <Minus className="w-4 h-4" />
                       )}
                     </button>
-                    <span className="w-8 text-center font-bold">{item.quantity}</span>
+                    {(isEditingEnabled || item.preparationTime === 999 || item.preparationTime === 998) ? (
+                      editingQtyId === (item.cartItemId || item.id) ? (
+                        <input
+                          type="number"
+                          value={tempQty}
+                          onChange={(e) => setTempQty(e.target.value)}
+                          onBlur={() => handleSaveQty(item.cartItemId || item.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveQty(item.cartItemId || item.id);
+                            if (e.key === 'Escape') setEditingQtyId(null);
+                          }}
+                          className="w-16 h-9 text-center font-bold border border-primary rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                          autoFocus
+                          min="0.001"
+                          step="any"
+                        />
+                      ) : (
+                        <span 
+                          className="min-w-8 px-1 text-center font-bold cursor-pointer hover:text-primary hover:underline"
+                          onClick={() => {
+                            setEditingQtyId(item.cartItemId || item.id);
+                            setTempQty(String(item.quantity));
+                          }}
+                        >
+                          {item.quantity}
+                        </span>
+                      )
+                    ) : (
+                      <span className="w-8 text-center font-bold">{item.quantity}</span>
+                    )}
                     <button
-                      onClick={() => updateCartQuantity(item.id, item.quantity + 1)}
+                      onClick={() => updateCartQuantity(item.cartItemId || item.id, item.quantity + 1)}
                       className="w-9 h-9 rounded-lg bg-primary text-primary-foreground flex items-center justify-center"
                     >
                       <Plus className="w-4 h-4" />
@@ -508,68 +609,70 @@ export const MobileCart: React.FC = () => {
               <>
                 <h3 className="text-lg font-bold text-center mb-2">Select Payment Method</h3>
                 
-                {/* Payment Method Grid - 5 columns with More button */}
-                <div className="grid grid-cols-5 gap-2 mb-4">
+                {/* Payment Method Grid - 2x2 for easy touch targets */}
+                <div className="grid grid-cols-2 gap-3 mb-3">
                   <button
                     onClick={() => handlePayment('cash')}
                     className={cn(
-                      "flex flex-col items-center gap-1 p-2 rounded-xl border-2 transition-all",
+                      "flex items-center justify-center gap-3 py-4 px-4 rounded-xl border-2 transition-all active:scale-[0.98]",
                       selectedPaymentMethod === 'cash' 
-                        ? "border-success bg-success/10" 
-                        : "border-border bg-secondary"
+                        ? "border-success bg-success/10 text-success font-bold" 
+                        : "border-border bg-secondary text-foreground"
                     )}
                   >
-                    <Banknote className="w-5 h-5 text-success" />
-                    <span className="text-[10px] font-medium">Cash</span>
-                    {selectedPaymentMethod === 'cash' && <Check className="w-3 h-3 text-success" />}
+                    <Banknote className="w-6 h-6 text-success" />
+                    <span className="text-sm font-medium">Cash</span>
+                    {selectedPaymentMethod === 'cash' && <Check className="w-4 h-4 text-success ml-auto" />}
                   </button>
                   <button
                     onClick={() => handlePayment('card')}
                     className={cn(
-                      "flex flex-col items-center gap-1 p-2 rounded-xl border-2 transition-all",
+                      "flex items-center justify-center gap-3 py-4 px-4 rounded-xl border-2 transition-all active:scale-[0.98]",
                       selectedPaymentMethod === 'card' 
-                        ? "border-primary bg-primary/10" 
-                        : "border-border bg-secondary"
+                        ? "border-primary bg-primary/10 text-primary font-bold" 
+                        : "border-border bg-secondary text-foreground"
                     )}
                   >
-                    <CreditCard className="w-5 h-5 text-primary" />
-                    <span className="text-[10px] font-medium">Card</span>
-                    {selectedPaymentMethod === 'card' && <Check className="w-3 h-3 text-primary" />}
+                    <CreditCard className="w-6 h-6 text-primary" />
+                    <span className="text-sm font-medium">Card</span>
+                    {selectedPaymentMethod === 'card' && <Check className="w-4 h-4 text-primary ml-auto" />}
                   </button>
                   <button
                     onClick={() => handlePayment('upi')}
                     className={cn(
-                      "flex flex-col items-center gap-1 p-2 rounded-xl border-2 transition-all",
+                      "flex items-center justify-center gap-3 py-4 px-4 rounded-xl border-2 transition-all active:scale-[0.98]",
                       selectedPaymentMethod === 'upi' 
-                        ? "border-purple-500 bg-purple-500/10" 
-                        : "border-border bg-secondary"
+                        ? "border-purple-500 bg-purple-500/10 text-purple-500 font-bold" 
+                        : "border-border bg-secondary text-foreground"
                     )}
                   >
-                    <Smartphone className="w-5 h-5 text-purple-500" />
-                    <span className="text-[10px] font-medium">UPI</span>
-                    {selectedPaymentMethod === 'upi' && <Check className="w-3 h-3 text-purple-500" />}
+                    <Smartphone className="w-6 h-6 text-purple-500" />
+                    <span className="text-sm font-medium">UPI</span>
+                    {selectedPaymentMethod === 'upi' && <Check className="w-4 h-4 text-purple-500 ml-auto" />}
                   </button>
                   <button
                     onClick={() => handlePayment('due')}
                     className={cn(
-                      "flex flex-col items-center gap-1 p-2 rounded-xl border-2 transition-all",
+                      "flex items-center justify-center gap-3 py-4 px-4 rounded-xl border-2 transition-all active:scale-[0.98]",
                       selectedPaymentMethod === 'due' 
-                        ? "border-orange-500 bg-orange-500/10" 
-                        : "border-border bg-secondary"
+                        ? "border-orange-500 bg-orange-500/10 text-orange-500 font-bold" 
+                        : "border-border bg-secondary text-foreground"
                     )}
                   >
-                    <Clock className="w-5 h-5 text-orange-500" />
-                    <span className="text-[10px] font-medium">Due</span>
-                    {selectedPaymentMethod === 'due' && <Check className="w-3 h-3 text-orange-500" />}
-                  </button>
-                  <button
-                    onClick={() => setShowMorePaymentSheet(true)}
-                    className="flex flex-col items-center gap-1 p-2 rounded-xl border-2 border-border bg-secondary transition-all hover:bg-muted"
-                  >
-                    <MoreHorizontal className="w-5 h-5 text-muted-foreground" />
-                    <span className="text-[10px] font-medium">More</span>
+                    <Clock className="w-6 h-6 text-orange-500" />
+                    <span className="text-sm font-medium">Due</span>
+                    {selectedPaymentMethod === 'due' && <Check className="w-4 h-4 text-orange-500 ml-auto" />}
                   </button>
                 </div>
+                
+                {/* Full Width More Button */}
+                <button
+                  onClick={() => setShowMorePaymentSheet(true)}
+                  className="w-full flex items-center justify-center gap-2 py-3.5 mb-4 rounded-xl border border-border bg-secondary transition-all hover:bg-muted font-semibold text-sm active:scale-[0.98]"
+                >
+                  <MoreHorizontal className="w-5 h-5 text-muted-foreground" />
+                  <span>More Payment Options</span>
+                </button>
 
                 {selectedPaymentMethod === 'credit' && (
                   <div className="space-y-3 p-3 bg-amber-500/10 rounded-xl mb-4 border border-amber-500/20">
@@ -640,7 +743,8 @@ export const MobileCart: React.FC = () => {
               </>
             )}
           </div>
-        </DrawerContent>
+        </div>
+      </DrawerContent>
       </Drawer>
 
       {/* Complimentary Dialog */}

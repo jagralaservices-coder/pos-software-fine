@@ -9,6 +9,7 @@ import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
 import { LinkBarcodeDialog } from '@/components/pos/LinkBarcodeDialog';
 import { VariationSelectorSheet } from '@/components/pos/VariationSelectorSheet';
 import { CustomItemDialog } from '@/components/pos/CustomItemDialog';
+import { PromptPriceWeightDialog } from '@/components/pos/PromptPriceWeightDialog';
 import { MenuItem, MenuItemVariation } from '@/lib/store';
 
 const MobilePOSPage: React.FC = () => {
@@ -18,6 +19,8 @@ const MobilePOSPage: React.FC = () => {
   const [variationSheetOpen, setVariationSheetOpen] = useState(false);
   const [showInlineCart, setShowInlineCart] = useState(false);
   const [showCustomItemDialog, setShowCustomItemDialog] = useState(false);
+  const [cartOpen, setCartOpen] = useState(false);
+  const [promptItem, setPromptItem] = useState<MenuItem | null>(null);
 
   const { unmatchedCode, clearUnmatchedCode } = useBarcodeScanner();
 
@@ -31,6 +34,8 @@ const MobilePOSPage: React.FC = () => {
     if (item.variations && item.variations.length > 0) {
       setSelectedItemForVariation(item);
       setVariationSheetOpen(true);
+    } else if (item.preparationTime === 998 || item.preparationTime === 999) {
+      setPromptItem(item);
     } else {
       addToCart(item);
     }
@@ -43,8 +48,13 @@ const MobilePOSPage: React.FC = () => {
       name: `${item.name} (${variation.name})`,
       sku: variation.sku || item.sku,
     } : item;
-    for (let i = 0; i < quantity; i++) {
-      addToCart(itemToAdd);
+
+    if (item.preparationTime === 998 || item.preparationTime === 999) {
+      setPromptItem(itemToAdd);
+    } else {
+      for (let i = 0; i < quantity; i++) {
+        addToCart(itemToAdd);
+      }
     }
   };
 
@@ -177,13 +187,13 @@ const MobilePOSPage: React.FC = () => {
                   onClick={() => handleItemClick(item)}
                   disabled={!item.isAvailable}
                   className={cn(
-                    'bg-card rounded-2xl border border-border text-left transition-all active:scale-[0.97] overflow-hidden',
-                    !item.isAvailable && 'opacity-50',
-                    isOthers && 'border-2 border-dashed border-primary/30 hover:border-primary'
+                    'rounded-[28px] bg-[#14152e] border-0 text-left relative overflow-hidden transition-all duration-150 hover:shadow-lg hover:ring-2 hover:ring-primary/40 active:scale-[0.97] flex flex-col w-full h-full min-h-[220px]',
+                    !item.isAvailable && 'opacity-40 cursor-not-allowed grayscale',
+                    isOthers && 'border-2 border-dashed border-primary/30 bg-transparent hover:border-primary h-full min-h-[188px]'
                   )}
                 >
                   {isOthers ? (
-                    <div className="flex min-h-[188px] flex-col items-center justify-center gap-2 p-3 text-center">
+                    <div className="flex h-full min-h-[188px] flex-col items-center justify-center gap-2 p-3 text-center w-full">
                       <PackagePlus className="w-10 h-10 text-primary" />
                       <h3 className="font-semibold text-primary text-sm">Others</h3>
                       <p className="text-xs text-muted-foreground">Add custom item</p>
@@ -191,11 +201,11 @@ const MobilePOSPage: React.FC = () => {
                   ) : (
                     <>
                       {/* Image Area */}
-                      <div className="w-full aspect-[4/3] bg-secondary flex items-center justify-center text-4xl relative overflow-hidden">
+                      <div className="w-full aspect-[4/3] bg-[#1f2146] relative overflow-hidden flex-shrink-0">
                         {item.image ? (
                           <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
                         ) : (
-                          <span className="opacity-50 text-5xl">🍽️</span>
+                          <div className="w-full h-full flex items-center justify-center text-4xl opacity-40">🍽️</div>
                         )}
 
                         {/* Low Stock Badge */}
@@ -207,15 +217,8 @@ const MobilePOSPage: React.FC = () => {
 
                         {/* Variation indicator */}
                         {item.variations && item.variations.length > 0 && (
-                          <div className="absolute top-2 right-2 bg-primary text-primary-foreground rounded-full p-1.5">
+                          <div className="absolute top-2 right-2 bg-[#1d1f3e]/90 text-primary-foreground rounded-full p-1.5">
                             <Layers className="w-3 h-3" />
-                          </div>
-                        )}
-
-                        {/* Add button overlay */}
-                        {item.isAvailable && (
-                          <div className="absolute bottom-2 right-2 w-8 h-8 bg-primary rounded-full flex items-center justify-center shadow-lg">
-                            <Plus className="w-5 h-5 text-primary-foreground" />
                           </div>
                         )}
 
@@ -227,23 +230,23 @@ const MobilePOSPage: React.FC = () => {
                       </div>
 
                       {/* Item Info */}
-                      <div className="p-3">
-                        <h3 className="font-semibold text-foreground text-sm truncate">{item.name}</h3>
+                      <div className="p-3.5 flex flex-col flex-1 gap-1 relative w-full">
+                        <h3 className="font-semibold text-white text-sm break-words leading-tight pr-6">{item.name}</h3>
                         {item.nameHindi && (
-                          <p className="text-xs text-muted-foreground truncate">{item.nameHindi}</p>
+                          <p className="text-xs text-muted-foreground/80 break-words leading-tight pr-6 mt-0.5">{item.nameHindi}</p>
                         )}
-                        <div className="flex items-center justify-between mt-1.5">
+                        <div className="flex items-center justify-between mt-auto pt-2">
                           {item.variations && item.variations.length > 0 ? (
-                            <span className="text-primary font-bold text-base">
+                            <span className="text-[#8f98ff] font-bold text-base">
                               {formatCurrency(Math.min(item.price || Infinity, ...item.variations.map(v => v.price)))}+
                             </span>
                           ) : (
-                            <span className="text-primary font-bold text-base">{formatCurrency(item.price)}</span>
+                            <span className="text-[#8f98ff] font-bold text-base">{formatCurrency(item.price)}</span>
                           )}
                           {stockInfo && (
                             <span className={cn(
-                              'text-xs font-medium',
-                              stockInfo.isLow ? 'text-destructive' : 'text-muted-foreground'
+                              'text-xs font-medium px-2 py-0.5 rounded-full bg-secondary',
+                              stockInfo.isLow ? 'text-destructive bg-destructive/10' : 'text-muted-foreground'
                             )}>
                               {stockInfo.label}
                             </span>
@@ -255,6 +258,13 @@ const MobilePOSPage: React.FC = () => {
                             </span>
                           )}
                         </div>
+
+                        {/* Add button overlay in bottom right of card text area */}
+                        {item.isAvailable && (
+                          <div className="absolute bottom-3.5 right-3.5 w-7 h-7 bg-[#212349] hover:bg-primary rounded-full flex items-center justify-center shadow-md transition-colors">
+                            <Plus className="w-4 h-4 text-[#6f78f6] hover:text-white" />
+                          </div>
+                        )}
                       </div>
                     </>
                   )}
@@ -308,14 +318,14 @@ const MobilePOSPage: React.FC = () => {
             {showInlineCart && (
               <div className="px-4 max-h-[200px] overflow-y-auto space-y-3 pb-3 border-t border-border pt-3">
                 {cart.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between">
+                  <div key={item.cartItemId || item.id} className="flex items-center justify-between">
                     <div className="flex-1 min-w-0">
                       <h4 className="font-medium text-foreground text-sm truncate">{item.name}</h4>
                       <p className="text-muted-foreground text-xs">{formatCurrency(item.price)}</p>
                     </div>
                     <div className="flex items-center gap-2 ml-3">
                       <button
-                        onClick={() => updateCartQuantity(item.id, item.quantity - 1)}
+                        onClick={() => updateCartQuantity(item.cartItemId || item.id, item.quantity - 1)}
                         className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center"
                       >
                         {item.quantity === 1 ? (
@@ -326,7 +336,7 @@ const MobilePOSPage: React.FC = () => {
                       </button>
                       <span className="w-6 text-center font-bold text-sm">{item.quantity}</span>
                       <button
-                        onClick={() => updateCartQuantity(item.id, item.quantity + 1)}
+                        onClick={() => updateCartQuantity(item.cartItemId || item.id, item.quantity + 1)}
                         className="w-8 h-8 rounded-lg bg-primary text-primary-foreground flex items-center justify-center"
                       >
                         <Plus className="w-3.5 h-3.5" />
@@ -341,7 +351,7 @@ const MobilePOSPage: React.FC = () => {
             <div className="px-4 pb-4 pt-2 space-y-3">
               {/* Charge Button */}
               <button
-                onClick={() => setShowInlineCart(false)}
+                onClick={() => setCartOpen(true)}
                 className="w-full bg-primary text-primary-foreground py-4 rounded-2xl font-bold text-lg active:scale-[0.98] transition-transform flex items-center justify-between px-6 shadow-lg shadow-primary/20"
               >
                 <span>Charge</span>
@@ -352,7 +362,7 @@ const MobilePOSPage: React.FC = () => {
         )}
 
         {/* Full Cart Drawer for checkout - opens on Charge click */}
-        <MobileCart />
+        <MobileCart isOpen={cartOpen} onOpenChange={setCartOpen} />
       </div>
 
       <CustomItemDialog
@@ -373,6 +383,13 @@ const MobilePOSPage: React.FC = () => {
       />
 
       <LinkBarcodeDialog scannedCode={unmatchedCode} onClose={clearUnmatchedCode} />
+
+      <PromptPriceWeightDialog
+        open={!!promptItem}
+        onOpenChange={(open) => !open && setPromptItem(null)}
+        item={promptItem}
+        onAdd={(item, price, weight) => addToCart(item, price, weight)}
+      />
     </>
   );
 };

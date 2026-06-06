@@ -14,6 +14,10 @@ import { toast } from 'sonner';
 import { Separator } from '@/components/ui/separator';
 import { useStoreSettings } from '@/hooks/useStoreSettings';
 import BluetoothPrinterManager from '@/components/pos/BluetoothPrinterManager';
+import { Switch } from '@/components/ui/switch';
+import { BillConfigSettings } from './BillConfigSettings';
+import { KOTSettings } from './KOTSettings';
+import { useSubscription } from '@/hooks/useSubscription';
 interface PrintSettingsProps {
   onBack: () => void;
 }
@@ -178,10 +182,13 @@ const defaultPrinter: PrinterConfig = {
 
 const PrintSettings: React.FC<PrintSettingsProps> = ({ onBack }) => {
   const { getSetting, saveSetting, isLoaded } = useStoreSettings();
+  const { canAccess } = useSubscription();
   const [printers, setPrinters] = useState<PrinterConfig[]>([]);
   const [view, setView] = useState<'list' | 'add' | 'edit'>('list');
   const [currentPrinter, setCurrentPrinter] = useState<PrinterConfig>(defaultPrinter);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [printBill, setPrintBill] = useState(true);
+  const [printKOT, setPrintKOT] = useState(true);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -189,7 +196,26 @@ const PrintSettings: React.FC<PrintSettingsProps> = ({ onBack }) => {
     if (saved && Array.isArray(saved)) {
       setPrinters(saved);
     }
+    const settings = getSetting<{ printBill?: boolean; printKOT?: boolean }>('pos_settings_printer');
+    if (settings) {
+      if (settings.printBill !== undefined) setPrintBill(settings.printBill);
+      if (settings.printKOT !== undefined) setPrintKOT(settings.printKOT);
+    }
   }, [isLoaded, getSetting]);
+
+  const togglePrintBill = (checked: boolean) => {
+    setPrintBill(checked);
+    const settings = getSetting<{ printBill?: boolean; printKOT?: boolean }>('pos_settings_printer') || {};
+    saveSetting('pos_settings_printer', { ...settings, printBill: checked });
+    toast.success(`Bill printing turned ${checked ? 'ON' : 'OFF'}`);
+  };
+
+  const togglePrintKOT = (checked: boolean) => {
+    setPrintKOT(checked);
+    const settings = getSetting<{ printBill?: boolean; printKOT?: boolean }>('pos_settings_printer') || {};
+    saveSetting('pos_settings_printer', { ...settings, printKOT: checked });
+    toast.success(`KOT printing turned ${checked ? 'ON' : 'OFF'}`);
+  };
 
   const savePrinters = (newPrinters: PrinterConfig[]) => {
     setPrinters(newPrinters);
@@ -256,6 +282,40 @@ const PrintSettings: React.FC<PrintSettingsProps> = ({ onBack }) => {
         </div>
 
         <div className="max-w-5xl mx-auto p-4 space-y-4">
+          {/* Master Print Configuration Toggles */}
+          <Card>
+            <CardContent className="p-6">
+              <h3 className="text-lg font-semibold mb-4 text-foreground flex items-center gap-2">
+                <PrinterIcon className="w-5 h-5 text-primary" />
+                Master Print Configuration
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="flex items-center justify-between p-4 rounded-lg border bg-card hover:bg-accent/10 transition-colors">
+                  <div className="space-y-1">
+                    <Label htmlFor="print-bill-toggle" className="font-semibold text-base cursor-pointer">Print Bill (Checkout)</Label>
+                    <p className="text-sm text-muted-foreground">Automatically trigger or skip physical print on checkout completion.</p>
+                  </div>
+                  <Switch
+                    id="print-bill-toggle"
+                    checked={printBill}
+                    onCheckedChange={togglePrintBill}
+                  />
+                </div>
+                <div className="flex items-center justify-between p-4 rounded-lg border bg-card hover:bg-accent/10 transition-colors">
+                  <div className="space-y-1">
+                    <Label htmlFor="print-kot-toggle" className="font-semibold text-base cursor-pointer">Print KOT (Kitchen Ticket)</Label>
+                    <p className="text-sm text-muted-foreground">Automatically trigger or skip physical print for kitchen orders.</p>
+                  </div>
+                  <Switch
+                    id="print-kot-toggle"
+                    checked={printKOT}
+                    onCheckedChange={togglePrintKOT}
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Bluetooth Thermal Printer Section */}
           <BluetoothPrinterManager />
           <Card>
@@ -317,6 +377,19 @@ const PrintSettings: React.FC<PrintSettingsProps> = ({ onBack }) => {
               </div>
             </CardContent>
           </Card>
+
+          <div className="border-t border-border pt-6 mt-6 space-y-6">
+            <div>
+              <h4 className="text-lg font-semibold text-foreground mb-4">Bill Configuration</h4>
+              <BillConfigSettings />
+            </div>
+            {canAccess('kot') && (
+              <div className="border-t border-border pt-6">
+                <h4 className="text-lg font-semibold text-foreground mb-4">KOT Settings</h4>
+                <KOTSettings />
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );

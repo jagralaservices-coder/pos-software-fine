@@ -79,7 +79,7 @@ const TipSummaryPage: React.FC = () => {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => navigate('/reports')}>
@@ -115,17 +115,17 @@ const TipSummaryPage: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="pos-card p-5">
-          <p className="text-sm text-muted-foreground">{t('reports.tips') || 'Total Tips'}</p>
-          <p className="text-2xl font-bold text-success mt-1">{formatCurrency(totalTips)}</p>
+        <div className="pos-card p-4 sm:p-5 min-w-0">
+          <p className="text-sm text-muted-foreground truncate">{t('reports.tips') || 'Total Tips'}</p>
+          <p className="text-xl sm:text-2xl font-bold text-success mt-1 truncate" title={formatCurrency(totalTips)}>{formatCurrency(totalTips)}</p>
         </div>
-        <div className="pos-card p-5">
-          <p className="text-sm text-muted-foreground">Orders with Tips</p>
-          <p className="text-2xl font-bold text-foreground mt-1">{totalOrdersWithTips}</p>
+        <div className="pos-card p-4 sm:p-5 min-w-0">
+          <p className="text-sm text-muted-foreground truncate">Orders with Tips</p>
+          <p className="text-xl sm:text-2xl font-bold text-foreground mt-1 truncate" title={String(totalOrdersWithTips)}>{totalOrdersWithTips}</p>
         </div>
-        <div className="pos-card p-5">
-          <p className="text-sm text-muted-foreground">Avg Tip per Order</p>
-          <p className="text-2xl font-bold text-foreground mt-1">{formatCurrency(avgTipPerOrder)}</p>
+        <div className="pos-card p-4 sm:p-5 min-w-0">
+          <p className="text-sm text-muted-foreground truncate">Avg Tip per Order</p>
+          <p className="text-xl sm:text-2xl font-bold text-foreground mt-1 truncate" title={formatCurrency(avgTipPerOrder)}>{formatCurrency(avgTipPerOrder)}</p>
         </div>
       </div>
 

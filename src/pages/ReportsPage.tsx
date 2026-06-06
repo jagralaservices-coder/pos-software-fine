@@ -168,7 +168,7 @@ export const ReportsPage: React.FC = () => {
 
       <div className="p-4 space-y-4">
         {/* Report Grid Cards */}
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2 md:gap-3">
+        <div className="grid grid-cols-2 min-[400px]:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2 md:gap-3">
           {reportLinks.map((item) => {
             const Icon = item.icon;
             return (
@@ -185,18 +185,18 @@ export const ReportsPage: React.FC = () => {
         </div>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-3 gap-3">
-          <div className="bg-card border border-border rounded-2xl p-4">
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">{t('reports.totalSales')}</p>
-            <p className="text-xl font-bold text-primary">{formatCurrency(totalSales)}</p>
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
+          <div className="bg-card border border-border rounded-xl sm:rounded-2xl p-2.5 sm:p-4 min-w-0">
+            <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-0.5 sm:mb-1 truncate">{t('reports.totalSales')}</p>
+            <p className="text-sm sm:text-xl font-bold text-primary truncate" title={formatCurrency(totalSales)}>{formatCurrency(totalSales)}</p>
           </div>
-          <div className="bg-card border border-border rounded-2xl p-4">
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">{t('reports.totalOrders')}</p>
-            <p className="text-xl font-bold text-foreground">{totalOrders}</p>
+          <div className="bg-card border border-border rounded-xl sm:rounded-2xl p-2.5 sm:p-4 min-w-0">
+            <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-0.5 sm:mb-1 truncate">{t('reports.totalOrders')}</p>
+            <p className="text-sm sm:text-xl font-bold text-foreground truncate" title={String(totalOrders)}>{totalOrders}</p>
           </div>
-          <div className="bg-card border border-border rounded-2xl p-4">
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">AOV</p>
-            <p className="text-xl font-bold text-foreground">{formatCurrency(avgOrderValue)}</p>
+          <div className="bg-card border border-border rounded-xl sm:rounded-2xl p-2.5 sm:p-4 min-w-0">
+            <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-0.5 sm:mb-1 truncate">AOV</p>
+            <p className="text-sm sm:text-xl font-bold text-foreground truncate" title={formatCurrency(avgOrderValue)}>{formatCurrency(avgOrderValue)}</p>
           </div>
         </div>
 

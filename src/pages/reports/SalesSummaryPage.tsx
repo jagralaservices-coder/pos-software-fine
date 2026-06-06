@@ -103,7 +103,7 @@ const SalesSummaryPage: React.FC = () => {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => navigate('/reports')}>
@@ -143,42 +143,42 @@ const SalesSummaryPage: React.FC = () => {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="pos-card p-5">
-          <p className="text-sm text-muted-foreground">Total Sales</p>
-          <p className="text-2xl font-bold text-foreground mt-1">{formatCurrency(summary.totalSales)}</p>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
+        <div className="pos-card p-3 sm:p-5 min-w-0">
+          <p className="text-xs sm:text-sm text-muted-foreground truncate">Total Sales</p>
+          <p className="text-base sm:text-2xl font-bold text-foreground mt-0.5 sm:mt-1 truncate" title={formatCurrency(summary.totalSales)}>{formatCurrency(summary.totalSales)}</p>
         </div>
-        <div className="pos-card p-5">
-          <p className="text-sm text-muted-foreground">Total Orders</p>
-          <p className="text-2xl font-bold text-foreground mt-1">{summary.totalOrders}</p>
+        <div className="pos-card p-3 sm:p-5 min-w-0">
+          <p className="text-xs sm:text-sm text-muted-foreground truncate">Total Orders</p>
+          <p className="text-base sm:text-2xl font-bold text-foreground mt-0.5 sm:mt-1 truncate" title={String(summary.totalOrders)}>{summary.totalOrders}</p>
         </div>
-        <div className="pos-card p-5">
-          <p className="text-sm text-muted-foreground">Avg Order Value</p>
-          <p className="text-2xl font-bold text-foreground mt-1">{formatCurrency(summary.avgOrderValue)}</p>
+        <div className="pos-card p-3 sm:p-5 min-w-0">
+          <p className="text-xs sm:text-sm text-muted-foreground truncate">Avg Order Value</p>
+          <p className="text-base sm:text-2xl font-bold text-foreground mt-0.5 sm:mt-1 truncate" title={formatCurrency(summary.avgOrderValue)}>{formatCurrency(summary.avgOrderValue)}</p>
         </div>
-        <div className="pos-card p-5">
-          <p className="text-sm text-muted-foreground">Total Discount</p>
-          <p className="text-2xl font-bold text-foreground mt-1">{formatCurrency(discountSummary.totalDiscount)}</p>
+        <div className="pos-card p-3 sm:p-5 min-w-0">
+          <p className="text-xs sm:text-sm text-muted-foreground truncate">Total Discount</p>
+          <p className="text-base sm:text-2xl font-bold text-foreground mt-0.5 sm:mt-1 truncate" title={formatCurrency(discountSummary.totalDiscount)}>{formatCurrency(discountSummary.totalDiscount)}</p>
         </div>
       </div>
 
       {/* Payment & Order Type Breakdown */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="pos-card p-5">
-          <h3 className="text-lg font-semibold mb-4">Payment Methods</h3>
+        <div className="pos-card p-4 sm:p-5">
+          <h3 className="text-base sm:text-lg font-semibold mb-4">Payment Methods</h3>
           <div className="space-y-4">
             {paymentSummary.map((payment) => (
-              <div key={payment.method} className="flex items-center justify-between">
-                <span className="text-foreground">{payment.method}</span>
-                <div className="flex items-center gap-4">
-                  <div className="w-32 h-2 bg-muted rounded-full overflow-hidden">
+              <div key={payment.method} className="flex items-center justify-between gap-2 min-w-0">
+                <span className="text-sm sm:text-base text-foreground truncate min-w-[60px]">{payment.method}</span>
+                <div className="flex items-center gap-2 sm:gap-4 ml-auto min-w-0">
+                  <div className="w-16 sm:w-32 h-2 bg-muted rounded-full overflow-hidden hidden min-[400px]:block shrink-0">
                     <div 
                       className="h-full bg-primary rounded-full"
                       style={{ width: `${payment.percentage}%` }}
                     />
                   </div>
-                  <span className="font-semibold text-foreground w-24 text-right">{formatCurrency(payment.amount)}</span>
-                  <span className="text-xs text-muted-foreground w-16 text-right">{payment.count} orders</span>
+                  <span className="font-semibold text-foreground text-sm sm:text-base text-right min-w-[70px] sm:w-24 truncate">{formatCurrency(payment.amount)}</span>
+                  <span className="text-[10px] sm:text-xs text-muted-foreground text-right min-w-[48px] sm:w-16 shrink-0">{payment.count} orders</span>
                 </div>
               </div>
             ))}
@@ -188,21 +188,21 @@ const SalesSummaryPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="pos-card p-5">
-          <h3 className="text-lg font-semibold mb-4">Order Types</h3>
+        <div className="pos-card p-4 sm:p-5">
+          <h3 className="text-base sm:text-lg font-semibold mb-4">Order Types</h3>
           <div className="space-y-4">
             {orderTypeSummary.map((type) => (
-              <div key={type.type} className="flex items-center justify-between">
-                <span className="text-foreground">{type.type}</span>
-                <div className="flex items-center gap-4">
-                  <div className="w-32 h-2 bg-muted rounded-full overflow-hidden">
+              <div key={type.type} className="flex items-center justify-between gap-2 min-w-0">
+                <span className="text-sm sm:text-base text-foreground truncate min-w-[60px]">{type.type}</span>
+                <div className="flex items-center gap-2 sm:gap-4 ml-auto min-w-0">
+                  <div className="w-16 sm:w-32 h-2 bg-muted rounded-full overflow-hidden hidden min-[400px]:block shrink-0">
                     <div 
                       className="h-full bg-success rounded-full"
                       style={{ width: `${type.percentage}%` }}
                     />
                   </div>
-                  <span className="font-semibold text-foreground w-24 text-right">{formatCurrency(type.amount)}</span>
-                  <span className="text-xs text-muted-foreground w-16 text-right">{type.count} orders</span>
+                  <span className="font-semibold text-foreground text-sm sm:text-base text-right min-w-[70px] sm:w-24 truncate">{formatCurrency(type.amount)}</span>
+                  <span className="text-[10px] sm:text-xs text-muted-foreground text-right min-w-[48px] sm:w-16 shrink-0">{type.count} orders</span>
                 </div>
               </div>
             ))}

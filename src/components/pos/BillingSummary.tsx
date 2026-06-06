@@ -3,6 +3,7 @@ import { ChevronUp, ChevronDown, Plus, Minus, MoreHorizontal } from 'lucide-reac
 import { cn } from '@/lib/utils';
 import { useLocale } from '@/contexts/LocaleContext';
 import { DiscountDialog } from './DiscountDialog';
+import { usePOS } from '@/contexts/POSContext';
 
 interface BillingSummaryProps {
   subtotal: number;
@@ -19,6 +20,8 @@ export const BillingSummary: React.FC<BillingSummaryProps> = ({
   onDiscountChange,
   orderType
 }) => {
+  const { taxPercent, activeStore } = usePOS();
+  const taxType = activeStore?.taxType || 'GST';
   const { t, formatCurrency } = useLocale();
   const [isOpen, setIsOpen] = useState(false);
   const [showDiscountDialog, setShowDiscountDialog] = useState(false);
@@ -150,7 +153,7 @@ export const BillingSummary: React.FC<BillingSummaryProps> = ({
             {/* Tax with More button */}
             <div className="flex justify-between items-center py-1">
               <div className="flex items-center gap-2">
-                <span className="text-muted-foreground">{t('common.tax')} (GST 5%)</span>
+                <span className="text-muted-foreground">{t('common.tax')} ({taxType} {taxPercent}%)</span>
                 <button
                   onClick={() => setShowTaxDetails(!showTaxDetails)}
                   className="text-xs text-primary hover:underline flex items-center gap-1"
@@ -165,14 +168,23 @@ export const BillingSummary: React.FC<BillingSummaryProps> = ({
             {/* Tax Details */}
             {showTaxDetails && (
               <div className="ml-4 p-2 bg-secondary/50 rounded-lg text-xs space-y-1">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">{t('pos.cgst')} (2.5%)</span>
-                  <span>{formatCurrency(tax / 2)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">{t('pos.sgst')} (2.5%)</span>
-                  <span>{formatCurrency(tax / 2)}</span>
-                </div>
+                {taxType.toUpperCase() === 'GST' ? (
+                  <>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">{t('pos.cgst')} ({(taxPercent / 2).toFixed(1)}%)</span>
+                      <span>{formatCurrency(tax / 2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">{t('pos.sgst')} ({(taxPercent / 2).toFixed(1)}%)</span>
+                      <span>{formatCurrency(tax / 2)}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">{taxType} ({taxPercent}%)</span>
+                    <span>{formatCurrency(tax)}</span>
+                  </div>
+                )}
               </div>
             )}
 

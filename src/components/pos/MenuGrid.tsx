@@ -5,6 +5,7 @@ import { MenuItem, MenuItemVariation } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { Clock, Layers, Plus, Search, X, ChevronRight, PackagePlus } from 'lucide-react';
 import { VariationSelectorSheet } from './VariationSelectorSheet';
+import { PromptPriceWeightDialog } from './PromptPriceWeightDialog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -28,6 +29,7 @@ export const MenuGrid = forwardRef<HTMLDivElement>((_, ref) => {
   const [variationSheetOpen, setVariationSheetOpen] = useState(false);
   const [showCategorySelector, setShowCategorySelector] = useState(false);
   const [matchingCategories, setMatchingCategories] = useState<string[]>([]);
+  const [promptItem, setPromptItem] = useState<MenuItem | null>(null);
   
   // Other item quick-add state
   const [showOtherForm, setShowOtherForm] = useState(false);
@@ -42,6 +44,8 @@ export const MenuGrid = forwardRef<HTMLDivElement>((_, ref) => {
     if (item.variations && item.variations.length > 0) {
       setSelectedItemForVariation(item);
       setVariationSheetOpen(true);
+    } else if (item.preparationTime === 998 || item.preparationTime === 999) {
+      setPromptItem(item);
     } else {
       addToCart(item);
     }
@@ -54,8 +58,13 @@ export const MenuGrid = forwardRef<HTMLDivElement>((_, ref) => {
       name: `${item.name} (${variation.name})`,
       sku: variation.sku || item.sku,
     } : item;
-    for (let i = 0; i < quantity; i++) {
-      addToCart(itemToAdd);
+
+    if (item.preparationTime === 998 || item.preparationTime === 999) {
+      setPromptItem(itemToAdd);
+    } else {
+      for (let i = 0; i < quantity; i++) {
+        addToCart(itemToAdd);
+      }
     }
   };
 
@@ -231,49 +240,56 @@ export const MenuGrid = forwardRef<HTMLDivElement>((_, ref) => {
               onClick={() => handleItemClick(item)}
               disabled={!item.isAvailable}
               className={cn(
-                'rounded-xl bg-card border border-border p-2 text-left relative overflow-hidden transition-all duration-150 hover:shadow-md hover:border-primary active:scale-95 min-h-[80px] flex flex-col',
+                'rounded-[20px] bg-[#14152e] border-0 text-left relative overflow-hidden transition-all duration-150 hover:shadow-lg hover:ring-2 hover:ring-primary/40 active:scale-95 flex flex-col w-full h-full min-h-[140px]',
                 !item.isAvailable && 'opacity-40 cursor-not-allowed grayscale'
               )}
             >
               {/* Product Image */}
-              {item.image ? (
-                <div className="w-full aspect-[4/3] rounded-lg overflow-hidden mb-1.5 bg-secondary">
+              <div className="w-full aspect-[4/3] bg-[#1f2146] relative overflow-hidden flex-shrink-0">
+                {item.image ? (
                   <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
-                </div>
-              ) : (
-                <div className="w-full aspect-[4/3] rounded-lg mb-1.5 bg-secondary flex items-center justify-center">
-                  <span className="text-lg opacity-40">🍽️</span>
-                </div>
-              )}
-              {item.variations && item.variations.length > 0 && (
-                <div className="absolute top-1.5 right-1.5 bg-primary text-primary-foreground rounded-full p-0.5">
-                  <Layers className="w-2.5 h-2.5" />
-                </div>
-              )}
-              {!item.isAvailable && (
-                <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-background/70">
-                  <span className="text-[9px] font-semibold text-muted-foreground">Unavailable</span>
-                </div>
-              )}
-              <h3 className="font-bold text-[10px] leading-tight break-words text-foreground pr-4">
-                {item.name}
-              </h3>
-              {searchQuery && activeCategory === 'all' && (
-                <span className="inline-block mt-0.5 px-1 py-0.5 rounded-full text-[8px] font-medium bg-secondary text-muted-foreground">
-                  {item.category}
-                </span>
-              )}
-              <div className="flex items-end justify-between mt-auto pt-1">
-                <span className="font-extrabold text-[10px] text-primary">
-                  {item.variations && item.variations.length > 0
-                    ? `${formatCurrency(Math.min(item.price || Infinity, ...item.variations.map(v => v.price)))}+`
-                    : formatCurrency(item.price)}
-                </span>
-                {item.preparationTime && (
-                  <span className="flex items-center gap-0.5 text-[8px] text-muted-foreground">
-                    <Clock className="w-2 h-2" />
-                    {item.preparationTime}m
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-2xl opacity-40">🍽️</div>
+                )}
+                {item.variations && item.variations.length > 0 && (
+                  <div className="absolute top-1.5 right-1.5 bg-[#1d1f3e]/90 text-primary-foreground rounded-full p-1">
+                    <Layers className="w-2.5 h-2.5" />
+                  </div>
+                )}
+                {!item.isAvailable && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-background/80">
+                    <span className="text-[9px] font-semibold text-muted-foreground">Unavailable</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Text Info */}
+              <div className="p-2.5 flex flex-col flex-1 gap-1 relative w-full">
+                <h3 className="font-bold text-[10px] leading-tight break-words text-white pr-4">
+                  {item.name}
+                </h3>
+                {item.nameHindi && (
+                  <p className="text-[9px] text-muted-foreground/80 break-words leading-tight pr-4">{item.nameHindi}</p>
+                )}
+                {searchQuery && activeCategory === 'all' && (
+                  <span className="inline-block mt-0.5 px-1 py-0.5 rounded-full text-[8px] font-medium bg-[#212349] text-muted-foreground w-max">
+                    {item.category}
                   </span>
+                )}
+                
+                <div className="flex items-end justify-between mt-auto pt-1">
+                  <span className="font-extrabold text-[10px] text-[#8f98ff]">
+                    {item.variations && item.variations.length > 0
+                      ? `${formatCurrency(Math.min(item.price || Infinity, ...item.variations.map(v => v.price)))}+`
+                      : formatCurrency(item.price)}
+                  </span>
+                </div>
+
+                {/* Plus button inside Info Area */}
+                {item.isAvailable && (
+                  <div className="absolute bottom-2.5 right-2.5 w-5 h-5 bg-[#212349] hover:bg-primary rounded-full flex items-center justify-center shadow-md transition-colors">
+                    <Plus className="w-3.5 h-3.5 text-[#6f78f6] hover:text-white" />
+                  </div>
                 )}
               </div>
             </button>
@@ -369,6 +385,14 @@ export const MenuGrid = forwardRef<HTMLDivElement>((_, ref) => {
         isOpen={variationSheetOpen}
         onClose={() => { setVariationSheetOpen(false); setSelectedItemForVariation(null); }}
         onSelect={handleVariationSelect}
+      />
+
+      {/* Prompt Price & Weight Dialog */}
+      <PromptPriceWeightDialog
+        open={!!promptItem}
+        onOpenChange={(open) => !open && setPromptItem(null)}
+        item={promptItem}
+        onAdd={(item, price, weight) => addToCart(item, price, weight)}
       />
     </div>
   );

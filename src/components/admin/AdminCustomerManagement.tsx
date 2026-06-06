@@ -351,11 +351,6 @@ export const AdminCustomerManagement: React.FC = () => {
                       <div className="space-y-1 flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-medium">{customer.business_name}</p>
-                          {customer.ref_code && (
-                            <Badge variant="secondary" className="text-xs font-mono">
-                              {customer.ref_code}
-                            </Badge>
-                          )}
                         </div>
                         <p className="text-sm text-muted-foreground">{customer.owner_name}</p>
                         <p className="text-xs text-muted-foreground">{customer.owner_email}</p>
@@ -365,6 +360,7 @@ export const AdminCustomerManagement: React.FC = () => {
                             <Select
                               value={customer.subscription_tier}
                               onValueChange={(val) => handleTierChange(customer.id, val)}
+                              disabled={customer.owner_email === 'jagralasalman786@gmail.com'}
                             >
                               <SelectTrigger className="h-7 w-[130px] text-xs">
                                 <SelectValue />
@@ -385,6 +381,7 @@ export const AdminCustomerManagement: React.FC = () => {
                             <Select
                               value={customer.business_type || 'restaurant'}
                               onValueChange={(val) => handleBusinessTypeChange(customer.id, val)}
+                              disabled={customer.owner_email === 'jagralasalman786@gmail.com'}
                             >
                               <SelectTrigger className="h-7 w-[140px] text-xs">
                                 <SelectValue />
@@ -413,27 +410,11 @@ export const AdminCustomerManagement: React.FC = () => {
                             setAddonCustomer(customer);
                             setShowAddonsDialog(true);
                           }}
+                          disabled={customer.owner_email === 'jagralasalman786@gmail.com'}
                         >
                           <Puzzle className="w-3 h-3 mr-1" />
                           Add-ons
                         </Button>
-                        {customer.ref_code && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              copyRefCode(customer.ref_code!);
-                            }}
-                          >
-                            {copiedRef === customer.ref_code ? (
-                              <Check className="w-4 h-4 text-green-500" />
-                            ) : (
-                              <Copy className="w-4 h-4" />
-                            )}
-                          </Button>
-                        )}
                         <ChevronRight className="w-4 h-4 text-muted-foreground" />
                       </div>
                     </button>
@@ -484,21 +465,11 @@ export const AdminCustomerManagement: React.FC = () => {
                          <div>
                           <div className="flex items-center gap-2">
                             <p className="font-medium">{store.store_name}</p>
-                            {store.ref_code && (
-                              <Badge variant="outline" className="text-xs font-mono">
-                                {store.ref_code}
-                              </Badge>
-                            )}
-                            <Badge variant={store.is_active ? 'default' : 'secondary'} className="text-xs">
-                              {store.is_active ? 'Active' : 'Inactive'}
-                            </Badge>
-                          </div>
-                          {store.store_code && (
-                            <p className="text-xs text-muted-foreground font-mono">
-                              Code: {store.store_code}
-                            </p>
-                          )}
-                          {store.address && (
+                             <Badge variant={store.is_active ? 'default' : 'secondary'} className="text-xs">
+                               {store.is_active ? 'Active' : 'Inactive'}
+                             </Badge>
+                           </div>
+                           {store.address && (
                             <p className="text-xs text-muted-foreground">{store.address}</p>
                           )}
                         </div>

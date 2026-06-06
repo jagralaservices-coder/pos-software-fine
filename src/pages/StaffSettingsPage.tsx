@@ -112,11 +112,116 @@ const StaffSettingsPage: React.FC = () => {
     phone: '',
     pin: '',
     storeId: '',
+    addressLine1: '',
+    locality: '',
+    city: '',
+    state: '',
+    pincode: '',
+    aadhaarNumber: '',
+    aadhaarName: '',
     workStartTime: '09:00',
     workEndTime: '18:00',
     fingerprintEnabled: false,
     salary: ''
   });
+
+  // Aadhaar files & preview
+  const [aadhaarFrontFile, setAadhaarFrontFile] = useState<File | null>(null);
+  const [aadhaarBackFile, setAadhaarBackFile] = useState<File | null>(null);
+  const [aadhaarFrontPreview, setAadhaarFrontPreview] = useState<string | null>(null);
+  const [aadhaarBackPreview, setAadhaarBackPreview] = useState<string | null>(null);
+
+  // OTP Verification states
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpVerified, setOtpVerified] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [enteredOtp, setEnteredOtp] = useState('');
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
+
+  const aadhaarFrontInputRef = useRef<HTMLInputElement>(null);
+  const aadhaarBackInputRef = useRef<HTMLInputElement>(null);
+
+  const handleAadhaarUpload = (e: React.ChangeEvent<HTMLInputElement>, side: 'front' | 'back') => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (side === 'front') {
+        setAadhaarFrontFile(file);
+        setAadhaarFrontPreview(URL.createObjectURL(file));
+      } else {
+        setAadhaarBackFile(file);
+        setAadhaarBackPreview(URL.createObjectURL(file));
+      }
+    }
+  };
+
+  const handleSendOtp = () => {
+    if (!newStaff.phone || newStaff.phone.trim().length < 10) {
+      toast({
+        title: 'Error',
+        description: 'Please enter a valid 10-digit mobile number first',
+        variant: 'destructive'
+      });
+      return;
+    }
+    
+    setIsSendingOtp(true);
+
+    setTimeout(() => {
+      const mockOtp = Math.floor(100000 + Math.random() * 900000).toString();
+      setOtpCode(mockOtp);
+      setOtpSent(true);
+      setIsSendingOtp(false);
+      toast({
+        title: 'OTP Sent',
+        description: `Verification OTP Sent! Code is ${mockOtp} (Mocked)`,
+      });
+      console.log(`[Verification System] Generated OTP for staff phone ${newStaff.phone}: ${mockOtp}`);
+    }, 800);
+  };
+
+  const handleVerifyOtp = () => {
+    if (enteredOtp === otpCode) {
+      setOtpVerified(true);
+      toast({
+        title: 'Success',
+        description: 'Mobile number verified successfully!',
+      });
+    } else {
+      toast({
+        title: 'Error',
+        description: 'Invalid OTP. Please try again.',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const uploadAadhaarScan = async (file: File, side: 'front' | 'back', name: string) => {
+    try {
+      const extension = file.name.split('.').pop() || 'jpg';
+      const fileName = `${name.replace(/\s+/g, '_')}_aadhaar_${side}_${Date.now()}.${extension}`;
+      
+      const { data, error } = await supabase.storage
+        .from('aadhaar-documents')
+        .upload(fileName, file, {
+          contentType: file.type,
+          upsert: true
+        });
+
+      if (error) {
+        console.error(`Aadhaar ${side} upload error:`, error);
+        return null;
+      }
+
+      const { data: urlData } = supabase.storage
+        .from('aadhaar-documents')
+        .getPublicUrl(fileName);
+
+      return urlData.publicUrl;
+    } catch (err) {
+      console.error('Error in uploadAadhaarScan:', err);
+      return null;
+    }
+  };
 
   // Get store_id from context, owner selection, or localStorage
   const getStoreId = () => {
@@ -301,10 +406,10 @@ const StaffSettingsPage: React.FC = () => {
   }, [isOwner, userRole?.customer_id]);
 
   const handleAddStaff = async () => {
-    if (!newStaff.name || !newStaff.email.trim() || !newStaff.pin) {
+    if (!newStaff.name || !newStaff.email.trim() || !newStaff.phone.trim() || !newStaff.pin) {
       toast({
         title: 'Missing Information',
-        description: 'Please fill name, email and password',
+        description: 'Please fill name, email, mobile number and password',
         variant: 'destructive'
       });
       return;
@@ -319,19 +424,46 @@ const StaffSettingsPage: React.FC = () => {
       return;
     }
 
-    if (!facePhotoBlob) {
+    if (!newStaff.addressLine1 || !newStaff.locality || !newStaff.city || !newStaff.state || !newStaff.pincode) {
       toast({
-        title: 'Face Photo Required',
-        description: 'Please capture face photo for the staff member',
+        title: 'Complete Address Required',
+        description: 'Please fill in all address components (Line 1, Locality, City, State, and Pincode)',
         variant: 'destructive'
       });
       return;
     }
 
-    if (!newStaff.pin) {
+    if (!newStaff.aadhaarNumber || !newStaff.aadhaarName || !aadhaarFrontFile || !aadhaarBackFile) {
       toast({
-        title: 'Invalid Password',
-        description: 'Please enter a password',
+        title: 'Aadhaar Details Required',
+        description: 'Aadhaar Number, Name, and Front/Back scans are mandatory',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    if (!/^\d{12}$/.test(newStaff.aadhaarNumber.trim())) {
+      toast({
+        title: 'Invalid Aadhaar Format',
+        description: 'Aadhaar Number must be exactly 12 digits and numeric',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    if (!otpVerified) {
+      toast({
+        title: 'OTP Verification Required',
+        description: 'Mobile OTP verification is mandatory before staff creation',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    if (!facePhotoBlob) {
+      toast({
+        title: 'Face Photo Required',
+        description: 'Please capture face photo for the staff member',
         variant: 'destructive'
       });
       return;
@@ -352,41 +484,84 @@ const StaffSettingsPage: React.FC = () => {
 
     setIsLoading(true);
     try {
-      // Upload face photo first
+      // 1. Upload face photo
       const tempId = `temp_${Date.now()}`;
       const faceUrl = await uploadFacePhoto(facePhotoBlob, tempId);
       if (!faceUrl) {
         throw new Error('Failed to upload face photo');
       }
 
-      // Get store_login_id for authorization
-      const storeLogin = localStorage.getItem('store_login');
-      const storeLoginId = storeLogin ? JSON.parse(storeLogin).store_id : null;
+      // 2. Upload Aadhaar Front Scan
+      const frontUrl = await uploadAadhaarScan(aadhaarFrontFile, 'front', newStaff.name);
+      if (!frontUrl) {
+        throw new Error('Failed to upload Aadhaar front scan');
+      }
+
+      // 3. Upload Aadhaar Back Scan
+      const backUrl = await uploadAadhaarScan(aadhaarBackFile, 'back', newStaff.name);
+      if (!backUrl) {
+        throw new Error('Failed to upload Aadhaar back scan');
+      }
 
       await invokeFunctionWithResponseFallback<CreateStaffResponse>('create-staff', {
         name: newStaff.name,
         email: newStaff.email.trim().toLowerCase(),
+        phone: newStaff.phone.trim(),
         role: newStaff.role,
         store_id: storeId,
         customer_id: customerId,
         pin: newStaff.pin,
         password: newStaff.pin,
-        store_login_id: storeLoginId,
         face_photo_url: faceUrl,
         work_start_time: newStaff.workStartTime,
         work_end_time: newStaff.workEndTime,
         fingerprint_enabled: newStaff.fingerprintEnabled,
-        salary: newStaff.salary ? Number(newStaff.salary) : 0
+        salary: newStaff.salary ? Number(newStaff.salary) : 0,
+        address_line1: newStaff.addressLine1,
+        locality: newStaff.locality,
+        city: newStaff.city,
+        state: newStaff.state,
+        pincode: newStaff.pincode,
+        aadhaar_number: newStaff.aadhaarNumber.trim(),
+        aadhaar_name: newStaff.aadhaarName.trim(),
+        aadhaar_front_url: frontUrl,
+        aadhaar_back_url: backUrl
       });
 
       toast({
-        title: 'Staff Added',
-        description: `${newStaff.name} created with email: ${newStaff.email.trim().toLowerCase()}`,
+        title: 'Staff Created',
+        description: `${newStaff.name} created successfully as pending verification.`,
       });
 
-      setNewStaff({ name: '', email: '', role: 'staff', phone: '', pin: '', storeId: '', workStartTime: '09:00', workEndTime: '18:00', fingerprintEnabled: false, salary: '' });
+      setNewStaff({ 
+        name: '', 
+        email: '', 
+        role: 'staff', 
+        phone: '', 
+        pin: '', 
+        storeId: '', 
+        addressLine1: '',
+        locality: '',
+        city: '',
+        state: '',
+        pincode: '',
+        aadhaarNumber: '',
+        aadhaarName: '',
+        workStartTime: '09:00', 
+        workEndTime: '18:00', 
+        fingerprintEnabled: false, 
+        salary: '' 
+      });
       setFacePhotoBlob(null);
       setFacePhotoPreview(null);
+      setAadhaarFrontFile(null);
+      setAadhaarBackFile(null);
+      setAadhaarFrontPreview(null);
+      setAadhaarBackPreview(null);
+      setOtpSent(false);
+      setOtpVerified(false);
+      setOtpCode('');
+      setEnteredOtp('');
       setShowAddStaff(false);
       fetchStaff();
     } catch (error: any) {
@@ -786,18 +961,172 @@ const StaffSettingsPage: React.FC = () => {
                 </Select>
               </div>
 
-              {/* Phone */}
+              {/* Phone OTP */}
               <div>
-                <Label>Phone Number (Optional)</Label>
-                <div className="relative mt-1">
-                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Label>Phone Number (Mobile) *</Label>
+                <div className="flex gap-2 mt-1">
+                  <div className="relative flex-1">
+                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      placeholder="10-digit Mobile Number"
+                      value={newStaff.phone}
+                      onChange={(e) => setNewStaff({ ...newStaff, phone: e.target.value })}
+                      disabled={otpVerified}
+                      className="pl-10 h-11"
+                      type="tel"
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={handleSendOtp}
+                    disabled={otpVerified || isSendingOtp}
+                    variant="outline"
+                    className="h-11"
+                  >
+                    {isSendingOtp ? 'Sending...' : otpSent ? 'Resend' : 'Send OTP'}
+                  </Button>
+                </div>
+                {otpSent && !otpVerified && (
+                  <div className="flex gap-2 mt-2">
+                    <Input
+                      placeholder="Enter 6-digit OTP"
+                      value={enteredOtp}
+                      onChange={(e) => setEnteredOtp(e.target.value)}
+                      className="h-9 flex-1"
+                    />
+                    <Button
+                      type="button"
+                      onClick={handleVerifyOtp}
+                      className="h-9 px-3 bg-green-600 hover:bg-green-700 text-white"
+                    >
+                      Verify
+                    </Button>
+                  </div>
+                )}
+                {otpVerified && (
+                  <p className="text-xs text-green-600 mt-1 flex items-center gap-1 font-medium font-mono">
+                    ✓ Mobile Number Verified
+                  </p>
+                )}
+              </div>
+
+              {/* Complete Address */}
+              <div className="border-t pt-4 space-y-3">
+                <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground block">Complete Address *</Label>
+                <div>
+                  <Label className="text-xs">Address Line 1 *</Label>
                   <Input
-                    placeholder="Enter phone number"
-                    value={newStaff.phone}
-                    onChange={(e) => setNewStaff({ ...newStaff, phone: e.target.value })}
-                    className="pl-10"
-                    type="tel"
+                    placeholder="Address Line 1"
+                    value={newStaff.addressLine1}
+                    onChange={(e) => setNewStaff({ ...newStaff, addressLine1: e.target.value })}
+                    className="mt-1"
                   />
+                </div>
+                <div>
+                  <Label className="text-xs">Area / Locality *</Label>
+                  <Input
+                    placeholder="Locality / Area"
+                    value={newStaff.locality}
+                    onChange={(e) => setNewStaff({ ...newStaff, locality: e.target.value })}
+                    className="mt-1"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs">City *</Label>
+                    <Input
+                      placeholder="City"
+                      value={newStaff.city}
+                      onChange={(e) => setNewStaff({ ...newStaff, city: e.target.value })}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">State *</Label>
+                    <Input
+                      placeholder="State"
+                      value={newStaff.state}
+                      onChange={(e) => setNewStaff({ ...newStaff, state: e.target.value })}
+                      className="mt-1"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-xs">Pincode *</Label>
+                  <Input
+                    placeholder="Pincode"
+                    value={newStaff.pincode}
+                    onChange={(e) => setNewStaff({ ...newStaff, pincode: e.target.value })}
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+
+              {/* Aadhaar Verification */}
+              <div className="border-t pt-4 space-y-3">
+                <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground block">Mandatory Aadhaar Verification *</Label>
+                <div>
+                  <Label className="text-xs">Aadhaar Number *</Label>
+                  <Input
+                    placeholder="12-digit Aadhaar Number"
+                    value={newStaff.aadhaarNumber}
+                    onChange={(e) => setNewStaff({ ...newStaff, aadhaarNumber: e.target.value })}
+                    maxLength={12}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Aadhaar Name (As printed) *</Label>
+                  <Input
+                    placeholder="Name on Aadhaar Card"
+                    value={newStaff.aadhaarName}
+                    onChange={(e) => setNewStaff({ ...newStaff, aadhaarName: e.target.value })}
+                    className="mt-1"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3 mb-2">
+                  <div>
+                    <Label className="text-xs">Aadhaar Front Image *</Label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      ref={aadhaarFrontInputRef}
+                      onChange={e => handleAadhaarUpload(e, 'front')}
+                      className="hidden"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => aadhaarFrontInputRef.current?.click()}
+                      className="w-full mt-1 text-xs truncate"
+                    >
+                      {aadhaarFrontFile ? aadhaarFrontFile.name : 'Upload Front Scan'}
+                    </Button>
+                    {aadhaarFrontPreview && (
+                      <img src={aadhaarFrontPreview} alt="Aadhaar Front Preview" className="mt-2 w-full h-20 object-contain border rounded bg-secondary/20" />
+                    )}
+                  </div>
+                  <div>
+                    <Label className="text-xs">Aadhaar Back Image *</Label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      ref={aadhaarBackInputRef}
+                      onChange={e => handleAadhaarUpload(e, 'back')}
+                      className="hidden"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => aadhaarBackInputRef.current?.click()}
+                      className="w-full mt-1 text-xs truncate"
+                    >
+                      {aadhaarBackFile ? aadhaarBackFile.name : 'Upload Back Scan'}
+                    </Button>
+                    {aadhaarBackPreview && (
+                      <img src={aadhaarBackPreview} alt="Aadhaar Back Preview" className="mt-2 w-full h-20 object-contain border rounded bg-secondary/20" />
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -964,7 +1293,7 @@ const StaffSettingsPage: React.FC = () => {
               <Button 
                 className="flex-1" 
                 onClick={handleAddStaff}
-                disabled={isLoading}
+                disabled={isLoading || !otpVerified}
               >
                 {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                 Add Staff
@@ -981,10 +1310,7 @@ const StaffSettingsPage: React.FC = () => {
             </DialogHeader>
             {editingStaff && (
               <div className="space-y-4 pt-4">
-                <div className="p-3 bg-secondary rounded-xl">
-                  <p className="text-sm text-muted-foreground">Staff ID</p>
-                  <p className="font-mono font-bold">{editingStaff.staffCode}</p>
-                </div>
+
 
                 <div>
                   <Label>Full Name</Label>

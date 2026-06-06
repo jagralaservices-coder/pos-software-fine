@@ -38,6 +38,7 @@ interface BillingSystemSettingsState {
   billingScreenRefreshAfterBillPrint: string;
   showQRCodeOnBill: boolean;
   upiIdForQR: string;
+  enableCartItemEditing: boolean;
 
   // Security Setting
   defaultManagerPassword: string;
@@ -70,6 +71,7 @@ const BillingSystemSettings: React.FC<BillingSystemSettingsProps> = ({ onBack })
     upiIdForQR: '',
     defaultManagerPassword: '',
     userIdleTimeForLogout: '0',
+    enableCartItemEditing: false,
   });
 
   useEffect(() => {
@@ -544,6 +546,22 @@ const BillingSystemSettings: React.FC<BillingSystemSettingsProps> = ({ onBack })
                         <p className="text-xs text-blue-600">QR code will only appear if UPI ID is set</p>
                       </div>
                     )}
+
+                    <div className="flex items-center gap-2 pt-2">
+                      <Checkbox
+                        id="enableCartItemEditing"
+                        checked={settings.enableCartItemEditing}
+                        onCheckedChange={(checked) =>
+                          setSettings({ ...settings, enableCartItemEditing: checked as boolean })
+                        }
+                      />
+                      <label htmlFor="enableCartItemEditing" className="text-sm font-medium">
+                        Enable Cart Item Editing (Change price & grammage directly in Cart)
+                      </label>
+                    </div>
+                    <p className="text-xs text-blue-600 ml-6">
+                      Allows cashiers to edit product price and grammage (quantity) directly inside the Cart side panel.
+                    </p>
                   </div>
                 </div>
               </section>

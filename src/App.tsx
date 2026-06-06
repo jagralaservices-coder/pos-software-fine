@@ -16,6 +16,7 @@ import { FeatureGuard } from "@/components/FeatureGuard";
 
 import { PermissionRequestScreen } from "@/components/PermissionRequestScreen";
 import { useAndroidBackButton } from "@/hooks/useAndroidBackButton";
+import { BackupRestoreGate } from "@/components/pos/BackupRestoreGate";
 
 // Lazy-loaded pages for code splitting
 const WelcomePage = lazy(() => import("./pages/WelcomePage"));
@@ -118,13 +119,18 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: strin
   const isStaffLoggedIn = !!staffSession;
   const hasAuthenticatedStaffRole = isAuthenticated && userRole?.role === 'staff';
   
+  // Helper to wrap component with BackupRestoreGate if storeId is resolved
+  const renderWithGate = (content: React.ReactNode) => {
+    return <>{content}</>;
+  };
+
   // For staff-only routes (allowStaffLogin=true without allowedRoles), require staff session
   const isStaffOnlyRoute = allowStaffLogin && !allowedRoles && !allowStoreLogin;
   
   // Staff-only route: must have staff session, don't allow owner/admin Supabase auth
   if (isStaffOnlyRoute) {
     if (isStaffLoggedIn || hasAuthenticatedStaffRole) {
-      return <MainLayout>{children}</MainLayout>;
+      return renderWithGate(<MainLayout>{children}</MainLayout>);
     }
     // No staff session - redirect to staff login
     return <Navigate to="/auth" replace />;
@@ -137,12 +143,12 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: strin
   
   // Allow access if store login is enabled for this route and user is logged in via store
   if (allowStoreLogin && isStoreLogin && activeStore) {
-    return <MainLayout>{children}</MainLayout>;
+    return renderWithGate(<MainLayout>{children}</MainLayout>);
   }
   
   // Allow access if staff login is enabled for this route and staff is logged in
   if (allowStaffLogin && (isStaffLoggedIn || hasAuthenticatedStaffRole)) {
-    return <MainLayout>{children}</MainLayout>;
+    return renderWithGate(<MainLayout>{children}</MainLayout>);
   }
   
   // Redirect if not authenticated via any method
@@ -154,12 +160,12 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: strin
   if (allowedRoles && userRole && !allowedRoles.includes(userRole.role)) {
     // If store login is active, allow access
     if (isStoreLogin && activeStore) {
-      return <MainLayout>{children}</MainLayout>;
+      return renderWithGate(<MainLayout>{children}</MainLayout>);
     }
     return <Navigate to="/" replace />;
   }
   
-  return <MainLayout>{children}</MainLayout>;
+  return renderWithGate(<MainLayout>{children}</MainLayout>);
 };
 
 // Admin route wrapper - no MainLayout, no sidebar, no header
@@ -278,6 +284,9 @@ const AppRoutes = () => {
       } />
       <Route path="/owner-settings" element={
         <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><OwnerSettingsPage /></ProtectedRoute>
+      } />
+      <Route path="/backup" element={
+        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><SettingsPage /></ProtectedRoute>
       } />
       <Route path="/ui-customization" element={
         <ProtectedRoute allowStoreLogin allowStaffLogin><UICustomizationPage /></ProtectedRoute>

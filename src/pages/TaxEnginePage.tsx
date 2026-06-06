@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { Landmark, Plus, Search, Filter, Check, Pause, Minus, Globe, UtensilsCrossed, Wine } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import { usePOS } from '@/contexts/POSContext';
+import { toast } from 'sonner';
 
 interface TaxRule {
   id: string;
@@ -32,11 +34,51 @@ const tabs = [
 ];
 
 const TaxEnginePage: React.FC = () => {
+  const { taxPercent, setTaxPercent, activeStore, updateStore } = usePOS();
   const [activeTab, setActiveTab] = useState('active');
   const [taxCategory, setTaxCategory] = useState<'food' | 'alcohol'>('food');
-  const [taxRate, setTaxRate] = useState(20.0);
-  const [inclusive, setInclusive] = useState(true);
+  const [taxRate, setTaxRate] = useState(() => {
+    const rate = Number(taxPercent);
+    return isNaN(rate) ? 5 : rate;
+  });
+  const [inclusive, setInclusive] = useState(() => {
+    if (activeStore) {
+      return activeStore.taxType === 'inclusive';
+    }
+    return localStorage.getItem('pos_tax_inclusive') !== 'false';
+  });
   const [baseAmount] = useState(100);
+
+  useEffect(() => {
+    const rate = Number(taxPercent);
+    if (!isNaN(rate)) {
+      setTaxRate(rate);
+    }
+  }, [taxPercent]);
+
+  useEffect(() => {
+    if (activeStore) {
+      setInclusive(activeStore.taxType === 'inclusive');
+    }
+  }, [activeStore]);
+
+  const filteredRules = taxRules.filter(rule => {
+    if (activeTab === 'active') return rule.status === 'active';
+    if (activeTab === 'drafts') return rule.status === 'paused';
+    return false; // archived
+  });
+
+  const handleSaveTaxConfig = () => {
+    setTaxPercent(taxRate);
+    localStorage.setItem('pos_tax_inclusive', String(inclusive));
+    if (activeStore) {
+      updateStore(activeStore.id, {
+        taxPercentage: taxRate,
+        taxType: inclusive ? 'inclusive' : 'exclusive'
+      });
+    }
+    toast.success('Tax configuration saved successfully!');
+  };
 
   const taxAmount = inclusive ? (baseAmount * taxRate) / (100 + taxRate) : (baseAmount * taxRate) / 100;
   const totalAmount = inclusive ? baseAmount : baseAmount + taxAmount;
@@ -95,11 +137,11 @@ const TaxEnginePage: React.FC = () => {
         <div>
           <div className="flex items-center justify-between mb-3">
             <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Regional Rules</p>
-            <Badge variant="secondary" className="text-[10px]">{taxRules.length} tax rules total</Badge>
+            <Badge variant="secondary" className="text-[10px]">{filteredRules.length} tax rules</Badge>
           </div>
 
           <div className="space-y-3">
-            {taxRules.map(rule => (
+            {filteredRules.map(rule => (
               <div key={rule.id} className="bg-card border border-border rounded-2xl p-4">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
@@ -195,6 +237,14 @@ const TaxEnginePage: React.FC = () => {
               <span className="text-sm text-foreground">Tax inclusive pricing</span>
               <Switch checked={inclusive} onCheckedChange={setInclusive} />
             </div>
+
+            {/* Save Button */}
+            <Button
+              onClick={handleSaveTaxConfig}
+              className="w-full bg-primary text-primary-foreground py-2.5 rounded-xl font-bold mt-2"
+            >
+              Save Tax Settings
+            </Button>
           </div>
         </div>
 

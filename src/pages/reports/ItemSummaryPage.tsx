@@ -72,7 +72,7 @@ const ItemSummaryPage: React.FC = () => {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => navigate('/reports')}>
@@ -108,18 +108,18 @@ const ItemSummaryPage: React.FC = () => {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="pos-card p-4">
-          <p className="text-sm text-muted-foreground">Unique Items</p>
-          <p className="text-2xl font-bold text-foreground">{itemSummary.length}</p>
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
+        <div className="pos-card p-2.5 sm:p-4 min-w-0">
+          <p className="text-xs sm:text-sm text-muted-foreground truncate">Unique Items</p>
+          <p className="text-base sm:text-2xl font-bold text-foreground truncate" title={String(itemSummary.length)}>{itemSummary.length}</p>
         </div>
-        <div className="pos-card p-4">
-          <p className="text-sm text-muted-foreground">Total Quantity</p>
-          <p className="text-2xl font-bold text-foreground">{itemSummary.reduce((s, i) => s + i.qty, 0)}</p>
+        <div className="pos-card p-2.5 sm:p-4 min-w-0">
+          <p className="text-xs sm:text-sm text-muted-foreground truncate">Total Quantity</p>
+          <p className="text-base sm:text-2xl font-bold text-foreground truncate" title={String(itemSummary.reduce((s, i) => s + i.qty, 0))}>{itemSummary.reduce((s, i) => s + i.qty, 0)}</p>
         </div>
-        <div className="pos-card p-4">
-          <p className="text-sm text-muted-foreground">Total Revenue</p>
-          <p className="text-2xl font-bold text-foreground">{formatCurrency(summary.totalSales)}</p>
+        <div className="pos-card p-2.5 sm:p-4 min-w-0">
+          <p className="text-xs sm:text-sm text-muted-foreground truncate">Total Revenue</p>
+          <p className="text-base sm:text-2xl font-bold text-foreground truncate" title={formatCurrency(summary.totalSales)}>{formatCurrency(summary.totalSales)}</p>
         </div>
       </div>
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useLocale } from '@/contexts/LocaleContext';
 import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
 import { countries, languages, CountryCode, LanguageCode } from '@/lib/i18n';
@@ -35,8 +35,24 @@ import {
   QrCode,
   VolumeX,
   Play,
-  Upload
+  Upload,
+  RefreshCw,
+  CheckCircle,
+  Activity,
+  Clock,
+  AlertTriangle,
+  CheckCircle2
 } from 'lucide-react';
+import {
+  getLocalBackupHistory,
+  fetchBackupFromCloud,
+  runManualBackup,
+  restoreSnapshot,
+  RecoverySnapshot,
+  getBackupStatus,
+  verifyBackupCounts,
+  BackupStatus
+} from '@/lib/backupUtils';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -128,11 +144,70 @@ export const SettingsPage: React.FC = () => {
   const { getSetting, saveSetting, isLoaded } = useStoreSettings();
   const isMobile = useIsMobile();
   const { toggles, updateToggle } = useFeatureToggles();
-  const [activeSection, setActiveSection] = useState('general');
+  const [searchParams] = useSearchParams();
+  const defaultSection = searchParams.get('tab') || searchParams.get('section') || 'general';
+  const [activeSection, setActiveSection] = useState(defaultSection);
 
   const { activeStore } = usePOS();
   const storeId = activeStore?.id;
   const [qrSettings, setQrSettings] = useState<QRAutomationSettings>(DEFAULT_QR_SETTINGS);
+
+  const [localHistory, setLocalHistory] = useState<RecoverySnapshot[]>([]);
+  const [cloudSnapshot, setCloudSnapshot] = useState<RecoverySnapshot | null>(null);
+  const [loadingCloud, setLoadingCloud] = useState(false);
+  const [selectedSnapshot, setSelectedSnapshot] = useState<RecoverySnapshot | null>(null);
+  const [backupStatus, setBackupStatusState] = useState<BackupStatus | null>(null);
+
+  const loadBackups = async () => {
+    if (!storeId) return;
+    setLocalHistory(getLocalBackupHistory(storeId));
+    setBackupStatusState(getBackupStatus(storeId));
+    setLoadingCloud(true);
+    try {
+      const cloud = await fetchBackupFromCloud(storeId);
+      setCloudSnapshot(cloud);
+    } catch (e) {
+      console.error('Failed to load cloud backup:', e);
+    } finally {
+      setLoadingCloud(false);
+    }
+  };
+
+  const handleVerifyBackup = async () => {
+    if (!storeId) return;
+    setLoadingCloud(true);
+    try {
+      const cloud = await fetchBackupFromCloud(storeId);
+      setCloudSnapshot(cloud);
+      if (!cloud) {
+        toast.error('No cloud backup found to verify.');
+        return;
+      }
+      const match = verifyBackupCounts(storeId, cloud);
+      setBackupStatusState(getBackupStatus(storeId));
+      if (match) {
+        toast.success('Backup verification successful: Cloud and local record counts match perfectly!');
+      } else {
+        toast.warning('Backup mismatch detected! Automatic re-sync initiated.');
+        const success = restoreSnapshot(storeId, cloud, 'full');
+        if (success) {
+          toast.success('Database successfully re-synced from Cloud! Reloading page...');
+          setTimeout(() => window.location.reload(), 1500);
+        }
+      }
+    } catch (e) {
+      console.error('Verification failed:', e);
+      toast.error('Verification failed. Check internet connection.');
+    } finally {
+      setLoadingCloud(false);
+    }
+  };
+
+  useEffect(() => {
+    if (storeId) {
+      loadBackups();
+    }
+  }, [storeId]);
 
   useEffect(() => {
     if (!storeId) return;
@@ -229,6 +304,7 @@ export const SettingsPage: React.FC = () => {
     { id: 'security', label: t('settings.security'), icon: Shield, color: 'text-green-400' },
     { id: 'printer', label: t('settings.printer'), icon: Printer, color: 'text-cyan-400' },
     { id: 'billing', label: t('settings.billing'), icon: Receipt, color: 'text-rose-400' },
+    { id: 'backup', label: 'Backup & Recovery', icon: HardDrive, color: 'text-amber-500' },
     ...(isAdmin ? [{ id: 'admin', label: t('admin.ownerSettings'), icon: Users, color: 'text-orange-400' }] : []),
   ];
 
@@ -615,6 +691,326 @@ export const SettingsPage: React.FC = () => {
               <Switch checked={billingSettings.deliveryCharge} onCheckedChange={(v) => updateBilling('deliveryCharge', v)} />
             </SettingRow>
           </SettingsGroup>
+        );
+
+      case 'backup':
+        return (
+          <div className="space-y-4">
+            {/* Backup Status Overview */}
+            <SettingsGroup title="Backup Status Overview" icon={Activity} iconColor="text-primary">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 p-4 bg-muted/20 border border-border/50 rounded-xl">
+                {/* Last Backup Time */}
+                <div className="p-3 bg-card border border-border/40 rounded-lg space-y-1">
+                  <div className="flex items-center gap-1.5 text-muted-foreground text-[10px] font-semibold uppercase tracking-wider">
+                    <Clock className="w-3.5 h-3.5 text-blue-400" />
+                    Last Backup
+                  </div>
+                  <p className="text-sm font-bold text-white leading-tight">
+                    {backupStatus?.lastBackupTime ? new Date(backupStatus.lastBackupTime).toLocaleString() : 'Never'}
+                  </p>
+                </div>
+
+                {/* Last Restore Time */}
+                <div className="p-3 bg-card border border-border/40 rounded-lg space-y-1">
+                  <div className="flex items-center gap-1.5 text-muted-foreground text-[10px] font-semibold uppercase tracking-wider">
+                    <Clock className="w-3.5 h-3.5 text-emerald-400" />
+                    Last Restore
+                  </div>
+                  <p className="text-sm font-bold text-white leading-tight">
+                    {backupStatus?.lastRestoreTime ? new Date(backupStatus.lastRestoreTime).toLocaleString() : 'Never'}
+                  </p>
+                </div>
+
+                {/* Total Records Backed Up */}
+                <div className="p-3 bg-card border border-border/40 rounded-lg space-y-1">
+                  <div className="flex items-center gap-1.5 text-muted-foreground text-[10px] font-semibold uppercase tracking-wider">
+                    <Database className="w-3.5 h-3.5 text-indigo-400" />
+                    Total Records
+                  </div>
+                  <p className="text-sm font-bold text-white leading-tight">
+                    {backupStatus?.totalRecordsBackedUp ?? 0}
+                  </p>
+                </div>
+
+                {/* Backup Status */}
+                <div className="p-3 bg-card border border-border/40 rounded-lg space-y-1">
+                  <div className="text-muted-foreground text-[10px] font-semibold uppercase tracking-wider">Backup Status</div>
+                  <div className="flex items-center gap-2">
+                    <span className={cn(
+                      "w-2 h-2 rounded-full",
+                      backupStatus?.backupStatus === 'success' && "bg-emerald-500",
+                      backupStatus?.backupStatus === 'failed' && "bg-destructive",
+                      backupStatus?.backupStatus === 'syncing' && "bg-amber-500 animate-pulse",
+                      (!backupStatus || backupStatus?.backupStatus === 'idle') && "bg-muted-foreground"
+                    )} />
+                    <span className="text-sm font-bold capitalize">
+                      {backupStatus?.backupStatus ?? 'idle'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Restore Status */}
+                <div className="p-3 bg-card border border-border/40 rounded-lg space-y-1">
+                  <div className="text-muted-foreground text-[10px] font-semibold uppercase tracking-wider">Restore Status</div>
+                  <div className="flex items-center gap-2">
+                    <span className={cn(
+                      "w-2 h-2 rounded-full",
+                      backupStatus?.restoreStatus === 'success' && "bg-emerald-500",
+                      backupStatus?.restoreStatus === 'failed' && "bg-destructive",
+                      backupStatus?.restoreStatus === 'no_backup_found' && "bg-blue-400",
+                      (!backupStatus || backupStatus?.restoreStatus === 'idle') && "bg-muted-foreground"
+                    )} />
+                    <span className="text-sm font-bold capitalize">
+                      {backupStatus?.restoreStatus?.replace(/_/g, ' ') ?? 'idle'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Sync Status */}
+                <div className="p-3 bg-card border border-border/40 rounded-lg space-y-1">
+                  <div className="text-muted-foreground text-[10px] font-semibold uppercase tracking-wider">Sync Status</div>
+                  <div className="flex items-center gap-2">
+                    <span className={cn(
+                      "w-2 h-2 rounded-full",
+                      backupStatus?.syncStatus === 'synced' && "bg-emerald-500",
+                      backupStatus?.syncStatus === 'mismatch' && "bg-destructive animate-pulse",
+                      backupStatus?.syncStatus === 'offline' && "bg-blue-400",
+                      (!backupStatus || backupStatus?.syncStatus === 'pending') && "bg-amber-400"
+                    )} />
+                    <span className="text-sm font-bold capitalize">
+                      {backupStatus?.syncStatus ?? 'synced'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </SettingsGroup>
+
+            {/* Backup & Recovery Actions */}
+            <SettingsGroup title="Backup & Recovery Actions" icon={HardDrive} iconColor="text-amber-500">
+              <div className="p-4 bg-muted/30 rounded-xl space-y-3 border border-border/50">
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Perform manual operations to backup, verify, or restore your business configuration database arrays.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <Button 
+                    type="button" 
+                    onClick={async () => {
+                      if (!storeId) return;
+                      const res = await runManualBackup(storeId);
+                      if (res) {
+                        loadBackups();
+                      }
+                    }} 
+                    className="text-xs font-semibold py-2.5 h-auto bg-amber-500 hover:bg-amber-600 text-white border-0"
+                  >
+                    <Upload className="w-3.5 h-3.5 mr-1.5" /> Backup Now
+                  </Button>
+
+                  <Button 
+                    type="button" 
+                    variant="outline"
+                    onClick={handleVerifyBackup} 
+                    disabled={loadingCloud} 
+                    className="text-xs font-semibold py-2.5 h-auto border-blue-500/30 hover:bg-blue-500/5 hover:border-blue-500/50"
+                  >
+                    <RefreshCw className={cn("w-3.5 h-3.5 mr-1.5", loadingCloud && "animate-spin")} /> Verify Backup
+                  </Button>
+
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={loadBackups} 
+                    disabled={loadingCloud} 
+                    className="text-xs font-semibold py-2.5 h-auto"
+                  >
+                    <RefreshCw className={cn("w-3.5 h-3.5 mr-1.5", loadingCloud && "animate-spin")} /> 
+                    Refresh Backups
+                  </Button>
+                </div>
+              </div>
+            </SettingsGroup>
+
+            <SettingsGroup title="Available Recovery Snapshots" icon={Database} iconColor="text-blue-400">
+              <div className="py-2 space-y-3">
+                {localHistory.length === 0 && !cloudSnapshot ? (
+                  <p className="text-xs text-muted-foreground text-center py-6">No snapshots available on this device.</p>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-xs text-muted-foreground">Select a snapshot to view restore options:</p>
+                    
+                    {/* Cloud Backup */}
+                    {cloudSnapshot && (
+                      <div 
+                        onClick={() => setSelectedSnapshot(cloudSnapshot)}
+                        className={cn(
+                          "p-3 rounded-xl border transition-all cursor-pointer flex justify-between items-center",
+                          selectedSnapshot?.id === cloudSnapshot.id 
+                            ? "border-amber-500 bg-amber-500/10" 
+                            : "border-border/50 bg-[#14152e] hover:border-amber-500/50"
+                        )}
+                      >
+                        <div>
+                          <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                            Cloud Master Snapshot (Supabase)
+                          </p>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
+                            Created: {new Date(cloudSnapshot.timestamp).toLocaleString()}
+                          </p>
+                        </div>
+                        <CheckCircle2 className={cn("w-4 h-4 text-amber-500", selectedSnapshot?.id === cloudSnapshot.id ? "opacity-100" : "opacity-0")} />
+                      </div>
+                    )}
+
+                    {/* Local Backups */}
+                    {localHistory.map((snap, idx) => (
+                      <div 
+                        key={snap.id}
+                        onClick={() => setSelectedSnapshot(snap)}
+                        className={cn(
+                          "p-3 rounded-xl border transition-all cursor-pointer flex justify-between items-center",
+                          selectedSnapshot?.id === snap.id 
+                            ? "border-amber-500 bg-amber-500/10" 
+                            : "border-border/50 bg-[#14152e] hover:border-amber-500/50"
+                        )}
+                      >
+                        <div>
+                          <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                            Local Backup History #{idx + 1}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
+                            Created: {new Date(snap.timestamp).toLocaleString()}
+                          </p>
+                        </div>
+                        <CheckCircle2 className={cn("w-4 h-4 text-amber-500", selectedSnapshot?.id === snap.id ? "opacity-100" : "opacity-0")} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </SettingsGroup>
+
+            {selectedSnapshot && (
+              <SettingsGroup title="Restore Options (Selected Snapshot)" icon={Shield} iconColor="text-green-400">
+                <div className="p-3 space-y-4">
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-500 leading-relaxed">
+                    ⚠️ <strong>Restoring data</strong> current database arrays ko overwrite karega. Kripya execute karne se pehle verify karein.
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="text-xs font-semibold py-3 h-auto"
+                      onClick={() => {
+                        if (!storeId || !selectedSnapshot) return;
+                        if (window.confirm('Restore Menu?\n\nThis will restore Menu Items and Categories. Are you sure?')) {
+                          const success = restoreSnapshot(storeId, selectedSnapshot, 'menu');
+                          if (success) {
+                            toast.success('Menu items restored successfully! Reloading...');
+                            setTimeout(() => window.location.reload(), 1500);
+                          }
+                        }
+                      }}
+                    >
+                      Restore Menu
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="text-xs font-semibold py-3 h-auto"
+                      onClick={() => {
+                        if (!storeId || !selectedSnapshot) return;
+                        if (window.confirm('Restore Reports?\n\nThis will restore Orders, Expenses, Customers, and Credit Ledger. Are you sure?')) {
+                          const success = restoreSnapshot(storeId, selectedSnapshot, 'reports');
+                          if (success) {
+                            toast.success('Reports data restored successfully! Reloading...');
+                            setTimeout(() => window.location.reload(), 1500);
+                          }
+                        }
+                      }}
+                    >
+                      Restore Reports
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="text-xs font-semibold py-3 h-auto"
+                      onClick={() => {
+                        if (!storeId || !selectedSnapshot) return;
+                        if (window.confirm('Restore Inventory?\n\nThis will restore Inventory quantities and cost configurations. Are you sure?')) {
+                          const success = restoreSnapshot(storeId, selectedSnapshot, 'inventory');
+                          if (success) {
+                            toast.success('Inventory restored successfully! Reloading...');
+                            setTimeout(() => window.location.reload(), 1500);
+                          }
+                        }
+                      }}
+                    >
+                      Restore Inventory
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="text-xs font-semibold py-3 h-auto"
+                      onClick={() => {
+                        if (!storeId || !selectedSnapshot) return;
+                        if (window.confirm('Restore Settings?\n\nThis will restore all app preferences, printer configs, and tax values. Are you sure?')) {
+                          const success = restoreSnapshot(storeId, selectedSnapshot, 'settings');
+                          if (success) {
+                            toast.success('App settings restored successfully! Reloading...');
+                            setTimeout(() => window.location.reload(), 1500);
+                          }
+                        }
+                      }}
+                    >
+                      Restore Settings
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="text-xs font-semibold py-3 h-auto col-span-2 border-amber-500/50 hover:bg-amber-500/10"
+                      onClick={() => {
+                        if (!storeId || !selectedSnapshot) return;
+                        if (window.confirm('Restore Selected Snapshot?\n\nThis will restore all sections in this snapshot. Are you sure?')) {
+                          const success = restoreSnapshot(storeId, selectedSnapshot, 'full');
+                          if (success) {
+                            toast.success('Snapshot restored successfully! Reloading...');
+                            setTimeout(() => window.location.reload(), 1500);
+                          }
+                        }
+                      }}
+                    >
+                      Restore Backup
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      className="text-xs font-bold py-3.5 h-auto col-span-2 shadow-lg"
+                      onClick={() => {
+                        if (!storeId || !selectedSnapshot) return;
+                        if (window.confirm('WARNING: Full Store Restore?\n\nThis is a critical operation. All current store settings, menu items, order histories, customers, and inventory will be replaced. Are you sure?')) {
+                          const success = restoreSnapshot(storeId, selectedSnapshot, 'full');
+                          if (success) {
+                            toast.success('Full store restored successfully! Reloading...');
+                            setTimeout(() => window.location.reload(), 1500);
+                          }
+                        }
+                      }}
+                    >
+                      Full Store Restore
+                    </Button>
+                  </div>
+                </div>
+              </SettingsGroup>
+            )}
+          </div>
         );
 
       case 'admin':

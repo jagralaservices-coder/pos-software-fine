@@ -39,6 +39,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { usePaymentSound } from '@/hooks/usePaymentSound';
 import { useFeatureToggles } from '@/hooks/useFeatureToggles';
 import { useSubscription } from '@/hooks/useSubscription';
+import { useStoreSettings } from '@/hooks/useStoreSettings';
 
 interface CompletedOrder {
   id: string;
@@ -61,6 +62,7 @@ export const Cart = forwardRef<HTMLDivElement>((_, ref) => {
   const {
     cart,
     updateCartQuantity,
+    updateCartItem,
     removeFromCart,
     clearCart,
     cartSubtotal,
@@ -102,6 +104,32 @@ export const Cart = forwardRef<HTMLDivElement>((_, ref) => {
   const { playSuccessSound } = usePaymentSound();
   const { toggles: featureToggles } = useFeatureToggles();
   const { canAccess } = useSubscription();
+
+  const { getSetting } = useStoreSettings();
+  const isEditingEnabled = getSetting('billingSystemSettings')?.enableCartItemEditing ?? false;
+
+  const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
+  const [editingQtyId, setEditingQtyId] = useState<string | null>(null);
+  const [tempPrice, setTempPrice] = useState('');
+  const [tempQty, setTempQty] = useState('');
+
+  const handleSavePrice = (itemId: string) => {
+    const newPrice = Number(tempPrice);
+    if (!isNaN(newPrice) && newPrice >= 0) {
+      updateCartItem(itemId, { price: newPrice });
+    }
+    setEditingPriceId(null);
+  };
+
+  const handleSaveQty = (itemId: string) => {
+    const newQty = Number(tempQty);
+    if (!isNaN(newQty) && newQty > 0) {
+      updateCartItem(itemId, { quantity: newQty });
+    } else if (newQty === 0) {
+      removeFromCart(itemId);
+    }
+    setEditingQtyId(null);
+  };
 
   const allOrderTypes = [
     { id: 'dine-in' as const, labelKey: 'pos.dineIn', icon: UtensilsCrossed },
@@ -524,16 +552,46 @@ export const Cart = forwardRef<HTMLDivElement>((_, ref) => {
         ) : (
           cart.map((item) => (
             <div
-              key={item.id}
+              key={item.cartItemId || item.id}
               className="bg-secondary rounded-md p-2 animate-scale-in"
             >
               <div className="flex justify-between items-start mb-1">
                 <div className="flex-1">
                   <h4 className="font-medium text-foreground text-xs leading-tight">{item.name}</h4>
-                  <p className="text-[10px] text-muted-foreground">{formatCurrency(item.price)}</p>
+                  {(isEditingEnabled || item.preparationTime === 999 || item.preparationTime === 998) ? (
+                    editingPriceId === (item.cartItemId || item.id) ? (
+                      <input
+                        type="number"
+                        value={tempPrice}
+                        onChange={(e) => setTempPrice(e.target.value)}
+                        onBlur={() => handleSavePrice(item.cartItemId || item.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleSavePrice(item.cartItemId || item.id);
+                          if (e.key === 'Escape') setEditingPriceId(null);
+                        }}
+                        className="w-20 h-5 px-1 py-0.5 mt-0.5 text-[10px] border border-primary rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                        autoFocus
+                        min="0"
+                        step="0.01"
+                      />
+                    ) : (
+                      <div 
+                        className="flex items-center gap-1 cursor-pointer group/price text-[10px] text-muted-foreground hover:text-primary transition-colors mt-0.5"
+                        onClick={() => {
+                          setEditingPriceId(item.cartItemId || item.id);
+                          setTempPrice(String(item.price));
+                        }}
+                      >
+                        <span>{formatCurrency(item.price)}</span>
+                        <span className="opacity-0 group-hover/price:opacity-100 text-[8px] bg-primary/10 px-1 py-0.2 rounded text-primary">Edit</span>
+                      </div>
+                    )
+                  ) : (
+                    <p className="text-[10px] text-muted-foreground">{formatCurrency(item.price)}</p>
+                  )}
                 </div>
                 <button
-                  onClick={() => removeFromCart(item.id)}
+                  onClick={() => removeFromCart(item.cartItemId || item.id)}
                   className="p-1 text-muted-foreground hover:text-destructive transition-colors"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -542,14 +600,43 @@ export const Cart = forwardRef<HTMLDivElement>((_, ref) => {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   <button
-                    onClick={() => updateCartQuantity(item.id, item.quantity - 1)}
+                    onClick={() => updateCartQuantity(item.cartItemId || item.id, item.quantity - 1)}
                     className="w-6 h-6 rounded bg-muted flex items-center justify-center hover:bg-muted-foreground/20 transition-colors"
                   >
                     <Minus className="w-3 h-3" />
                   </button>
-                  <span className="w-6 text-center font-semibold text-xs">{item.quantity}</span>
+                  {(isEditingEnabled || item.preparationTime === 999 || item.preparationTime === 998) ? (
+                    editingQtyId === (item.cartItemId || item.id) ? (
+                      <input
+                        type="number"
+                        value={tempQty}
+                        onChange={(e) => setTempQty(e.target.value)}
+                        onBlur={() => handleSaveQty(item.cartItemId || item.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleSaveQty(item.cartItemId || item.id);
+                          if (e.key === 'Escape') setEditingQtyId(null);
+                        }}
+                        className="w-16 h-6 text-center font-semibold text-xs border border-primary rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                        autoFocus
+                        min="0.001"
+                        step="any"
+                      />
+                    ) : (
+                      <span 
+                        className="min-w-6 px-1 text-center font-semibold text-xs cursor-pointer hover:text-primary hover:underline"
+                        onClick={() => {
+                          setEditingQtyId(item.cartItemId || item.id);
+                          setTempQty(String(item.quantity));
+                        }}
+                      >
+                        {item.quantity}
+                      </span>
+                    )
+                  ) : (
+                    <span className="w-6 text-center font-semibold text-xs">{item.quantity}</span>
+                  )}
                   <button
-                    onClick={() => updateCartQuantity(item.id, item.quantity + 1)}
+                    onClick={() => updateCartQuantity(item.cartItemId || item.id, item.quantity + 1)}
                     className="w-6 h-6 rounded bg-muted flex items-center justify-center hover:bg-muted-foreground/20 transition-colors"
                   >
                     <Plus className="w-3 h-3" />

@@ -70,7 +70,7 @@ const ExecutiveSalesPage: React.FC = () => {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => navigate('/reports')}>
@@ -99,17 +99,17 @@ const ExecutiveSalesPage: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="pos-card p-5">
-          <p className="text-sm text-muted-foreground">Total Revenue</p>
-          <p className="text-3xl font-bold text-foreground mt-1">{formatCurrency(todayStats.totalSales)}</p>
+        <div className="pos-card p-4 sm:p-5 min-w-0">
+          <p className="text-sm text-muted-foreground truncate">Total Revenue</p>
+          <p className="text-xl sm:text-3xl font-bold text-foreground mt-1 truncate" title={formatCurrency(todayStats.totalSales)}>{formatCurrency(todayStats.totalSales)}</p>
         </div>
-        <div className="pos-card p-5">
-          <p className="text-sm text-muted-foreground">Total Orders</p>
-          <p className="text-3xl font-bold text-foreground mt-1">{todayStats.orderCount}</p>
+        <div className="pos-card p-4 sm:p-5 min-w-0">
+          <p className="text-sm text-muted-foreground truncate">Total Orders</p>
+          <p className="text-xl sm:text-3xl font-bold text-foreground mt-1 truncate" title={String(todayStats.orderCount)}>{todayStats.orderCount}</p>
         </div>
-        <div className="pos-card p-5">
-          <p className="text-sm text-muted-foreground">Avg Order Value</p>
-          <p className="text-3xl font-bold text-foreground mt-1">{formatCurrency(todayStats.avgOrderValue)}</p>
+        <div className="pos-card p-4 sm:p-5 min-w-0">
+          <p className="text-sm text-muted-foreground truncate">Avg Order Value</p>
+          <p className="text-xl sm:text-3xl font-bold text-foreground mt-1 truncate" title={formatCurrency(todayStats.avgOrderValue)}>{formatCurrency(todayStats.avgOrderValue)}</p>
         </div>
       </div>
 

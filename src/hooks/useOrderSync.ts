@@ -100,6 +100,7 @@ export const useOrderSync = () => {
 
   // Save orders to cloud
   const saveOrdersToCloud = useCallback(async (ordersToSave: Order[]): Promise<boolean> => {
+    if (localStorage.getItem('pos_login_as_demo') === 'true') return false;
     if (sessionInvalidated) return false;
     const storeId = getStoreId();
     if (!storeId || ordersToSave.length === 0) return false;
@@ -217,6 +218,7 @@ export const useOrderSync = () => {
 
   // Fetch orders from cloud
   const clearStaleSession = () => {
+    if (localStorage.getItem('pos_login_as_demo') === 'true') return;
     if (sessionInvalidated) return;
     sessionInvalidated = true;
     console.warn('[OrderSync] Invalid store detected, clearing stale session');
@@ -234,6 +236,7 @@ export const useOrderSync = () => {
   };
 
   const fetchOrdersFromCloud = useCallback(async (): Promise<Order[]> => {
+    if (localStorage.getItem('pos_login_as_demo') === 'true') return [];
     if (sessionInvalidated) return [];
     const storeId = getStoreId();
     if (!storeId) return [];
@@ -252,8 +255,9 @@ export const useOrderSync = () => {
 
       if (error) {
         console.error('[OrderSync] Fetch error:', error);
-        // FunctionsHttpError = non-2xx, likely 401 auth failure
-        const isAuthError = error.name === 'FunctionsHttpError';
+        // FunctionsHttpError = non-2xx, check status code for 401 or 403
+        const status = (error as any).context?.status;
+        const isAuthError = error.name === 'FunctionsHttpError' && (status === 401 || status === 403);
         let errorBody = '';
         try {
           if (typeof (error as any).context?.json === 'function') {
@@ -284,6 +288,7 @@ export const useOrderSync = () => {
 
   // Full sync: merge local and cloud orders
   const syncOrders = useCallback(async (localOrders: Order[]): Promise<Order[]> => {
+    if (localStorage.getItem('pos_login_as_demo') === 'true') return localOrders;
     if (syncInProgress.current) return localOrders;
     if (!navigator.onLine) return localOrders;
 
@@ -355,24 +360,28 @@ export const useOrderSync = () => {
     }
   }, [getStoreId, saveOrdersToCloud, fetchOrdersFromCloud]);
 
-  // Save a single order immediately to cloud (fire and forget)
-  const saveOrderToCloud = useCallback(async (order: Order) => {
+  // Save a single order immediately to cloud
+  const saveOrderToCloud = useCallback(async (order: Order): Promise<boolean> => {
+    if (localStorage.getItem('pos_login_as_demo') === 'true') return true;
     console.log('ORDER BEFORE SAVE', order);
-    if (!navigator.onLine) {
-      console.log('[OrderSync] Offline - order saved locally only');
-      return;
-    }
     
     const storeId = getStoreId();
-    if (!storeId) return;
+    if (!storeId) return false;
 
     // Set storeId on order
     const orderWithStore = { ...order, storeId: storeId };
     
+    if (!navigator.onLine) {
+      console.log('[OrderSync] Offline - order saved locally only');
+      return true;
+    }
+    
     try {
-      await saveOrdersToCloud([orderWithStore]);
+      const success = await saveOrdersToCloud([orderWithStore]);
+      return success;
     } catch (err) {
       console.error('[OrderSync] Failed to save order to cloud:', err);
+      return false;
     }
   }, [getStoreId, saveOrdersToCloud]);
 
@@ -385,6 +394,7 @@ export const useOrderSync = () => {
 
     // Initial sync
     const doSync = async () => {
+      if (localStorage.getItem('pos_login_as_demo') === 'true') return;
       const storeId = getStoreId();
       if (!storeId) {
         console.log('[OrderSync] No store ID, skipping sync');

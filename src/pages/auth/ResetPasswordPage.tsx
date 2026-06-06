@@ -18,14 +18,25 @@ const ResetPasswordPage: React.FC = () => {
   const { toast } = useToast();
 
   useEffect(() => {
-    // Check for recovery token in URL hash
+    // Check for recovery token in URL hash or stored flag or active session
     const hash = window.location.hash;
-    if (hash.includes('type=recovery')) {
+    const isRecoveryFlag = localStorage.getItem('is_password_recovery') === 'true';
+    
+    if (hash.includes('type=recovery') || isRecoveryFlag) {
       setIsRecovery(true);
+      if (isRecoveryFlag) {
+        localStorage.removeItem('is_password_recovery');
+      }
     } else {
-      // No recovery token, redirect to auth
-      toast({ title: 'Invalid link', description: 'This password reset link is invalid or expired.', variant: 'destructive' });
-      navigate('/auth', { replace: true });
+      // Check if user is logged in (session exists)
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) {
+          setIsRecovery(true);
+        } else {
+          toast({ title: 'Invalid link', description: 'This password reset link is invalid or expired.', variant: 'destructive' });
+          navigate('/auth', { replace: true });
+        }
+      });
     }
   }, [navigate, toast]);
 
@@ -48,7 +59,15 @@ const ResetPasswordPage: React.FC = () => {
       const { error } = await supabase.auth.updateUser({ password });
 
       if (error) {
-        toast({ title: 'Error', description: error.message, variant: 'destructive' });
+        if (error.message.toLowerCase().includes('weak')) {
+          toast({
+            title: 'Error',
+            description: error.message + ' (Tip: Supabase Dashboard -> Authentication -> Email Provider Settings mein "Enforce password complexity" checkbox ko uncheck karein to disable this restriction).',
+            variant: 'destructive'
+          });
+        } else {
+          toast({ title: 'Error', description: error.message, variant: 'destructive' });
+        }
       } else {
         toast({ title: 'Success', description: 'Password updated successfully! Please login with your new password.' });
         await supabase.auth.signOut();

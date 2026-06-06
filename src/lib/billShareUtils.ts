@@ -192,14 +192,34 @@ export const sendBillViaWhatsApp = async (data: BillShareData) => {
       return;
     }
 
-    // Load store WhatsApp configuration
-    const { data: waConfig, error: configErr } = await supabase
-      .from('store_whatsapp_config')
-      .select('*')
-      .eq('store_id', storeId)
-      .maybeSingle();
+    // Load store WhatsApp configuration (from local storage cache or via Edge Function)
+    const configStr = localStorage.getItem(`pos_whatsapp_config_${storeId}`);
+    let waConfig = configStr ? JSON.parse(configStr) : null;
 
-    if (configErr || !waConfig) {
+    if (!waConfig && navigator.onLine) {
+      try {
+        const direct = localStorage.getItem('pos_store_code');
+        let storeCode = direct || null;
+        if (!storeCode) {
+          const storeData = localStorage.getItem('pos_active_store_data');
+          if (storeData) {
+            const parsed = JSON.parse(storeData);
+            storeCode = parsed?.storeCode || parsed?.store_code || null;
+          }
+        }
+        const { data, error } = await supabase.functions.invoke('sync-store-data', {
+          body: { action: 'fetch', store_id: storeId, data_type: 'whatsapp_config', store_code: storeCode }
+        });
+        if (!error && data?.config) {
+          waConfig = data.config;
+          localStorage.setItem(`pos_whatsapp_config_${storeId}`, JSON.stringify(waConfig));
+        }
+      } catch (e) {
+        console.error('[WhatsAppConfig] Failed to fetch via edge function:', e);
+      }
+    }
+
+    if (!waConfig) {
       toast.error('WhatsApp sending failed: No WhatsApp Gateway credentials configured for this store.');
       return;
     }
@@ -416,14 +436,34 @@ export const sendQROrderStatusWhatsApp = async (
       return;
     }
 
-    // Load store WhatsApp configuration
-    const { data: waConfig, error: configErr } = await supabase
-      .from('store_whatsapp_config')
-      .select('*')
-      .eq('store_id', storeId)
-      .maybeSingle();
+    // Load store WhatsApp configuration (from local storage cache or via Edge Function)
+    const configStr = localStorage.getItem(`pos_whatsapp_config_${storeId}`);
+    let waConfig = configStr ? JSON.parse(configStr) : null;
 
-    if (configErr || !waConfig) {
+    if (!waConfig && navigator.onLine) {
+      try {
+        const direct = localStorage.getItem('pos_store_code');
+        let storeCode = direct || null;
+        if (!storeCode) {
+          const storeData = localStorage.getItem('pos_active_store_data');
+          if (storeData) {
+            const parsed = JSON.parse(storeData);
+            storeCode = parsed?.storeCode || parsed?.store_code || null;
+          }
+        }
+        const { data, error } = await supabase.functions.invoke('sync-store-data', {
+          body: { action: 'fetch', store_id: storeId, data_type: 'whatsapp_config', store_code: storeCode }
+        });
+        if (!error && data?.config) {
+          waConfig = data.config;
+          localStorage.setItem(`pos_whatsapp_config_${storeId}`, JSON.stringify(waConfig));
+        }
+      } catch (e) {
+        console.error('[WhatsAppConfig] Failed to fetch via edge function:', e);
+      }
+    }
+
+    if (!waConfig) {
       toast.error('WhatsApp status update failed: No WhatsApp Gateway credentials configured for this store.');
       return;
     }

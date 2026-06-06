@@ -18,14 +18,53 @@ serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false }
     })
 
+    // Authenticate the caller and verify they are an admin
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader || authHeader === 'Bearer null') {
+      return new Response(
+        JSON.stringify({ error: 'Authorization header is required' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const token = authHeader.replace('Bearer ', '')
+    const { data: { user }, error: authUserError } = await supabaseAdmin.auth.getUser(token)
+
+    if (authUserError || !user) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized: Invalid token' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Check if the user has the 'admin' role
+    const { data: roleData, error: roleError } = await supabaseAdmin
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', user.id)
+      .eq('role', 'admin')
+      .eq('is_active', true)
+      .maybeSingle()
+
+    if (roleError || !roleData) {
+      return new Response(
+        JSON.stringify({ error: 'Forbidden: Only admins can create store IDs' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
     const body = await req.json()
     const {
       customer_id,
       store_name,
       email,
       password,
-      address,
       phone,
+      address_line1,
+      locality,
+      city,
+      state,
+      pincode,
       business_type,
       country,
       currency_code,
@@ -33,14 +72,24 @@ serve(async (req) => {
       tax_percentage
     } = body
 
-    if (!customer_id || !store_name || !email || !password) {
+    // Validate mandatory fields
+    if (!customer_id || !store_name || !email || !password || !phone) {
       return new Response(
-        JSON.stringify({ error: 'customer_id, store_name, email and password are required' }),
+        JSON.stringify({ error: 'Business, Store Name, Email, Password, and Phone are required' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Complete address components are mandatory
+    if (!address_line1 || !locality || !city || !state || !pincode) {
+      return new Response(
+        JSON.stringify({ error: 'Complete address (Address Line 1, Locality, City, State, and Pincode) is required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
     const normalizedEmail = String(email).trim().toLowerCase()
+    const constructedAddress = `${address_line1.trim()}, ${locality.trim()}, ${city.trim()}, ${state.trim()} - ${pincode.trim()}`
 
     // Try to find existing user first
     const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers()
@@ -105,7 +154,7 @@ serve(async (req) => {
         customer_id,
         store_name: store_name.trim(),
         password: password || null,
-        address: address || null,
+        address: constructedAddress,
         phone: phone || null,
         business_type: business_type || 'restaurant',
         country: country || 'India',
@@ -146,7 +195,15 @@ serve(async (req) => {
 
     await supabaseAdmin
       .from('profiles')
-      .update({ full_name: store_name.trim(), phone: phone || null })
+      .update({ 
+        full_name: store_name.trim(), 
+        phone: phone || null,
+        address_line1: address_line1.trim(),
+        locality: locality.trim(),
+        city: city.trim(),
+        state: state.trim(),
+        pincode: pincode.trim(),
+      })
       .eq('id', userId)
 
     return new Response(

@@ -14,6 +14,9 @@ export function useStoreSettings() {
   const [isLoaded, setIsLoaded] = useState(false);
 
   const getStoreId = useCallback((): string | null => {
+    const ownerSelected = localStorage.getItem('owner_selected_store_id');
+    if (ownerSelected) return ownerSelected;
+
     try {
       const activeStore = localStorage.getItem('pos_active_store');
       if (activeStore) {
@@ -94,6 +97,7 @@ export function useStoreSettings() {
       'pos_settings_security',
       'pos_settings_printer',
       'pos_settings_billing',
+      'billingSystemSettings',
     ];
 
     const loaded: Record<string, any> = {};
@@ -208,6 +212,7 @@ export function useStoreSettings() {
           'pos_settings_security',
           'pos_settings_printer',
           'pos_settings_billing',
+          'billingSystemSettings',
         ];
 
         localKeys.forEach((key) => {

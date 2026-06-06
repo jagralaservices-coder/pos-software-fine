@@ -70,21 +70,39 @@ serve(async (req) => {
       max_stores,
       business_type,
       subscription_tier,
+      address_line1,
+      locality,
+      city,
+      state,
+      pincode,
+      gov_id_url,
+      mobile_verified
     } = await req.json()
 
     // Validate required fields
-    if (!business_name || !owner_name || !owner_email || !owner_password) {
+    if (!business_name || !owner_name || !owner_email || !owner_password || !phone) {
       return new Response(
-        JSON.stringify({ error: 'Missing required fields' }),
+        JSON.stringify({ error: 'Business Name, Owner Name, Email, Password, and Mobile Number are required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    // Step 1: Create auth user using admin API
+    // Validate complete address fields
+    if (!address_line1 || !locality || !city || !state || !pincode) {
+      return new Response(
+        JSON.stringify({ error: 'Complete address (Address Line 1, Locality, City, State, and Pincode) is required' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const normalizedEmail = owner_email.trim().toLowerCase()
+    const constructedAddress = `${address_line1.trim()}, ${locality.trim()}, ${city.trim()}, ${state.trim()} - ${pincode.trim()}`
+
+    // Step 1: Create auth user using admin API (email_confirm: false sends the verification email)
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email: owner_email,
+      email: normalizedEmail,
       password: owner_password,
-      email_confirm: true,
+      email_confirm: false,
       user_metadata: { full_name: owner_name }
     })
 
@@ -104,13 +122,24 @@ serve(async (req) => {
       .insert({
         business_name,
         owner_name,
-        owner_email,
+        owner_email: normalizedEmail,
         phone: phone || null,
+        address: constructedAddress,
+        address_line1: address_line1.trim(),
+        locality: locality.trim(),
+        city: city.trim(),
+        state: state.trim(),
+        pincode: pincode.trim(),
+        gov_id_url: gov_id_url || null,
+        mobile_verified: mobile_verified || false,
+        email_verified: false,
         subscription_plan: subscription_plan || 'monthly',
         subscription_end: subscriptionEnd.toISOString().split('T')[0],
         max_stores: max_stores || 2,
         business_type: business_type || 'restaurant',
         subscription_tier: subscription_tier || 'basic',
+        is_active: false, // Remains inactive until email verification and admin approval is completed
+        approval_status: 'pending',
       })
       .select()
       .single()
@@ -129,7 +158,7 @@ serve(async (req) => {
       user_id: authData.user.id,
       role: 'owner',
       customer_id: customerData.id,
-      is_active: true
+      is_active: false // Inactive until verified
     })
 
     if (roleInsertError) {
@@ -142,11 +171,23 @@ serve(async (req) => {
       )
     }
 
+    // Sync profiles table with address details
+    await supabaseAdmin.from('profiles').update({
+      phone: phone || null,
+      address_line1: address_line1.trim(),
+      locality: locality.trim(),
+      city: city.trim(),
+      state: state.trim(),
+      pincode: pincode.trim(),
+      mobile_verified: mobile_verified || false,
+      email_verified: false,
+    }).eq('id', authData.user.id)
+
     return new Response(
       JSON.stringify({ 
         success: true, 
         customer: customerData,
-        message: `Owner account created for ${owner_name}`
+        message: `Owner account created for ${owner_name}. Verification email sent.`
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )

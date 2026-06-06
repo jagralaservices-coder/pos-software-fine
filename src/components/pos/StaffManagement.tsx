@@ -161,7 +161,7 @@ export const StaffManagement = forwardRef<HTMLDivElement>((_, ref) => {
       setStaffList(updatedList);
       setStaff(updatedList);
 
-      toast.success(`Staff created! Staff ID: ${data.staff_code || 'Pending'} | PIN: ${data.pin || newStaff.pin}`);
+      toast.success(`Staff created! Email: ${newStaff.email} | PIN: ${data.pin || newStaff.pin}`);
     } catch (err: any) {
       toast.error(err.message || 'Failed to create staff');
     }

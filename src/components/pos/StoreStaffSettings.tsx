@@ -95,14 +95,32 @@ export const StoreStaffSettings: React.FC = () => {
   const [showStorePassword, setShowStorePassword] = useState(false);
   
   // Form states
-  const [newStore, setNewStore] = useState({ name: '', email: '', address: '', phone: '', password: '' });
+  const [newStore, setNewStore] = useState({ 
+    name: '', 
+    email: '', 
+    phone: '', 
+    password: '',
+    addressLine1: '',
+    locality: '',
+    city: '',
+    state: '',
+    pincode: ''
+  });
   const [editStore, setEditStore] = useState({ name: '', address: '', phone: '', password: '' });
   const [newStaff, setNewStaff] = useState({ 
     name: '', 
     email: '',
+    phone: '',
     role: 'staff' as 'store_manager' | 'staff',
     storeId: '',
     password: '',
+    addressLine1: '',
+    locality: '',
+    city: '',
+    state: '',
+    pincode: '',
+    aadhaarNumber: '',
+    aadhaarName: '',
     workStartTime: '09:00',
     workEndTime: '18:00',
     fingerprintEnabled: false,
@@ -120,6 +138,26 @@ export const StoreStaffSettings: React.FC = () => {
   const [createdStaffCredentials, setCreatedStaffCredentials] = useState<{staffCode: string, password: string} | null>(null);
   const [showStaffPassword, setShowStaffPassword] = useState(false);
   
+  // Aadhaar files & preview
+  const [aadhaarFrontFile, setAadhaarFrontFile] = useState<File | null>(null);
+  const [aadhaarBackFile, setAadhaarBackFile] = useState<File | null>(null);
+  const [aadhaarFrontPreview, setAadhaarFrontPreview] = useState<string | null>(null);
+  const [aadhaarBackPreview, setAadhaarBackPreview] = useState<string | null>(null);
+
+  // OTP Verification states
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpVerified, setOtpVerified] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [enteredOtp, setEnteredOtp] = useState('');
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
+
+  // Store creation OTP states
+  const [storeOtpSent, setStoreOtpSent] = useState(false);
+  const [storeOtpVerified, setStoreOtpVerified] = useState(false);
+  const [storeOtpCode, setStoreOtpCode] = useState('');
+  const [storeEnteredOtp, setStoreEnteredOtp] = useState('');
+  const [isSendingStoreOtp, setIsSendingStoreOtp] = useState(false);
+
   // Face capture states
   const [showFaceCapture, setShowFaceCapture] = useState(false);
   const [facePhotoBlob, setFacePhotoBlob] = useState<Blob | null>(null);
@@ -127,6 +165,8 @@ export const StoreStaffSettings: React.FC = () => {
   const [isUploadingFace, setIsUploadingFace] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const aadhaarFrontInputRef = useRef<HTMLInputElement>(null);
+  const aadhaarBackInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -137,6 +177,96 @@ export const StoreStaffSettings: React.FC = () => {
         setFacePhotoPreview(reader.result as string);
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  const handleAadhaarUpload = (e: React.ChangeEvent<HTMLInputElement>, side: 'front' | 'back') => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (side === 'front') {
+        setAadhaarFrontFile(file);
+        setAadhaarFrontPreview(URL.createObjectURL(file));
+      } else {
+        setAadhaarBackFile(file);
+        setAadhaarBackPreview(URL.createObjectURL(file));
+      }
+    }
+  };
+
+  const handleSendOtp = (type: 'store' | 'staff') => {
+    const phoneNum = type === 'store' ? newStore.phone : newStaff.phone;
+    if (!phoneNum || phoneNum.trim().length < 10) {
+      toast.error('Please enter a valid 10-digit mobile number first');
+      return;
+    }
+    
+    if (type === 'store') {
+      setIsSendingStoreOtp(true);
+    } else {
+      setIsSendingOtp(true);
+    }
+
+    setTimeout(() => {
+      const mockOtp = Math.floor(100000 + Math.random() * 900000).toString();
+      if (type === 'store') {
+        setStoreOtpCode(mockOtp);
+        setStoreOtpSent(true);
+        setIsSendingStoreOtp(false);
+      } else {
+        setOtpCode(mockOtp);
+        setOtpSent(true);
+        setIsSendingOtp(false);
+      }
+      toast.success(`Verification OTP Sent! Code is ${mockOtp} (Mocked)`, {
+        duration: 10000
+      });
+      console.log(`[Verification System] Generated OTP for ${phoneNum}: ${mockOtp}`);
+    }, 800);
+  };
+
+  const handleVerifyOtp = (type: 'store' | 'staff') => {
+    if (type === 'store') {
+      if (storeEnteredOtp === storeOtpCode) {
+        setStoreOtpVerified(true);
+        toast.success('Mobile number verified successfully!');
+      } else {
+        toast.error('Invalid OTP. Please try again.');
+      }
+    } else {
+      if (enteredOtp === otpCode) {
+        setOtpVerified(true);
+        toast.success('Mobile number verified successfully!');
+      } else {
+        toast.error('Invalid OTP. Please try again.');
+      }
+    }
+  };
+
+  const uploadAadhaarScan = async (file: File, side: 'front' | 'back', name: string) => {
+    try {
+      const extension = file.name.split('.').pop() || 'jpg';
+      const fileName = `${name.replace(/\s+/g, '_')}_aadhaar_${side}_${Date.now()}.${extension}`;
+      
+      const { data, error } = await supabase.storage
+        .from('aadhaar-documents')
+        .upload(fileName, file, {
+          contentType: file.type,
+          upsert: true
+        });
+
+      if (error) {
+        console.error(`Aadhaar ${side} upload error:`, error);
+        return null;
+      }
+
+      const { data: urlData } = supabase.storage
+        .from('aadhaar-documents')
+        .getPublicUrl(fileName);
+
+      return urlData.publicUrl;
+    } catch (err) {
+      console.error('Error in uploadAadhaarScan:', err);
+      return null;
     }
   };
 
@@ -223,16 +353,20 @@ export const StoreStaffSettings: React.FC = () => {
   };
 
   const handleAddStore = async () => {
-    if (!newStore.name) {
-      toast.error('Store name is required');
+    if (!newStore.name || !newStore.email.trim() || !newStore.phone.trim() || !newStore.password) {
+      toast.error('All fields including Name, Email, Password, and Mobile Number are required');
       return;
     }
-    if (!newStore.email.trim()) {
-      toast.error('Store email is required');
-      return;
-    }
-    if (!newStore.password || newStore.password.length < 6) {
+    if (newStore.password.length < 6) {
       toast.error('Password must be at least 6 characters');
+      return;
+    }
+    if (!newStore.addressLine1 || !newStore.locality || !newStore.city || !newStore.state || !newStore.pincode) {
+      toast.error('Complete address fields (Address Line 1, Locality, City, State, and Pincode) are required');
+      return;
+    }
+    if (!storeOtpVerified) {
+      toast.error('Mobile OTP verification is mandatory before store creation');
       return;
     }
     
@@ -248,15 +382,33 @@ export const StoreStaffSettings: React.FC = () => {
           customer_id: userRole?.customer_id,
           store_name: newStore.name,
           email: newStore.email.trim().toLowerCase(),
-          address: newStore.address || null,
-          phone: newStore.phone || null,
+          phone: newStore.phone.trim(),
           password: newStore.password,
+          address_line1: newStore.addressLine1,
+          locality: newStore.locality,
+          city: newStore.city,
+          state: newStore.state,
+          pincode: newStore.pincode
         }
       });
       if (error || data?.error || !data?.success) throw new Error(data?.error || error?.message || 'Failed to add store');
       
       toast.success('Store added successfully!');
-      setNewStore({ name: '', email: '', address: '', phone: '', password: '' });
+      setNewStore({ 
+        name: '', 
+        email: '', 
+        phone: '', 
+        password: '', 
+        addressLine1: '', 
+        locality: '', 
+        city: '', 
+        state: '', 
+        pincode: '' 
+      });
+      setStoreOtpSent(false);
+      setStoreOtpVerified(false);
+      setStoreOtpCode('');
+      setStoreEnteredOtp('');
       setShowAddStore(false);
       fetchStores();
     } catch (error: any) {
@@ -351,31 +503,60 @@ export const StoreStaffSettings: React.FC = () => {
     const storeIdToUse = isStoreLoginMode ? activeStore?.id : newStaff.storeId;
     const customerIdToUse = isStoreLoginMode ? activeStore?.customer_id : userRole?.customer_id;
     
-    if (!newStaff.name || !newStaff.email.trim() || !storeIdToUse) {
-      toast.error('Name, email and store are required');
-      return;
-    }
-    if (!facePhotoBlob) {
-      toast.error('Face photo is required for staff registration');
+    if (!newStaff.name || !newStaff.email.trim() || !newStaff.phone.trim() || !storeIdToUse) {
+      toast.error('Name, email, mobile, and store are required');
       return;
     }
     if (newStaff.password && newStaff.password.length < 6) {
       toast.error('Password must be at least 6 characters');
       return;
     }
+    if (!newStaff.addressLine1 || !newStaff.locality || !newStaff.city || !newStaff.state || !newStaff.pincode) {
+      toast.error('Complete address fields (Address Line 1, Locality, City, State, and Pincode) are required');
+      return;
+    }
+    if (!newStaff.aadhaarNumber || !newStaff.aadhaarName || !aadhaarFrontFile || !aadhaarBackFile) {
+      toast.error('Aadhaar verification details (Number, Name, and Front/Back scans) are required');
+      return;
+    }
+    if (!/^\d{12}$/.test(newStaff.aadhaarNumber.trim())) {
+      toast.error('Aadhaar Number must be exactly 12 digits and numeric');
+      return;
+    }
+    if (!otpVerified) {
+      toast.error('Mobile OTP verification is mandatory before staff creation');
+      return;
+    }
+    if (!facePhotoBlob) {
+      toast.error('Face photo is required for staff registration');
+      return;
+    }
 
     setIsUploadingFace(true);
     try {
-      // Upload face photo first
+      // 1. Upload face photo first
       const tempId = `temp_${Date.now()}`;
       const faceUrl = await uploadFacePhoto(facePhotoBlob, tempId);
       if (!faceUrl) {
         throw new Error('Failed to upload face photo');
       }
 
+      // 2. Upload Aadhaar Front Scan
+      const frontUrl = await uploadAadhaarScan(aadhaarFrontFile, 'front', newStaff.name);
+      if (!frontUrl) {
+        throw new Error('Failed to upload Aadhaar front image');
+      }
+
+      // 3. Upload Aadhaar Back Scan
+      const backUrl = await uploadAadhaarScan(aadhaarBackFile, 'back', newStaff.name);
+      if (!backUrl) {
+        throw new Error('Failed to upload Aadhaar back image');
+      }
+
       const requestBody: Record<string, any> = {
         name: newStaff.name,
         email: newStaff.email.trim().toLowerCase(),
+        phone: newStaff.phone.trim(),
         role: newStaff.role,
         store_id: storeIdToUse,
         customer_id: customerIdToUse,
@@ -383,10 +564,18 @@ export const StoreStaffSettings: React.FC = () => {
         work_start_time: newStaff.workStartTime + ':00',
         work_end_time: newStaff.workEndTime + ':00',
         fingerprint_enabled: newStaff.fingerprintEnabled,
-        salary: newStaff.salary ? Number(newStaff.salary) : 0
+        salary: newStaff.salary ? Number(newStaff.salary) : 0,
+        address_line1: newStaff.addressLine1,
+        locality: newStaff.locality,
+        city: newStaff.city,
+        state: newStaff.state,
+        pincode: newStaff.pincode,
+        aadhaar_number: newStaff.aadhaarNumber.trim(),
+        aadhaar_name: newStaff.aadhaarName.trim(),
+        aadhaar_front_url: frontUrl,
+        aadhaar_back_url: backUrl
       };
       if (newStaff.password) requestBody.password = newStaff.password;
-      if (isStoreLoginMode && activeStore?.id) requestBody.store_login_id = activeStore.id;
       
       const response = await invokeFunctionWithResponseFallback<CreateStaffResponse>('create-staff', requestBody);
       
@@ -395,10 +584,24 @@ export const StoreStaffSettings: React.FC = () => {
         password: response.password || ''
       });
       
-      toast.success(`Staff account created for ${newStaff.name}!`);
+      toast.success(`Staff account created as pending verification for ${newStaff.name}!`);
       setNewStaff({ 
-        name: '', email: '', role: 'staff', storeId: '', password: '', 
-        workStartTime: '09:00', workEndTime: '18:00', fingerprintEnabled: false,
+        name: '', 
+        email: '', 
+        phone: '',
+        role: 'staff', 
+        storeId: '', 
+        password: '',
+        addressLine1: '',
+        locality: '',
+        city: '',
+        state: '',
+        pincode: '',
+        aadhaarNumber: '',
+        aadhaarName: '',
+        workStartTime: '09:00', 
+        workEndTime: '18:00', 
+        fingerprintEnabled: false,
         salary: '',
         shiftSchedule: {
           monday: { start: '09:00', end: '18:00', enabled: true },
@@ -412,6 +615,14 @@ export const StoreStaffSettings: React.FC = () => {
       });
       setFacePhotoBlob(null);
       setFacePhotoPreview(null);
+      setAadhaarFrontFile(null);
+      setAadhaarBackFile(null);
+      setAadhaarFrontPreview(null);
+      setAadhaarBackPreview(null);
+      setOtpSent(false);
+      setOtpVerified(false);
+      setOtpCode('');
+      setEnteredOtp('');
       fetchStaff();
     } catch (error: any) {
       toast.error(error.message || 'Failed to create staff');
@@ -626,7 +837,6 @@ export const StoreStaffSettings: React.FC = () => {
                         <div key={member.id} className="bg-secondary/50 rounded-lg p-3 flex items-center justify-between">
                           <div>
                             <p className="font-medium">{member.full_name || member.email}</p>
-                            <p className="text-xs text-primary font-mono">ID: {member.staff_code || 'N/A'}</p>
                             <span className={cn('text-xs px-2 py-0.5 rounded-full', roleColors[member.role])}>
                               {member.role === 'store_manager' ? 'Store Manager' : 'Staff'}
                             </span>
@@ -659,7 +869,7 @@ export const StoreStaffSettings: React.FC = () => {
       {/* Add Store Dialog */}
       {showAddStore && (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-md shadow-xl">
+          <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-bold">Create New Store</h2>
               <Button variant="ghost" size="icon" onClick={() => setShowAddStore(false)}>
@@ -687,24 +897,101 @@ export const StoreStaffSettings: React.FC = () => {
                 />
               </div>
               <div>
-                <label className="text-sm font-medium mb-2 block">Address</label>
-                <Input
-                  placeholder="Store Address"
-                  value={newStore.address}
-                  onChange={e => setNewStore(prev => ({ ...prev, address: e.target.value }))}
-                  className="h-11"
-                />
+                <label className="text-sm font-medium mb-2 block">Mobile Number *</label>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="10-digit Mobile Number"
+                    value={newStore.phone}
+                    onChange={e => setNewStore(prev => ({ ...prev, phone: e.target.value }))}
+                    disabled={storeOtpVerified}
+                    className="h-11 flex-1"
+                  />
+                  <Button
+                    type="button"
+                    onClick={() => handleSendOtp('store')}
+                    disabled={storeOtpVerified || isSendingStoreOtp}
+                    variant="outline"
+                    className="h-11 px-3"
+                  >
+                    {isSendingStoreOtp ? 'Sending...' : storeOtpSent ? 'Resend' : 'Send OTP'}
+                  </Button>
+                </div>
+                {storeOtpSent && !storeOtpVerified && (
+                  <div className="flex gap-2 mt-2">
+                    <Input
+                      placeholder="Enter 6-digit OTP"
+                      value={storeEnteredOtp}
+                      onChange={e => setStoreEnteredOtp(e.target.value)}
+                      className="h-9 flex-1"
+                    />
+                    <Button
+                      type="button"
+                      onClick={() => handleVerifyOtp('store')}
+                      className="h-9 px-3 bg-green-600 hover:bg-green-700 text-white"
+                    >
+                      Verify
+                    </Button>
+                  </div>
+                )}
+                {storeOtpVerified && (
+                  <p className="text-xs text-green-600 mt-1 flex items-center gap-1 font-medium font-mono">
+                    ✓ Mobile Number Verified
+                  </p>
+                )}
               </div>
-              <div>
-                <label className="text-sm font-medium mb-2 block">Phone</label>
-                <Input
-                  placeholder="+91 9876543210"
-                  value={newStore.phone}
-                  onChange={e => setNewStore(prev => ({ ...prev, phone: e.target.value }))}
-                  className="h-11"
-                />
+              
+              <div className="border-t pt-4 space-y-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Store Complete Address *</p>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Address Line 1 *</label>
+                  <Input
+                    placeholder="Shop No, Building Name"
+                    value={newStore.addressLine1}
+                    onChange={e => setNewStore(prev => ({ ...prev, addressLine1: e.target.value }))}
+                    className="h-11"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Area / Locality *</label>
+                  <Input
+                    placeholder="Street, Sector, Area"
+                    value={newStore.locality}
+                    onChange={e => setNewStore(prev => ({ ...prev, locality: e.target.value }))}
+                    className="h-11"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">City *</label>
+                    <Input
+                      placeholder="City Name"
+                      value={newStore.city}
+                      onChange={e => setNewStore(prev => ({ ...prev, city: e.target.value }))}
+                      className="h-11"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">State *</label>
+                    <Input
+                      placeholder="State"
+                      value={newStore.state}
+                      onChange={e => setNewStore(prev => ({ ...prev, state: e.target.value }))}
+                      className="h-11"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Pincode *</label>
+                  <Input
+                    placeholder="6-digit Pincode"
+                    value={newStore.pincode}
+                    onChange={e => setNewStore(prev => ({ ...prev, pincode: e.target.value }))}
+                    className="h-11"
+                  />
+                </div>
               </div>
-              <div>
+
+              <div className="border-t pt-4">
                 <label className="text-sm font-medium mb-2 block">Login Password *</label>
                 <div className="relative">
                   <Input
@@ -724,9 +1011,9 @@ export const StoreStaffSettings: React.FC = () => {
                 </div>
               </div>
               <p className="text-xs text-muted-foreground bg-primary/10 p-3 rounded-lg">
-                Store login email aur password se login hoga.
+                Store login email and password will be used by the store manager to log in.
               </p>
-              <Button onClick={handleAddStore} className="w-full h-11">
+              <Button onClick={handleAddStore} className="w-full h-11" disabled={!storeOtpVerified}>
                 <Plus className="w-4 h-4 mr-2" /> Create Store
               </Button>
             </div>
@@ -883,6 +1170,169 @@ export const StoreStaffSettings: React.FC = () => {
                   className="h-11"
                 />
               </div>
+
+              <div>
+                <label className="text-sm font-medium mb-2 block">Mobile Number *</label>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="10-digit Mobile Number"
+                    value={newStaff.phone}
+                    onChange={e => setNewStaff(prev => ({ ...prev, phone: e.target.value }))}
+                    disabled={otpVerified}
+                    className="h-11 flex-1"
+                  />
+                  <Button
+                    type="button"
+                    onClick={() => handleSendOtp('staff')}
+                    disabled={otpVerified || isSendingOtp}
+                    variant="outline"
+                    className="h-11 px-3"
+                  >
+                    {isSendingOtp ? 'Sending...' : otpSent ? 'Resend' : 'Send OTP'}
+                  </Button>
+                </div>
+                {otpSent && !otpVerified && (
+                  <div className="flex gap-2 mt-2">
+                    <Input
+                      placeholder="Enter 6-digit OTP"
+                      value={enteredOtp}
+                      onChange={e => setEnteredOtp(e.target.value)}
+                      className="h-9 flex-1"
+                    />
+                    <Button
+                      type="button"
+                      onClick={() => handleVerifyOtp('staff')}
+                      className="h-9 px-3 bg-green-600 hover:bg-green-700 text-white"
+                    >
+                      Verify
+                    </Button>
+                  </div>
+                )}
+                {otpVerified && (
+                  <p className="text-xs text-green-600 mt-1 flex items-center gap-1 font-medium font-mono">
+                    ✓ Mobile Number Verified
+                  </p>
+                )}
+              </div>
+
+              <div className="border-t pt-4 space-y-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Complete Address *</p>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Address Line 1 *</label>
+                  <Input
+                    placeholder="Address Line 1"
+                    value={newStaff.addressLine1}
+                    onChange={e => setNewStaff(prev => ({ ...prev, addressLine1: e.target.value }))}
+                    className="h-11"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Area / Locality *</label>
+                  <Input
+                    placeholder="Locality / Area"
+                    value={newStaff.locality}
+                    onChange={e => setNewStaff(prev => ({ ...prev, locality: e.target.value }))}
+                    className="h-11"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">City *</label>
+                    <Input
+                      placeholder="City"
+                      value={newStaff.city}
+                      onChange={e => setNewStaff(prev => ({ ...prev, city: e.target.value }))}
+                      className="h-11"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">State *</label>
+                    <Input
+                      placeholder="State"
+                      value={newStaff.state}
+                      onChange={e => setNewStaff(prev => ({ ...prev, state: e.target.value }))}
+                      className="h-11"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Pincode *</label>
+                  <Input
+                    placeholder="Pincode"
+                    value={newStaff.pincode}
+                    onChange={e => setNewStaff(prev => ({ ...prev, pincode: e.target.value }))}
+                    className="h-11"
+                  />
+                </div>
+              </div>
+
+              <div className="border-t pt-4 space-y-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Mandatory Aadhaar Verification *</p>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Aadhaar Number *</label>
+                  <Input
+                    placeholder="12-digit Aadhaar Number"
+                    value={newStaff.aadhaarNumber}
+                    onChange={e => setNewStaff(prev => ({ ...prev, aadhaarNumber: e.target.value }))}
+                    maxLength={12}
+                    className="h-11"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Aadhaar Name (As printed) *</label>
+                  <Input
+                    placeholder="Name on Aadhaar Card"
+                    value={newStaff.aadhaarName}
+                    onChange={e => setNewStaff(prev => ({ ...prev, aadhaarName: e.target.value }))}
+                    className="h-11"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Aadhaar Front Image *</label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      ref={aadhaarFrontInputRef}
+                      onChange={e => handleAadhaarUpload(e, 'front')}
+                      className="hidden"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => aadhaarFrontInputRef.current?.click()}
+                      className="w-full h-11 text-xs truncate"
+                    >
+                      {aadhaarFrontFile ? aadhaarFrontFile.name : 'Upload Front Scan'}
+                    </Button>
+                    {aadhaarFrontPreview && (
+                      <img src={aadhaarFrontPreview} alt="Aadhaar Front Preview" className="mt-2 w-full h-24 object-contain border rounded bg-secondary/20" />
+                    )}
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Aadhaar Back Image *</label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      ref={aadhaarBackInputRef}
+                      onChange={e => handleAadhaarUpload(e, 'back')}
+                      className="hidden"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => aadhaarBackInputRef.current?.click()}
+                      className="w-full h-11 text-xs truncate"
+                    >
+                      {aadhaarBackFile ? aadhaarBackFile.name : 'Upload Back Scan'}
+                    </Button>
+                    {aadhaarBackPreview && (
+                      <img src={aadhaarBackPreview} alt="Aadhaar Back Preview" className="mt-2 w-full h-24 object-contain border rounded bg-secondary/20" />
+                    )}
+                  </div>
+                </div>
+              </div>
+
               <div>
                 <label className="text-sm font-medium mb-2 block">Role *</label>
                 <select
@@ -1043,7 +1493,7 @@ export const StoreStaffSettings: React.FC = () => {
               </div>
             </div>
             <div className="pt-4 border-t border-border mt-4">
-              <Button onClick={handleAddStaff} className="w-full h-11" disabled={isUploadingFace}>
+              <Button onClick={handleAddStaff} className="w-full h-11" disabled={isUploadingFace || !otpVerified}>
                 {isUploadingFace ? (
                   <>
                     <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin mr-2" />

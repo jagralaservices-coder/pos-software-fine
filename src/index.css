@@ -204,7 +204,7 @@
 
   /* Card styles */
   .pos-card {
-    @apply bg-card rounded-2xl border border-border shadow-sm;
+    @apply bg-card rounded-2xl border border-border shadow-sm overflow-hidden w-full;
   }
 
   .pos-card-interactive {

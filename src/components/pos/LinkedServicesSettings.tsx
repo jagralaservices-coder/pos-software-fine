@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { useOwnerStore } from '@/hooks/useOwnerStore';
 import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/integrations/supabase/client';
+import { usePOS } from '@/contexts/POSContext';
 
 interface LinkedServicesSettingsProps {
   onBack: () => void;
@@ -107,7 +108,10 @@ const menuItems = [
 ];
 
 const LinkedServicesSettings: React.FC<LinkedServicesSettingsProps> = ({ onBack }) => {
-  const { selectedStoreId, selectedStoreName } = useOwnerStore();
+  const { selectedStoreId: ownerSelectedStoreId, selectedStoreName: ownerSelectedStoreName } = useOwnerStore();
+  const { activeStore } = usePOS();
+  const selectedStoreId = ownerSelectedStoreId || activeStore?.id || null;
+  const selectedStoreName = ownerSelectedStoreName || activeStore?.name || 'Our Store';
   const { customer } = useSupabaseAuth();
   const [settings, setSettings] = useState<LinkedServicesSettingsState>(defaultSettings);
   const [activeSection, setActiveSection] = useState('inventory');
@@ -145,26 +149,33 @@ const LinkedServicesSettings: React.FC<LinkedServicesSettingsProps> = ({ onBack 
       setOwnerPhone(customer.phone);
     }
   }, [customer]);
-
   useEffect(() => {
     const fetchWaConfig = async () => {
-      if (!selectedStoreId) return;
+      if (!storeId) return;
       setWaLoading(true);
       try {
-        const { data, error } = await supabase
-          .from('store_whatsapp_config')
-          .select('*')
-          .eq('store_id', selectedStoreId)
-          .maybeSingle();
+        const direct = localStorage.getItem('pos_store_code');
+        let storeCode = direct || null;
+        if (!storeCode) {
+          const storeData = localStorage.getItem('pos_active_store_data');
+          if (storeData) {
+            const parsed = JSON.parse(storeData);
+            storeCode = parsed?.storeCode || parsed?.store_code || null;
+          }
+        }
+        const { data, error } = await supabase.functions.invoke('sync-store-data', {
+          body: { action: 'fetch', store_id: storeId, data_type: 'whatsapp_config', store_code: storeCode }
+        });
 
         if (error) {
           console.error('Error fetching WhatsApp config:', error);
-        } else if (data) {
-          setWaNumber(data.whatsapp_number || '');
-          setWaInstanceId(data.instance_id || '');
-          setWaApiKey(data.api_key || '');
-          setWaIsVerified(data.is_verified || false);
-          if (data.is_verified) {
+        } else if (data?.config) {
+          const config = data.config;
+          setWaNumber(config.whatsapp_number || '');
+          setWaInstanceId(config.instance_id || '');
+          setWaApiKey(config.api_key || '');
+          setWaIsVerified(config.is_verified || false);
+          if (config.is_verified) {
             setIsOwnerPhoneVerified(true);
             setVerificationStep(2);
           } else {
@@ -187,12 +198,12 @@ const LinkedServicesSettings: React.FC<LinkedServicesSettingsProps> = ({ onBack 
     };
 
     fetchWaConfig();
-  }, [selectedStoreId]);
+  }, [storeId]);
 
   useEffect(() => {
-    if (!selectedStoreId) return;
+    if (!storeId) return;
     try {
-      const savedConfig = localStorage.getItem(`pos_emailjs_config_${selectedStoreId}`);
+      const savedConfig = localStorage.getItem(`pos_emailjs_config_${storeId}`);
       if (savedConfig) {
         const parsed = JSON.parse(savedConfig);
         setEmailJsServiceId(parsed.serviceId || '');
@@ -208,8 +219,7 @@ const LinkedServicesSettings: React.FC<LinkedServicesSettingsProps> = ({ onBack 
     } catch (e) {
       console.error('Failed to load EmailJS config:', e);
     }
-  }, [selectedStoreId]);
-
+  }, [storeId]);
   const handleSendOwnerOtp = async () => {
     if (!ownerPhone.trim() || ownerPhone.replace(/[\s()-]/g, '').length < 10) {
       toast.error('Please enter a valid 10-digit owner contact number.');
@@ -264,24 +274,41 @@ const LinkedServicesSettings: React.FC<LinkedServicesSettingsProps> = ({ onBack 
     setIsVerifyingWaOtp(true);
     try {
       const cleanedPhone = waNumber.replace(/[\s()-]/g, '');
-      const { error } = await supabase
-        .from('store_whatsapp_config')
-        .upsert({
-          store_id: selectedStoreId,
-          owner_id: customer.id,
-          whatsapp_number: cleanedPhone,
-          instance_id: waInstanceId.trim(),
-          api_key: waApiKey.trim(),
-          is_verified: true,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'store_id' });
+      const configPayload = {
+        owner_id: customer?.id || null,
+        whatsapp_number: cleanedPhone,
+        instance_id: waInstanceId.trim(),
+        api_key: waApiKey.trim(),
+        is_verified: true,
+      };
 
-      if (error) {
-        console.error('Error saving WhatsApp config:', error);
-        toast.error('Failed to save configuration: ' + error.message);
+      const direct = localStorage.getItem('pos_store_code');
+      let storeCode = direct || null;
+      if (!storeCode) {
+        const storeData = localStorage.getItem('pos_active_store_data');
+        if (storeData) {
+          const parsed = JSON.parse(storeData);
+          storeCode = parsed?.storeCode || parsed?.store_code || null;
+        }
+      }
+
+      const { data, error } = await supabase.functions.invoke('sync-store-data', {
+        body: {
+          action: 'save',
+          store_id: selectedStoreId,
+          data_type: 'whatsapp_config',
+          config: configPayload,
+          store_code: storeCode
+        }
+      });
+
+      if (error || data?.error) {
+        console.error('Error saving WhatsApp config:', error || data?.error);
+        toast.error('Failed to save configuration: ' + (error?.message || data?.error || 'Unknown error'));
         setWaIsVerified(false);
       } else {
         setWaIsVerified(true);
+        localStorage.setItem(`pos_whatsapp_config_${selectedStoreId}`, JSON.stringify(data.config || { ...configPayload, store_id: selectedStoreId }));
         toast.success('WhatsApp credentials verified and gateway activated successfully!');
       }
     } catch (err: any) {
@@ -298,16 +325,36 @@ const LinkedServicesSettings: React.FC<LinkedServicesSettingsProps> = ({ onBack 
     
     setWaVerifying(true);
     try {
-      const { error } = await supabase
-        .from('store_whatsapp_config')
-        .update({
-          is_verified: false,
-          updated_at: new Date().toISOString()
-        })
-        .eq('store_id', selectedStoreId);
+      const configPayload = {
+        owner_id: customer?.id || null,
+        whatsapp_number: waNumber.replace(/[\s()-]/g, ''),
+        instance_id: waInstanceId.trim(),
+        api_key: waApiKey.trim(),
+        is_verified: false,
+      };
 
-      if (error) {
-        toast.error('Failed to deactivate WhatsApp: ' + error.message);
+      const direct = localStorage.getItem('pos_store_code');
+      let storeCode = direct || null;
+      if (!storeCode) {
+        const storeData = localStorage.getItem('pos_active_store_data');
+        if (storeData) {
+          const parsed = JSON.parse(storeData);
+          storeCode = parsed?.storeCode || parsed?.store_code || null;
+        }
+      }
+
+      const { data, error } = await supabase.functions.invoke('sync-store-data', {
+        body: {
+          action: 'save',
+          store_id: selectedStoreId,
+          data_type: 'whatsapp_config',
+          config: configPayload,
+          store_code: storeCode
+        }
+      });
+
+      if (error || data?.error) {
+        toast.error('Failed to deactivate WhatsApp: ' + (error?.message || data?.error || 'Unknown error'));
       } else {
         setWaIsVerified(false);
         setIsOwnerPhoneVerified(false);
@@ -316,6 +363,7 @@ const LinkedServicesSettings: React.FC<LinkedServicesSettingsProps> = ({ onBack 
         setWaOtpSent(false);
         setWaOtp('');
         setVerificationStep(1);
+        localStorage.removeItem(`pos_whatsapp_config_${selectedStoreId}`);
         toast.info('WhatsApp messaging deactivated.');
       }
     } catch (err) {

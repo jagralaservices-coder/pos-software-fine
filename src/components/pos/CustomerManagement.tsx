@@ -7,20 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
-
-interface Customer {
-  id: string;
-  name: string;
-  phone: string;
-  address?: string;
-  city?: string;
-  state?: string;
-  pincode?: string;
-  email?: string;
-  createdAt: string;
-  totalOrders?: number;
-  totalSpent?: number;
-}
+import { getCustomers, setCustomers, Customer } from '@/lib/store';
 
 const getStoreId = (): string | null => {
   try { const d = localStorage.getItem('pos_active_store_data'); if (d) { const p = JSON.parse(d); if (p?.id) return p.id; } } catch {}
@@ -32,15 +19,10 @@ const getStoreCode = (): string | null => {
   return null;
 };
 
-const getLocalCustomers = (): Customer[] => {
-  const stored = localStorage.getItem('pos_customers');
-  return stored ? JSON.parse(stored) : [];
-};
-
 export const CustomerManagement: React.FC = () => {
   const navigate = useNavigate();
   const { t, formatCurrency } = useLocale();
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customers, setCustomersState] = useState<Customer[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
@@ -54,7 +36,7 @@ export const CustomerManagement: React.FC = () => {
   const fetchCustomers = async () => {
     setLoading(true);
     const storeId = getStoreId();
-    if (!storeId) { setCustomers(getLocalCustomers()); setLoading(false); return; }
+    if (!storeId) { setCustomersState(getCustomers()); setLoading(false); return; }
     try {
       const { data, error } = await supabase.functions.invoke('sync-store-data', {
         body: { action: 'fetch', store_id: storeId, data_type: 'pos_customers', store_code: getStoreCode() }
@@ -66,13 +48,12 @@ export const CustomerManagement: React.FC = () => {
           createdAt: c.created_at,
         }));
         setCustomers(mapped);
-        // Also update localStorage for offline
-        localStorage.setItem('pos_customers', JSON.stringify(mapped));
+        setCustomersState(mapped);
         setLoading(false);
         return;
       }
     } catch {}
-    setCustomers(getLocalCustomers());
+    setCustomersState(getCustomers());
     setLoading(false);
   };
 
@@ -91,21 +72,53 @@ export const CustomerManagement: React.FC = () => {
 
     if (editingCustomer) {
       // Update
-      const item = { id: editingCustomer.id, ...formData };
+      const item = { 
+        id: editingCustomer.id, 
+        ...formData, 
+        createdAt: editingCustomer.createdAt,
+        lastUpdated: new Date().toISOString(),
+        pendingSync: true 
+      };
+      
+      const updated = customers.map(c => c.id === editingCustomer.id ? { ...c, ...formData, lastUpdated: new Date().toISOString(), pendingSync: true } : c);
+      setCustomersState(updated);
+      setCustomers(updated);
+      toast.success(t('msg.saved'));
+
       if (storeId) {
         try {
           await supabase.functions.invoke('sync-store-data', {
             body: { action: 'save', store_id: storeId, data_type: 'pos_customers', store_code: getStoreCode(), items: [item] }
           });
+          setCustomersState(prev => {
+            const cleared = prev.map(c => c.id === item.id ? { ...c, pendingSync: false } : c);
+            setCustomers(cleared);
+            return cleared;
+          });
         } catch {}
       }
-      const updated = customers.map(c => c.id === editingCustomer.id ? { ...c, ...formData } : c);
-      setCustomers(updated);
-      localStorage.setItem('pos_customers', JSON.stringify(updated));
-      toast.success(t('msg.saved'));
     } else {
       // Create
-      const newItem = { name: formData.name.trim(), phone: formData.phone.trim(), address: formData.address.trim() || undefined, email: formData.email.trim() || undefined, city: formData.city || undefined, state: formData.state || undefined, pincode: formData.pincode || undefined };
+      const localId = Date.now().toString();
+      const newItem = { 
+        id: localId,
+        name: formData.name.trim(), 
+        phone: formData.phone.trim(), 
+        address: formData.address.trim() || undefined, 
+        email: formData.email.trim() || undefined, 
+        city: formData.city || undefined, 
+        state: formData.state || undefined, 
+        pincode: formData.pincode || undefined,
+        createdAt: new Date().toISOString(),
+        lastUpdated: new Date().toISOString(),
+        pendingSync: true
+      };
+      
+      const updated = [newItem as Customer, ...customers];
+      setCustomersState(updated);
+      setCustomers(updated);
+      toast.success(t('msg.saved'));
+
       if (storeId) {
         try {
           const { data, error } = await supabase.functions.invoke('sync-store-data', {
@@ -113,22 +126,26 @@ export const CustomerManagement: React.FC = () => {
           });
           if (!error && data?.items?.[0]) {
             const c = data.items[0];
-            const created: Customer = { id: c.id, name: c.name, phone: c.phone || '', email: c.email || '', address: c.address || '', city: c.city || '', state: c.state || '', pincode: c.pincode || '', createdAt: c.created_at };
-            const updated = [created, ...customers];
-            setCustomers(updated);
-            localStorage.setItem('pos_customers', JSON.stringify(updated));
-            toast.success(t('msg.saved'));
-            setShowAddDialog(false); setEditingCustomer(null); setFormData({ name: '', phone: '', address: '', city: '', state: '', pincode: '', email: '' });
-            return;
+            const created: Customer = { 
+              id: c.id, 
+              name: c.name, 
+              phone: c.phone || '', 
+              email: c.email || '', 
+              address: c.address || '', 
+              city: c.city || '', 
+              state: c.state || '', 
+              pincode: c.pincode || '', 
+              createdAt: c.created_at,
+              pendingSync: false 
+            };
+            setCustomersState(prev => {
+              const updatedList = prev.map(item => item.id === localId ? created : item);
+              setCustomers(updatedList);
+              return updatedList;
+            });
           }
         } catch {}
       }
-      // Fallback
-      const nc: Customer = { id: Date.now().toString(), ...formData, createdAt: new Date().toISOString(), totalOrders: 0, totalSpent: 0 };
-      const updated = [nc, ...customers];
-      setCustomers(updated);
-      localStorage.setItem('pos_customers', JSON.stringify(updated));
-      toast.success(t('msg.saved'));
     }
     setShowAddDialog(false); setEditingCustomer(null); setFormData({ name: '', phone: '', address: '', city: '', state: '', pincode: '', email: '' });
   };
@@ -141,17 +158,32 @@ export const CustomerManagement: React.FC = () => {
 
   const handleDelete = async (id: string) => {
     const storeId = getStoreId();
+    const updated = customers.filter(c => c.id !== id);
+    setCustomersState(updated);
+    setCustomers(updated);
+    
+    if (storeId) {
+      const deletedKey = `pos_deleted_customers_${storeId}`;
+      const deletedIds = JSON.parse(localStorage.getItem(deletedKey) || '[]') as string[];
+      if (!deletedIds.includes(id)) {
+        deletedIds.push(id);
+        localStorage.setItem(deletedKey, JSON.stringify(deletedIds));
+      }
+    }
+
+    toast.success(t('msg.deleted'));
+
     if (storeId) {
       try {
         await supabase.functions.invoke('sync-store-data', {
           body: { action: 'delete', store_id: storeId, data_type: 'pos_customers', store_code: getStoreCode(), item_ids: [id] }
         });
+        const deletedKey = `pos_deleted_customers_${storeId}`;
+        const deletedIds = JSON.parse(localStorage.getItem(deletedKey) || '[]') as string[];
+        const filtered = deletedIds.filter(d => d !== id);
+        localStorage.setItem(deletedKey, JSON.stringify(filtered));
       } catch {}
     }
-    const updated = customers.filter(c => c.id !== id);
-    setCustomers(updated);
-    localStorage.setItem('pos_customers', JSON.stringify(updated));
-    toast.success(t('msg.deleted'));
   };
 
   const openAddDialog = () => {

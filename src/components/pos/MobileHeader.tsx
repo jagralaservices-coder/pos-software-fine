@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -24,13 +24,16 @@ import {
   Calculator,
   Sun,
   Moon,
-  QrCode
+  QrCode,
+  Building
 } from 'lucide-react';
 import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
 import { usePOS, usePOSSafe } from '@/contexts/POSContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useLocale } from '@/contexts/LocaleContext';
 import { useSubscription } from '@/hooks/useSubscription';
+import { useOwnerStore } from '@/hooks/useOwnerStore';
+import { OwnerStoreSelectionDialog } from '@/components/pos/OwnerStoreSelectionDialog';
 
 import paystoreIcon from '@/assets/paystore-icon.png';
 
@@ -59,6 +62,25 @@ export const MobileHeader: React.FC = () => {
   // Check if logged in via store login
   const isStoreLogin = posContext?.isStoreLogin || false;
   const activeStore = posContext?.activeStore;
+
+  const [showStoreSelection, setShowStoreSelection] = useState(false);
+  const { 
+    selectedStoreName, 
+    shouldShowStoreSelection, 
+    selectStore, 
+    dismissStoreSelection,
+    isOwner
+  } = useOwnerStore();
+
+  // Auto-show store selection for owner on first login (mobile-specific)
+  useEffect(() => {
+    if (shouldShowStoreSelection && isAuthenticated && !isStoreLogin) {
+      const timer = setTimeout(() => {
+        setShowStoreSelection(true);
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [shouldShowStoreSelection, isAuthenticated, isStoreLogin]);
 
   // Check for staff login session
   const staffSession = typeof window !== 'undefined' ? localStorage.getItem('pos_staff_session') : null;
@@ -214,6 +236,28 @@ export const MobileHeader: React.FC = () => {
               </DrawerHeader>
               
               <div className="p-4 space-y-2 overflow-y-auto max-h-[60vh]">
+                {/* Store Selection for Owner */}
+                {isOwner && isAuthenticated && !isStoreLogin && (
+                  <div className="p-3 bg-primary/5 rounded-xl border border-primary/10 mb-2 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Store className="w-5 h-5 text-primary" />
+                      <div className="text-left">
+                        <p className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">Active Store</p>
+                        <p className="text-sm font-semibold text-foreground">{selectedStoreName}</p>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => {
+                        setShowMenu(false);
+                        setShowStoreSelection(true);
+                      }}
+                      className="text-xs bg-primary text-primary-foreground px-2.5 py-1 rounded-lg font-medium hover:bg-primary/95 transition-colors"
+                    >
+                      Change
+                    </button>
+                  </div>
+                )}
+
                 {/* New Order Button - Only for non-staff */}
                 {!isStaffLoggedIn && (
                   <button
@@ -366,6 +410,18 @@ export const MobileHeader: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Owner Store Selection Dialog */}
+      <OwnerStoreSelectionDialog
+        isOpen={showStoreSelection}
+        onClose={() => {
+          setShowStoreSelection(false);
+          dismissStoreSelection();
+        }}
+        onSelectStore={(store) => {
+          selectStore(store);
+        }}
+      />
     </>
   );
 };

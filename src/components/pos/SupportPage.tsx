@@ -7,7 +7,9 @@ import {
   ChevronRight,
   Send,
   Bot,
-  Keyboard
+  Keyboard,
+  Video,
+  HelpCircle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -18,6 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { TutorialsSection } from './TutorialsSection';
 
 interface Message {
   id: string;
@@ -106,6 +109,7 @@ export const SupportPage: React.FC = () => {
   ]);
   const [inputMessage, setInputMessage] = useState('');
   const [showChat, setShowChat] = useState(false);
+  const [activeTab, setActiveTab] = useState<'videos' | 'shortcuts' | 'faq'>('videos');
 
   const sendMessage = () => {
     if (!inputMessage.trim()) return;
@@ -239,74 +243,124 @@ export const SupportPage: React.FC = () => {
         </div>
       )}
 
-      {/* Keyboard Shortcuts Section */}
-      <div>
-        <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-          <Keyboard className="w-5 h-5" />
-          Keyboard Shortcuts
-        </h2>
-        <div className="pos-card overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[180px] font-semibold">Shortcut Key</TableHead>
-                <TableHead className="font-semibold">Description</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {keyboardShortcuts.map((shortcut, idx) => (
-                <TableRow key={idx}>
-                  <TableCell>
-                    <kbd className="px-2 py-1 text-sm font-mono bg-muted rounded border border-border">
-                      {shortcut.key}
-                    </kbd>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{shortcut.description}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+      {/* Tabs Selector */}
+      <div className="flex border-b border-border/60">
+        {[
+          { id: 'videos', label: 'Video Tutorials', icon: Video },
+          { id: 'shortcuts', label: 'Keyboard Shortcuts', icon: Keyboard },
+          { id: 'faq', label: 'FAQs', icon: HelpCircle }
+        ].map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`flex items-center gap-2 px-6 py-3 border-b-2 font-bold text-sm transition-all relative ${
+                isActive 
+                  ? 'border-primary text-primary' 
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Icon className="w-4.5 h-4.5" />
+              {tab.label}
+              {isActive && (
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
+              )}
+            </button>
+          );
+        })}
       </div>
 
-      {/* Order Color Indicators */}
-      <div>
-        <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-          <FileText className="w-5 h-5" />
-          Recent Orders - Color Indicators
-        </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {orderColors.map((item, idx) => (
-            <div key={idx} className="pos-card p-4 flex items-center gap-3">
-              <div className={cn('w-4 h-4 rounded-full', item.color)} />
-              <div>
-                <p className="font-medium text-foreground">{item.label}</p>
-                <p className="text-sm text-muted-foreground">{item.description}</p>
+      {/* Tab Content */}
+      <div className="pt-2">
+        {activeTab === 'videos' && (
+          <div className="space-y-4">
+            <div>
+              <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
+                <Video className="w-5 h-5 text-primary" />
+                POS Software Training Videos
+              </h2>
+              <p className="text-xs text-muted-foreground mt-0.5">Step-by-step video tutorials and guided walkthroughs for system operation.</p>
+            </div>
+            <TutorialsSection />
+          </div>
+        )}
+
+        {activeTab === 'shortcuts' && (
+          <div className="space-y-6">
+            {/* Keyboard Shortcuts Section */}
+            <div>
+              <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                <Keyboard className="w-5 h-5 text-primary" />
+                Keyboard Shortcuts
+              </h2>
+              <div className="pos-card overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[180px] font-semibold">Shortcut Key</TableHead>
+                      <TableHead className="font-semibold">Description</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {keyboardShortcuts.map((shortcut, idx) => (
+                      <TableRow key={idx}>
+                        <TableCell>
+                          <kbd className="px-2 py-1 text-sm font-mono bg-muted rounded border border-border">
+                            {shortcut.key}
+                          </kbd>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">{shortcut.description}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
             </div>
-          ))}
-        </div>
-      </div>
 
-      {/* FAQ Section */}
-      <div>
-        <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-          <FileText className="w-5 h-5" />
-          Frequently Asked Questions
-        </h2>
-        <div className="space-y-3">
-          {faqs.map((faq, idx) => (
-            <details key={idx} className="pos-card group">
-              <summary className="p-4 cursor-pointer flex items-center justify-between font-medium text-foreground">
-                {faq.question}
-                <ChevronRight className="w-5 h-5 text-muted-foreground group-open:rotate-90 transition-transform" />
-              </summary>
-              <div className="px-4 pb-4 text-muted-foreground">
-                {faq.answer}
+            {/* Order Color Indicators */}
+            <div>
+              <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                <FileText className="w-5 h-5 text-primary" />
+                Recent Orders - Color Indicators
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {orderColors.map((item, idx) => (
+                  <div key={idx} className="pos-card p-4 flex items-center gap-3">
+                    <div className={cn('w-4 h-4 rounded-full', item.color)} />
+                    <div>
+                      <p className="font-medium text-foreground">{item.label}</p>
+                      <p className="text-sm text-muted-foreground">{item.description}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
-            </details>
-          ))}
-        </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'faq' && (
+          <div>
+            <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+              <HelpCircle className="w-5 h-5 text-primary" />
+              Frequently Asked Questions
+            </h2>
+            <div className="space-y-3">
+              {faqs.map((faq, idx) => (
+                <details key={idx} className="pos-card group">
+                  <summary className="p-4 cursor-pointer flex items-center justify-between font-medium text-foreground">
+                    {faq.question}
+                    <ChevronRight className="w-5 h-5 text-muted-foreground group-open:rotate-90 transition-transform" />
+                  </summary>
+                  <div className="px-4 pb-4 text-muted-foreground">
+                    {faq.answer}
+                  </div>
+                </details>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

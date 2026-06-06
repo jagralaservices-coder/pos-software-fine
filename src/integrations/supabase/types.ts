@@ -387,22 +387,31 @@ export type Database = {
       customers: {
         Row: {
           address: string | null
+          address_line1: string | null
           approval_status: string
           approved_at: string | null
           approved_by: string | null
           business_name: string
           business_type: string
+          city: string | null
           created_at: string
+          email_verified: boolean | null
           enabled_addons: string[]
+          gov_id_url: string | null
           id: string
           is_active: boolean | null
+          last_login: string | null
+          locality: string | null
           max_stores: number
+          mobile_verified: boolean | null
           outlet_limit: number
           owner_email: string
           owner_name: string
           phone: string | null
+          pincode: string | null
           ref_code: string | null
           staff_limit: number
+          state: string | null
           subscription_end: string | null
           subscription_plan: string | null
           subscription_start: string | null
@@ -411,22 +420,31 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          address_line1?: string | null
           approval_status?: string
           approved_at?: string | null
           approved_by?: string | null
           business_name: string
           business_type?: string
+          city?: string | null
           created_at?: string
+          email_verified?: boolean | null
           enabled_addons?: string[]
+          gov_id_url?: string | null
           id?: string
           is_active?: boolean | null
+          last_login?: string | null
+          locality?: string | null
           max_stores?: number
+          mobile_verified?: boolean | null
           outlet_limit?: number
           owner_email: string
           owner_name: string
           phone?: string | null
+          pincode?: string | null
           ref_code?: string | null
           staff_limit?: number
+          state?: string | null
           subscription_end?: string | null
           subscription_plan?: string | null
           subscription_start?: string | null
@@ -435,22 +453,31 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          address_line1?: string | null
           approval_status?: string
           approved_at?: string | null
           approved_by?: string | null
           business_name?: string
           business_type?: string
+          city?: string | null
           created_at?: string
+          email_verified?: boolean | null
           enabled_addons?: string[]
+          gov_id_url?: string | null
           id?: string
           is_active?: boolean | null
+          last_login?: string | null
+          locality?: string | null
           max_stores?: number
+          mobile_verified?: boolean | null
           outlet_limit?: number
           owner_email?: string
           owner_name?: string
           phone?: string | null
+          pincode?: string | null
           ref_code?: string | null
           staff_limit?: number
+          state?: string | null
           subscription_end?: string | null
           subscription_plan?: string | null
           subscription_start?: string | null
@@ -1398,30 +1425,54 @@ export type Database = {
       }
       profiles: {
         Row: {
+          address_line1: string | null
           avatar_url: string | null
+          city: string | null
           created_at: string
           email: string
+          email_verified: boolean | null
           full_name: string | null
           id: string
+          last_login: string | null
+          locality: string | null
+          mobile_verified: boolean | null
           phone: string | null
+          pincode: string | null
+          state: string | null
           updated_at: string
         }
         Insert: {
+          address_line1?: string | null
           avatar_url?: string | null
+          city?: string | null
           created_at?: string
           email: string
+          email_verified?: boolean | null
           full_name?: string | null
           id: string
+          last_login?: string | null
+          locality?: string | null
+          mobile_verified?: boolean | null
           phone?: string | null
+          pincode?: string | null
+          state?: string | null
           updated_at?: string
         }
         Update: {
+          address_line1?: string | null
           avatar_url?: string | null
+          city?: string | null
           created_at?: string
           email?: string
+          email_verified?: boolean | null
           full_name?: string | null
           id?: string
+          last_login?: string | null
+          locality?: string | null
+          mobile_verified?: boolean | null
           phone?: string | null
+          pincode?: string | null
+          state?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -2073,6 +2124,11 @@ export type Database = {
       }
       user_roles: {
         Row: {
+          aadhaar_back_url: string | null
+          aadhaar_front_url: string | null
+          aadhaar_name: string | null
+          aadhaar_number: string | null
+          aadhaar_verification_status: string | null
           created_at: string
           customer_id: string | null
           face_photo_url: string | null
@@ -2090,6 +2146,11 @@ export type Database = {
           work_start_time: string | null
         }
         Insert: {
+          aadhaar_back_url?: string | null
+          aadhaar_front_url?: string | null
+          aadhaar_name?: string | null
+          aadhaar_number?: string | null
+          aadhaar_verification_status?: string | null
           created_at?: string
           customer_id?: string | null
           face_photo_url?: string | null
@@ -2107,6 +2168,11 @@ export type Database = {
           work_start_time?: string | null
         }
         Update: {
+          aadhaar_back_url?: string | null
+          aadhaar_front_url?: string | null
+          aadhaar_name?: string | null
+          aadhaar_number?: string | null
+          aadhaar_verification_status?: string | null
           created_at?: string
           customer_id?: string | null
           face_photo_url?: string | null

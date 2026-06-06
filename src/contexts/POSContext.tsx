@@ -1,5 +1,5 @@
 // POS Context - Force rebuild timestamp: 2026-02-09T12:00
-import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { showLowStockAlert, showOutOfStockAlert } from '@/lib/notifications';
@@ -43,7 +43,13 @@ import {
   getMenuItems,
   setMenuItems,
   safeMerge,
+  registerBackupCallback,
+  getCreditLedger,
+  setCreditLedger,
+  CreditEntry,
 } from '@/lib/store';
+import { triggerDebouncedBackup } from '@/lib/backupUtils';
+import { logSecurityAction } from '@/lib/auditLogger';
 
 interface POSContextType {
   // Menu & Categories
@@ -60,9 +66,10 @@ interface POSContextType {
 
   // Cart
   cart: CartItem[];
-  addToCart: (item: MenuItem) => void;
+  addToCart: (item: MenuItem, customPrice?: number, customQuantity?: number) => void;
   removeFromCart: (itemId: string) => void;
   updateCartQuantity: (itemId: string, quantity: number) => void;
+  updateCartItem: (itemId: string, updates: Partial<CartItem>) => void;
   clearCart: () => void;
   cartSubtotal: number;
   cartTax: number;
@@ -182,7 +189,19 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const { saveOrderToCloud, startPeriodicSync: startOrderSync } = useOrderSync();
 
   // Store data cloud sync (inventory, expenses, held bills, settings)
-  const { startPeriodicSync: startStoreDataSync } = useStoreDataSync();
+  const { startPeriodicSync: startStoreDataSync, saveCreditEntryToCloud } = useStoreDataSync();
+
+  // Stable refs for sync functions to prevent infinite loop
+  const startOrderSyncRef = useRef(startOrderSync);
+  const startStoreDataSyncRef = useRef(startStoreDataSync);
+
+  useEffect(() => {
+    startOrderSyncRef.current = startOrderSync;
+  }, [startOrderSync]);
+
+  useEffect(() => {
+    startStoreDataSyncRef.current = startStoreDataSync;
+  }, [startStoreDataSync]);
 
   // Store initializer for first-time login full download
   const { initializeStoreSession } = useStoreInitializer();
@@ -422,6 +441,18 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     } catch (error) {
       console.error('Error fetching menu items:', error);
+      // Offline fallback: load local storage items so UI remains functional
+      const localMenuItems = getMenuItems();
+      setMenuItemsState(localMenuItems);
+      
+      const uniqueCategoryIds = [...new Set(localMenuItems.map(item => item.category).filter(Boolean))];
+      const menuCategories: Category[] = uniqueCategoryIds.map(catId => ({
+        id: catId,
+        name: catId.charAt(0).toUpperCase() + catId.slice(1).replace(/-/g, ' '),
+        icon: '📦',
+        color: 'cat-food'
+      }));
+      setCategoriesState(menuCategories);
     }
   }, [isStoreLogin]);
 
@@ -452,14 +483,67 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             body: { action: 'fetch', store_id: store.id, data_type: 'settings', store_code: getStoreCode() }
           });
           if (error || data?.error) {
-            console.warn('Store validation failed, clearing stale session:', data?.error || error);
-            localStorage.removeItem('pos_active_store_data');
-            localStorage.removeItem('pos_is_store_login');
-            localStorage.removeItem('pos_active_store');
-            setIsStoreLogin(false);
-            setActiveStoreIdState(null);
-            toast.error('Store session expired or invalid. Please login again.');
+            const isNetworkError = !navigator.onLine || 
+              (error && (
+                error.message?.includes('Failed to fetch') || 
+                error.message?.includes('NetworkError') ||
+                error.message?.includes('Load failed') ||
+                error.message?.includes('network error')
+              ));
+
+            if (isNetworkError) {
+              console.warn('[POSContext] Validation skipped due to offline state or network failure.');
+              return;
+            }
+
+            const combinedError = String(error?.message || '') + String(data?.error || '');
+            const status = (error as any)?.context?.status;
+            const isAuthError = (error?.name === 'FunctionsHttpError' && (status === 401 || status === 403)) || 
+              combinedError.includes('Invalid') || 
+              combinedError.includes('inactive') || 
+              combinedError.includes('Authentication required') || 
+              combinedError.includes('Access denied');
+
+            if (isAuthError) {
+              console.warn('Store validation failed with auth error, clearing stale session:', data?.error || error);
+              localStorage.removeItem('pos_active_store_data');
+              localStorage.removeItem('pos_is_store_login');
+              localStorage.removeItem('pos_active_store');
+              setIsStoreLogin(false);
+              setActiveStoreIdState(null);
+              toast.error('Store session expired or invalid. Please login again.');
+            } else {
+              console.warn('[POSContext] Validation failed due to transient server/DB error (session retained):', data?.error || error);
+            }
             return;
+          }
+
+          // Fetch latest store details (name, address, phone, tax_type, tax_percentage) via proxy
+          const { data: detailsData, error: detailsError } = await supabase.functions.invoke('sync-store-data', {
+            body: { action: 'fetch', store_id: store.id, data_type: 'store_details', store_code: getStoreCode() }
+          });
+          if (!detailsError && detailsData?.success && detailsData?.store) {
+            const updatedStore = {
+              ...store,
+              name: detailsData.store.store_name,
+              address: detailsData.store.address,
+              phone: detailsData.store.phone,
+              businessType: detailsData.store.business_type,
+              country: detailsData.store.country,
+              currencyCode: detailsData.store.currency_code,
+              taxType: detailsData.store.tax_type,
+              taxPercentage: detailsData.store.tax_percentage,
+            };
+            localStorage.setItem('pos_active_store_data', JSON.stringify(updatedStore));
+            
+            // Also sync local taxPercent state immediately
+            if (updatedStore.taxPercentage !== undefined && updatedStore.taxPercentage !== null) {
+              const safeTax = Number(updatedStore.taxPercentage);
+              if (!isNaN(safeTax)) {
+                setTaxPercentState(safeTax);
+                localStorage.setItem('pos_tax_percent', String(safeTax));
+              }
+            }
           }
         } catch (validationError) {
           console.warn('Store validation network error, keeping session:', validationError);
@@ -642,16 +726,28 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Start periodic order sync with cloud
   useEffect(() => {
-    const cleanup = startOrderSync(
+    const storeId = isStoreLogin 
+      ? JSON.parse(localStorage.getItem('pos_active_store_data') || '{}')?.id 
+      : activeStoreId;
+      
+    if (!storeId) return;
+
+    const cleanup = startOrderSyncRef.current(
       () => getOrders(),
       (syncedOrders) => setOrdersState(syncedOrders)
     );
     return cleanup;
-  }, [startOrderSync]);
+  }, [activeStoreId, isStoreLogin]);
 
-  // Start periodic store data sync (inventory, expenses, held bills, tables, settings)
+  // Start periodic store data sync (inventory, expenses, held bills, tables, settings, menu items, categories)
   useEffect(() => {
-    const cleanup = startStoreDataSync(
+    const storeId = isStoreLogin 
+      ? JSON.parse(localStorage.getItem('pos_active_store_data') || '{}')?.id 
+      : activeStoreId;
+      
+    if (!storeId) return;
+
+    const cleanup = startStoreDataSyncRef.current(
       () => getInventory(),
       () => getExpenses(),
       () => getHeldBills(),
@@ -660,9 +756,11 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       (hb) => { setHeldBillsState(hb); setHeldBills(hb); },
       () => getTables(),
       (tbl) => { setTablesState(tbl); setTables(tbl); },
+      (menu) => { setMenuItemsState(menu); },
+      (cats) => { setCategoriesState(cats); },
     );
     return cleanup;
-  }, [startStoreDataSync]);
+  }, [activeStoreId, isStoreLogin]);
 
   // Fetch menu items and initialize store when active store changes
   useEffect(() => {
@@ -677,7 +775,6 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       fetchMenuItems(storeId);
       
-      // Initialize store session (full cloud download on first login per store)
       initializeStoreSession(storeId, isStoreLogin, {
         onOrders: (orders) => setOrdersState(orders),
         onInventory: () => {}, // Inventory is managed by useStoreDataSync
@@ -690,15 +787,33 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }, [activeStoreId, isStoreLogin, fetchMenuItems, initializeStoreSession]);
 
+  // Automatic backup registration
+  useEffect(() => {
+    const storeId = isStoreLogin 
+      ? JSON.parse(localStorage.getItem('pos_active_store_data') || '{}')?.id 
+      : activeStoreId;
+    
+    if (storeId) {
+      registerBackupCallback(() => {
+        triggerDebouncedBackup(storeId);
+      });
+    }
+  }, [activeStoreId, isStoreLogin]);
+
   const [taxPercent, setTaxPercentState] = useState(() => {
     const saved = localStorage.getItem('pos_tax_percent');
-    return saved ? Number(saved) : 5;
+    if (saved) {
+      const parsed = Number(saved);
+      return isNaN(parsed) ? 5 : parsed;
+    }
+    return 5;
   });
   const [customTax, setCustomTax] = useState<number | null>(null);
 
   const setTaxPercent = (percent: number) => {
-    setTaxPercentState(percent);
-    localStorage.setItem('pos_tax_percent', String(percent));
+    const safePercent = isNaN(Number(percent)) ? 0 : Number(percent);
+    setTaxPercentState(safePercent);
+    localStorage.setItem('pos_tax_percent', String(safePercent));
   };
 
   // Cart calculations
@@ -734,33 +849,44 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const item = menuItems.find(i => i.id === id);
     if (!item) return;
 
+    // Apply change locally first
+    const updatedLocal = menuItems.map(i => {
+      if (i.id === id) {
+        return {
+          ...i,
+          isAvailable: !i.isAvailable,
+          lastUpdated: new Date().toISOString(),
+          pendingSync: true,
+        };
+      }
+      return i;
+    });
+    setMenuItemsState(updatedLocal);
+    setMenuItems(updatedLocal);
+
     const storeId = isStoreLogin 
       ? JSON.parse(localStorage.getItem('pos_active_store_data') || '{}')?.id 
       : null;
 
-    if (isStoreLogin && storeId) {
-      const { data, error } = await supabase.functions.invoke('sync-store-data', {
-        body: { action: 'update', store_id: storeId, data_type: 'menu_items', item_id: id, updates: { is_available: !item.isAvailable }, store_code: getStoreCode() }
+    try {
+      if (isStoreLogin && storeId) {
+        await supabase.functions.invoke('sync-store-data', {
+          body: { action: 'update', store_id: storeId, data_type: 'menu_items', item_id: id, updates: { is_available: !item.isAvailable }, store_code: getStoreCode() }
+        });
+      } else {
+        await supabase
+          .from('menu_items')
+          .update({ is_available: !item.isAvailable })
+          .eq('id', id);
+      }
+      setMenuItemsState((prev) => {
+        const cleared = prev.map(i => i.id === id ? { ...i, pendingSync: false } : i);
+        setMenuItems(cleared);
+        return cleared;
       });
-      if (error || data?.error) {
-        toast.error('Failed to update item availability');
-        return;
-      }
-    } else {
-      const { error } = await supabase
-        .from('menu_items')
-        .update({ is_available: !item.isAvailable })
-        .eq('id', id);
-
-      if (error) {
-        toast.error('Failed to update item availability');
-        return;
-      }
+    } catch (err) {
+      console.warn('[Offline] Saved availability toggle locally, will sync later.', err);
     }
-
-    setMenuItemsState((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, isAvailable: !item.isAvailable } : item))
-    );
   };
 
   const addMenuItems = async (items: Omit<MenuItem, 'id' | 'isAvailable'>[]) => {
@@ -773,97 +899,88 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return;
     }
 
-    if (isStoreLogin) {
-      // Use edge function for store login
-      const { data: result, error: fnError } = await supabase.functions.invoke('sync-store-data', {
-        body: { action: 'save', store_id: storeId, data_type: 'menu_items', store_code: getStoreCode(), items: items.map(item => ({
+    const newItemsLocal: MenuItem[] = items.map(item => ({
+      ...item,
+      id: generateId(),
+      isAvailable: true,
+      lastUpdated: new Date().toISOString(),
+      pendingSync: true,
+    }));
+
+    setMenuItemsState(prev => {
+      const updated = [...prev, ...newItemsLocal];
+      setMenuItems(updated);
+      return updated;
+    });
+    toast.success(`${newItemsLocal.length} item(s) added locally`);
+    logSecurityAction('CREATE', 'menu_items', undefined, undefined, newItemsLocal);
+
+    try {
+      if (isStoreLogin) {
+        const { data: result, error: fnError } = await supabase.functions.invoke('sync-store-data', {
+          body: { action: 'save', store_id: storeId, data_type: 'menu_items', store_code: getStoreCode(), items: newItemsLocal.map(item => ({
+            id: item.id,
+            name: item.name,
+            nameHindi: item.nameHindi || null,
+            price: item.price,
+            category: item.category,
+            isAvailable: true,
+            preparationTime: item.preparationTime || null,
+            stock: item.stock || null,
+            image: item.image || null,
+            linkedInventoryId: item.linkedInventoryId || null,
+            gramagePerUnit: item.gramagePerUnit || 0,
+            sku: item.sku || null,
+          })) }
+        });
+
+        if (!fnError && result?.items) {
+          setMenuItemsState(prev => {
+            const cleared = prev.map(p => {
+              if (newItemsLocal.some(n => n.id === p.id)) {
+                return { ...p, pendingSync: false };
+              }
+              return p;
+            });
+            setMenuItems(cleared);
+            return cleared;
+          });
+        }
+      } else {
+        const dbItems = newItemsLocal.map(item => ({
+          id: item.id,
+          store_id: storeId,
           name: item.name,
-          nameHindi: item.nameHindi || null,
+          name_hindi: item.nameHindi || null,
           price: item.price,
           category: item.category,
-          isAvailable: true,
-          preparationTime: item.preparationTime || null,
+          is_available: true,
+          preparation_time: item.preparationTime || null,
           stock: item.stock || null,
-          image: item.image || null,
-          linkedInventoryId: item.linkedInventoryId || null,
-          gramagePerUnit: item.gramagePerUnit || 0,
-          sku: item.sku || null,
-        })) }
-      });
+          image_url: item.image || null,
+          linked_inventory_id: item.linkedInventoryId || null,
+          gramage_per_unit: item.gramagePerUnit || 0,
+        }));
 
-      if (fnError || result?.error) {
-        toast.error('Failed to add items');
-        console.error('Error adding items:', fnError || result?.error);
-        return;
+        const { error } = await supabase
+          .from('menu_items')
+          .insert(dbItems);
+
+        if (!error) {
+          setMenuItemsState(prev => {
+            const cleared = prev.map(p => {
+              if (newItemsLocal.some(n => n.id === p.id)) {
+                return { ...p, pendingSync: false };
+              }
+              return p;
+            });
+            setMenuItems(cleared);
+            return cleared;
+          });
+        }
       }
-
-      const newItems: MenuItem[] = (result?.items || []).map((item: any) => ({
-        id: item.id,
-        name: item.name,
-        nameHindi: item.name_hindi || undefined,
-        price: Number(item.price),
-        category: item.category,
-        image: item.image_url || undefined,
-        isAvailable: item.is_available,
-        preparationTime: item.preparation_time || undefined,
-        stock: item.stock || undefined,
-        linkedInventoryId: item.linked_inventory_id || undefined,
-        gramagePerUnit: item.gramage_per_unit ? Number(item.gramage_per_unit) : undefined,
-        sku: item.sku || undefined,
-      }));
-      
-      setMenuItemsState(prev => {
-        const updated = [...prev, ...newItems];
-        setMenuItems(updated);
-        return updated;
-      });
-      toast.success(`${newItems.length} item(s) added`);
-    } else {
-      const dbItems = items.map(item => ({
-        store_id: storeId,
-        name: item.name,
-        name_hindi: item.nameHindi || null,
-        price: item.price,
-        category: item.category,
-        is_available: true,
-        preparation_time: item.preparationTime || null,
-        stock: item.stock || null,
-        image_url: item.image || null,
-        linked_inventory_id: item.linkedInventoryId || null,
-        gramage_per_unit: item.gramagePerUnit || 0,
-      }));
-
-      const { data, error } = await supabase
-        .from('menu_items')
-        .insert(dbItems)
-        .select();
-
-      if (error) {
-        toast.error('Failed to add items');
-        console.error('Error adding items:', error);
-        return;
-      }
-
-      const newItems: MenuItem[] = (data || []).map(item => ({
-        id: item.id,
-        name: item.name,
-        nameHindi: item.name_hindi || undefined,
-        price: Number(item.price),
-        category: item.category,
-        image: item.image_url || undefined,
-        isAvailable: item.is_available,
-        preparationTime: item.preparation_time || undefined,
-        stock: item.stock || undefined,
-        linkedInventoryId: item.linked_inventory_id || undefined,
-        gramagePerUnit: item.gramage_per_unit ? Number(item.gramage_per_unit) : undefined,
-      }));
-      
-      setMenuItemsState(prev => {
-        const updated = [...prev, ...newItems];
-        setMenuItems(updated);
-        return updated;
-      });
-      toast.success(`${newItems.length} item(s) added`);
+    } catch (err) {
+      console.warn('[Offline] Add items synced locally only, background sync will retry.', err);
     }
   };
 
@@ -874,13 +991,16 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     
     const newCategory: Category = {
       ...category,
-      color: 'cat-food'
+      color: 'cat-food',
+      lastUpdated: new Date().toISOString(),
+      pendingSync: true,
     };
     
     const updatedCategories = [...categories, newCategory];
     setCategoriesState(updatedCategories);
+    setCategories(updatedCategories);
+    toast.success('Category added locally');
     
-    // Save to DB
     const storeId = isStoreLogin 
       ? JSON.parse(localStorage.getItem('pos_active_store_data') || '{}')?.id 
       : activeStoreId;
@@ -903,8 +1023,13 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             }))
           );
         }
+        setCategoriesState(prev => {
+          const cleared = prev.map(c => c.id === newCategory.id ? { ...c, pendingSync: false } : c);
+          setCategories(cleared);
+          return cleared;
+        });
       } catch (e) {
-        console.error('Failed to save category to DB:', e);
+        console.warn('[Offline] Category saved locally, will sync later.', e);
       }
     }
   };
@@ -912,39 +1037,70 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const deleteMenuItem = async (id: string) => {
     const storeId = isStoreLogin 
       ? JSON.parse(localStorage.getItem('pos_active_store_data') || '{}')?.id 
-      : null;
-
-    if (isStoreLogin && storeId) {
-      const { data, error } = await supabase.functions.invoke('sync-store-data', {
-        body: { action: 'delete', store_id: storeId, data_type: 'menu_items', item_ids: [id], store_code: getStoreCode() }
-      });
-      if (error || data?.error) {
-        toast.error('Failed to delete item');
-        return;
-      }
-    } else {
-      const { error } = await supabase
-        .from('menu_items')
-        .delete()
-        .eq('id', id);
-
-      if (error) {
-        toast.error('Failed to delete item');
-        return;
-      }
-    }
+      : activeStoreId || null;
 
     setMenuItemsState(prev => {
       const updated = prev.filter(item => item.id !== id);
       setMenuItems(updated);
       return updated;
     });
-    toast.success('Item deleted');
+
+    if (storeId) {
+      const deletedKey = `pos_deleted_menu_items_${storeId}`;
+      const deletedIds = JSON.parse(localStorage.getItem(deletedKey) || '[]') as string[];
+      if (!deletedIds.includes(id)) {
+        deletedIds.push(id);
+        localStorage.setItem(deletedKey, JSON.stringify(deletedIds));
+      }
+    }
+
+    toast.success('Item deleted locally');
+    logSecurityAction('DELETE', 'menu_items', id);
+
+    if (storeId) {
+      try {
+        if (isStoreLogin && getStoreCode()) {
+          await supabase.functions.invoke('sync-store-data', {
+            body: { action: 'delete', store_id: storeId, data_type: 'menu_items', item_ids: [id], store_code: getStoreCode() }
+          });
+        } else {
+          await supabase
+            .from('menu_items')
+            .delete()
+            .eq('id', id);
+        }
+        const deletedKey = `pos_deleted_menu_items_${storeId}`;
+        const deletedIds = JSON.parse(localStorage.getItem(deletedKey) || '[]') as string[];
+        const filtered = deletedIds.filter(d => d !== id);
+        localStorage.setItem(deletedKey, JSON.stringify(filtered));
+      } catch (err) {
+        console.warn('[Offline] Deleted item locally, cloud deletion queued.', err);
+      }
+    }
   };
 
   const updateMenuItem = async (id: string, updates: Partial<MenuItem>) => {
+    let updatedItem: MenuItem | null = null;
+    setMenuItemsState(prev => {
+      const updated = prev.map(item => {
+        if (item.id === id) {
+          updatedItem = {
+            ...item,
+            ...updates,
+            lastUpdated: new Date().toISOString(),
+            pendingSync: true,
+          };
+          return updatedItem;
+        }
+        return item;
+      });
+      setMenuItems(updated);
+      return updated;
+    });
+    toast.success('Item updated locally');
+    logSecurityAction('UPDATE', 'menu_items', id, undefined, updates);
+
     const dbUpdates: Record<string, unknown> = {};
-    
     if (updates.name !== undefined) dbUpdates.name = updates.name;
     if (updates.nameHindi !== undefined) dbUpdates.name_hindi = updates.nameHindi;
     if (updates.price !== undefined) dbUpdates.price = updates.price;
@@ -959,68 +1115,71 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const storeId = isStoreLogin 
       ? JSON.parse(localStorage.getItem('pos_active_store_data') || '{}')?.id 
-      : null;
+      : activeStoreId || null;
 
-    if (isStoreLogin && storeId) {
-      const { data, error } = await supabase.functions.invoke('sync-store-data', {
-        body: { 
-          action: 'update', store_id: storeId, data_type: 'menu_items', item_id: id, updates: dbUpdates,
-          store_code: getStoreCode(),
-          ...(updates.ingredients !== undefined ? { ingredients: updates.ingredients } : {}),
-          ...(updates.variations !== undefined ? { variations: updates.variations } : {}),
-        }
-      });
-      if (error || data?.error) {
-        toast.error('Failed to update item');
-        console.error('Error updating item:', error || data?.error);
-        return;
-      }
-    } else {
-      const { error } = await supabase
-        .from('menu_items')
-        .update(dbUpdates)
-        .eq('id', id);
+    if (storeId) {
+      try {
+        if (isStoreLogin && getStoreCode()) {
+          await supabase.functions.invoke('sync-store-data', {
+            body: { 
+              action: 'update', store_id: storeId, data_type: 'menu_items', item_id: id, updates: dbUpdates,
+              store_code: getStoreCode(),
+              ...(updates.ingredients !== undefined ? { ingredients: updates.ingredients } : {}),
+              ...(updates.variations !== undefined ? { variations: updates.variations } : {}),
+            }
+          });
+        } else {
+          await supabase
+            .from('menu_items')
+            .update(dbUpdates)
+            .eq('id', id);
 
-      if (error) {
-        toast.error('Failed to update item');
-        console.error('Error updating item:', error);
-        return;
-      }
+          if (updates.ingredients !== undefined) {
+            await supabase
+              .from('menu_item_ingredients')
+              .delete()
+              .eq('menu_item_id', id);
 
-      // Handle ingredients update - save to database
-      if (updates.ingredients !== undefined) {
-        await supabase
-          .from('menu_item_ingredients')
-          .delete()
-          .eq('menu_item_id', id);
+            if (updates.ingredients.length > 0) {
+              const ingredientsToInsert = updates.ingredients.map(ing => ({
+                menu_item_id: id,
+                inventory_item_id: ing.inventoryItemId,
+                quantity_required: ing.quantityRequired,
+                unit: ing.unit
+              }));
+              await supabase.from('menu_item_ingredients').insert(ingredientsToInsert);
+            }
+          }
+          if (updates.variations !== undefined) {
+            await supabase
+              .from('menu_item_variations')
+              .delete()
+              .eq('menu_item_id', id);
 
-        if (updates.ingredients.length > 0) {
-          const ingredientsToInsert = updates.ingredients.map(ing => ({
-            menu_item_id: id,
-            inventory_item_id: ing.inventoryItemId,
-            quantity_required: ing.quantityRequired,
-            unit: ing.unit
-          }));
-
-          const { error: ingError } = await supabase
-            .from('menu_item_ingredients')
-            .insert(ingredientsToInsert);
-
-          if (ingError) {
-            console.error('Error saving ingredients:', ingError);
-            toast.error('Failed to save recipe ingredients');
+            if (updates.variations.length > 0) {
+              const variationsToInsert = updates.variations.map((v, idx) => ({
+                menu_item_id: id,
+                name: v.name,
+                sku: v.sku || null,
+                price: v.price || 0,
+                is_available: v.isAvailable !== undefined ? v.isAvailable : true,
+                stock: v.stock || null,
+                sort_order: v.sortOrder !== undefined ? v.sortOrder : idx,
+                unit: v.unit || 'pcs'
+              }));
+              await supabase.from('menu_item_variations').insert(variationsToInsert);
+            }
           }
         }
+        setMenuItemsState(prev => {
+          const cleared = prev.map(item => item.id === id ? { ...item, pendingSync: false } : item);
+          setMenuItems(cleared);
+          return cleared;
+        });
+      } catch (err) {
+        console.warn('[Offline] Item updated locally, sync queued.', err);
       }
     }
-
-    setMenuItemsState(prev => {
-      const updated = prev.map(item => 
-        item.id === id ? { ...item, ...updates } : item
-      );
-      setMenuItems(updated);
-      return updated;
-    });
   };
 
   // Sync categories based on menu items - ONLY show categories from menu
@@ -1046,27 +1205,57 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setOrders([]);
   };
 
-  const addToCart = useCallback((item: MenuItem) => {
+  const addToCart = useCallback((item: MenuItem, customPrice?: number, customQuantity?: number) => {
     setCart((prev) => {
-      const existing = prev.find((i) => i.id === item.id);
+      const priceToUse = customPrice !== undefined ? customPrice : item.price;
+      const qtyToUse = customQuantity !== undefined ? customQuantity : 1;
+      const isDynamic = item.preparationTime === 998 || item.preparationTime === 999;
+      
+      const existing = prev.find((i) => {
+        if (isDynamic) {
+          return i.id === item.id && i.price === priceToUse;
+        }
+        return i.id === item.id;
+      });
+      
       if (existing) {
-        return prev.map((i) => (i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i));
+        return prev.map((i) => {
+          const isMatch = isDynamic 
+            ? (i.id === item.id && i.price === priceToUse)
+            : (i.id === item.id);
+          return isMatch ? { ...i, quantity: i.quantity + qtyToUse } : i;
+        });
       }
-      return [...prev, { ...item, quantity: 1 }];
+      
+      const cartItemId = `${item.id}-${priceToUse}-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+      return [...prev, { ...item, price: priceToUse, quantity: qtyToUse, cartItemId }];
     });
   }, []);
 
   const removeFromCart = useCallback((itemId: string) => {
-    setCart((prev) => prev.filter((item) => item.id !== itemId));
+    setCart((prev) => {
+      const filtered = prev.filter((item) => (item.cartItemId || item.id) !== itemId);
+      return filtered;
+    });
   }, []);
 
-  const updateCartQuantity = (itemId: string, quantity: number) => {
-    if (quantity <= 0) {
+  const updateCartItem = useCallback((itemId: string, updates: Partial<CartItem>) => {
+    if (updates.quantity !== undefined && updates.quantity <= 0) {
       removeFromCart(itemId);
       return;
     }
-    setCart((prev) => prev.map((item) => (item.id === itemId ? { ...item, quantity } : item)));
-  };
+    setCart((prev) => {
+      const mapped = prev.map((item) => {
+        const isMatch = (item.cartItemId || item.id) === itemId;
+        return isMatch ? { ...item, ...updates } : item;
+      });
+      return mapped;
+    });
+  }, [removeFromCart]);
+
+  const updateCartQuantity = useCallback((itemId: string, quantity: number) => {
+    updateCartItem(itemId, { quantity });
+  }, [updateCartItem]);
 
   const clearCart = () => {
     setCart([]);
@@ -1495,6 +1684,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setOrdersState(updatedOrders);
         setOrders(updatedOrders);
         saveOrderToCloud(updatedOrder);
+        logSecurityAction('MERGE_KOT_ORDER', 'orders', updatedOrder.id, undefined, updatedOrder);
 
         toast.success(`Items merged into Table ${selectedTable.number} order`);
         clearCart();
@@ -1523,6 +1713,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     addOrderToStorage(order);
     saveOrderToCloud(order);
+    logSecurityAction('CREATE_KOT_ORDER', 'orders', order.id, undefined, order);
     setOrdersState(getOrders());
 
     if (currentOrderType === 'dine-in' && selectedTable) {
@@ -1566,10 +1757,18 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     console.log('ORDER BEFORE SAVE', updatedOrder);
 
+    // Block printing until saveOrderToCloud successfully completes
+    const saveSuccess = await saveOrderToCloud(updatedOrder);
+    if (!saveSuccess) {
+      toast.error('Failed to sync order to cloud. Bill printing aborted.');
+      return null;
+    }
+
+    logSecurityAction('PRINT_BILL', 'orders', updatedOrder.id, undefined, updatedOrder);
+
     const updatedOrders = orders.map(o => o.id === orderId ? updatedOrder : o);
     setOrdersState(updatedOrders);
     setOrders(updatedOrders);
-    saveOrderToCloud(updatedOrder);
 
     reduceStock(order.items);
 
@@ -1585,17 +1784,26 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const finalCustomerPhone = (customerInfo?.phone || order.customerPhone || '').trim() || null;
 
     if ((paymentMethod === 'due' || paymentMethod === 'credit') && activeStoreId) {
+      const creditEntry: CreditEntry = {
+        id: generateId(),
+        store_id: activeStoreId,
+        customer_name: finalCustomerName,
+        customer_phone: finalCustomerPhone,
+        bill_number: billNumber,
+        total_amount: order.total,
+        paid_amount: 0,
+        due_amount: order.total,
+        payment_status: 'unpaid',
+        notes: null,
+        created_at: new Date().toISOString(),
+        lastUpdated: new Date().toISOString(),
+        pendingSync: true
+      };
+
       try {
-        await supabase.from('credit_ledger').insert({
-          store_id: activeStoreId,
-          customer_name: finalCustomerName,
-          customer_phone: finalCustomerPhone,
-          bill_number: billNumber,
-          total_amount: order.total,
-          paid_amount: 0,
-          due_amount: order.total,
-          payment_status: 'unpaid',
-        } as any);
+        const currentLedger = getCreditLedger();
+        setCreditLedger([...currentLedger, creditEntry]);
+        await saveCreditEntryToCloud([creditEntry]);
       } catch (e) {
         console.error('[CreditLedger] insert failed:', e);
       }
@@ -1605,17 +1813,26 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (paymentMethod === 'part' && paymentBreakdown && activeStoreId) {
       const creditPortion = paymentBreakdown.find(p => p.method.toLowerCase() === 'credit' || p.method.toLowerCase() === 'due');
       if (creditPortion && creditPortion.amount > 0) {
+        const creditEntry: CreditEntry = {
+          id: generateId(),
+          store_id: activeStoreId,
+          customer_name: finalCustomerName,
+          customer_phone: finalCustomerPhone,
+          bill_number: billNumber,
+          total_amount: creditPortion.amount,
+          paid_amount: 0,
+          due_amount: creditPortion.amount,
+          payment_status: 'unpaid',
+          notes: null,
+          created_at: new Date().toISOString(),
+          lastUpdated: new Date().toISOString(),
+          pendingSync: true
+        };
+
         try {
-          await supabase.from('credit_ledger').insert({
-            store_id: activeStoreId,
-            customer_name: finalCustomerName,
-            customer_phone: finalCustomerPhone,
-            bill_number: billNumber,
-            total_amount: creditPortion.amount,
-            paid_amount: 0,
-            due_amount: creditPortion.amount,
-            payment_status: 'unpaid',
-          } as any);
+          const currentLedger = getCreditLedger();
+          setCreditLedger([...currentLedger, creditEntry]);
+          await saveCreditEntryToCloud([creditEntry]);
         } catch (e) {
           console.error('[CreditLedger] insert failed for part payment credit:', e);
         }
@@ -1681,6 +1898,15 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       breakdownKeys: Object.keys(breakdown),
     });
 
+    // Block printing until saveOrderToCloud successfully completes
+    const saveSuccess = await saveOrderToCloud(order);
+    if (!saveSuccess) {
+      toast.error('Failed to sync order to cloud. Bill printing aborted.');
+      return null;
+    }
+
+    logSecurityAction('PRINT_BILL', 'orders', order.id, undefined, order);
+
     addOrderToStorage(order);
     
     console.log('[directBillPrint] Order after storage - checking localStorage');
@@ -1691,7 +1917,6 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       paymentBreakdown: storedOrder?.paymentBreakdown,
     });
 
-    saveOrderToCloud(order);
     setOrdersState(getOrders());
 
     reduceStock(cart);
@@ -1701,17 +1926,26 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     // Auto-create Credit Ledger entry for due/credit sales
     if ((paymentMethod === 'due' || paymentMethod === 'credit') && activeStoreId) {
+      const creditEntry: CreditEntry = {
+        id: generateId(),
+        store_id: activeStoreId,
+        customer_name: finalCustomerName,
+        customer_phone: finalCustomerPhone,
+        bill_number: billNumber,
+        total_amount: cartTotal,
+        paid_amount: 0,
+        due_amount: cartTotal,
+        payment_status: 'unpaid',
+        notes: null,
+        created_at: new Date().toISOString(),
+        lastUpdated: new Date().toISOString(),
+        pendingSync: true
+      };
+
       try {
-        await supabase.from('credit_ledger').insert({
-          store_id: activeStoreId,
-          customer_name: finalCustomerName,
-          customer_phone: finalCustomerPhone,
-          bill_number: billNumber,
-          total_amount: cartTotal,
-          paid_amount: 0,
-          due_amount: cartTotal,
-          payment_status: 'unpaid',
-        } as any);
+        const currentLedger = getCreditLedger();
+        setCreditLedger([...currentLedger, creditEntry]);
+        await saveCreditEntryToCloud([creditEntry]);
       } catch (e) {
         console.error('[CreditLedger] insert failed:', e);
       }
@@ -1721,17 +1955,26 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (paymentMethod === 'part' && paymentBreakdown && activeStoreId) {
       const creditPortion = paymentBreakdown.find(p => p.method.toLowerCase() === 'credit' || p.method.toLowerCase() === 'due');
       if (creditPortion && creditPortion.amount > 0) {
+        const creditEntry: CreditEntry = {
+          id: generateId(),
+          store_id: activeStoreId,
+          customer_name: finalCustomerName,
+          customer_phone: finalCustomerPhone,
+          bill_number: billNumber,
+          total_amount: creditPortion.amount,
+          paid_amount: 0,
+          due_amount: creditPortion.amount,
+          payment_status: 'unpaid',
+          notes: null,
+          created_at: new Date().toISOString(),
+          lastUpdated: new Date().toISOString(),
+          pendingSync: true
+        };
+
         try {
-          await supabase.from('credit_ledger').insert({
-            store_id: activeStoreId,
-            customer_name: finalCustomerName,
-            customer_phone: finalCustomerPhone,
-            bill_number: billNumber,
-            total_amount: creditPortion.amount,
-            paid_amount: 0,
-            due_amount: creditPortion.amount,
-            payment_status: 'unpaid',
-          } as any);
+          const currentLedger = getCreditLedger();
+          setCreditLedger([...currentLedger, creditEntry]);
+          await saveCreditEntryToCloud([creditEntry]);
         } catch (e) {
           console.error('[CreditLedger] insert failed for part payment credit:', e);
         }
@@ -1870,6 +2113,15 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
     return stores.find(s => s.id === activeStoreId) || null;
   }, [isStoreLogin, stores, activeStoreId]);
+
+  // Sync tax percentage state when active store changes
+  useEffect(() => {
+    if (activeStore) {
+      const storeTax = activeStore.taxPercentage ?? 0;
+      setTaxPercentState(storeTax);
+      localStorage.setItem('pos_tax_percent', String(storeTax));
+    }
+  }, [activeStore]);
 
   const setActiveStoreId = (storeId: string | null) => {
     setActiveStoreIdState(storeId);
@@ -2058,6 +2310,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           outlet_limit: data.outlet_limit || 1,
         }));
         
+        logSecurityAction('LOGIN', 'stores', data.store_id);
         return store;
       }
       
@@ -2071,6 +2324,9 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const logoutStore = () => {
+    if (activeStoreId) {
+      logSecurityAction('LOGOUT', 'stores', activeStoreId);
+    }
     setActiveStoreIdState(null);
     setActiveStoreStorage(null);
     setIsStoreLogin(false);
@@ -2088,6 +2344,58 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
     setStoresState(updatedStores);
     setStoresStorage(updatedStores);
+
+    // Persist to Supabase database
+    const dbUpdates: Record<string, any> = {};
+    if (updates.name !== undefined) dbUpdates.store_name = updates.name;
+    if (updates.address !== undefined) dbUpdates.address = updates.address;
+    if (updates.phone !== undefined) dbUpdates.phone = updates.phone;
+    if (updates.businessType !== undefined) dbUpdates.business_type = updates.businessType;
+    if (updates.country !== undefined) dbUpdates.country = updates.country;
+    if (updates.currencyCode !== undefined) dbUpdates.currency_code = updates.currencyCode;
+    if (updates.taxType !== undefined) dbUpdates.tax_type = updates.taxType;
+    if (updates.taxPercentage !== undefined) dbUpdates.tax_percentage = updates.taxPercentage;
+    if (updates.isActive !== undefined) dbUpdates.is_active = updates.isActive;
+    if (updates.password !== undefined) dbUpdates.password = updates.password;
+
+    if (Object.keys(dbUpdates).length > 0) {
+      if (isStoreLogin) {
+        supabase.functions.invoke('sync-store-data', {
+          body: {
+            action: 'update',
+            store_id: id,
+            data_type: 'store_details',
+            store_code: getStoreCode(),
+            updates: dbUpdates
+          }
+        }).then(({ data, error }) => {
+          if (error || data?.error) {
+            console.error('Failed to update store via edge function:', error || data?.error);
+          } else {
+            // Also sync active store data if it's the current store
+            const stored = localStorage.getItem('pos_active_store_data');
+            if (stored) {
+              try {
+                const parsed = JSON.parse(stored);
+                if (parsed.id === id) {
+                  localStorage.setItem('pos_active_store_data', JSON.stringify({ ...parsed, ...updates }));
+                }
+              } catch {}
+            }
+          }
+        });
+      } else {
+        supabase
+          .from('stores')
+          .update(dbUpdates)
+          .eq('id', id)
+          .then(({ error }) => {
+            if (error) {
+              console.error('Failed to update store in Supabase:', error);
+            }
+          });
+      }
+    }
   };
 
   const deleteStore = (id: string) => {
@@ -2131,6 +2439,7 @@ export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         addToCart,
         removeFromCart,
         updateCartQuantity,
+        updateCartItem,
         clearCart,
         cartSubtotal,
         cartTax,

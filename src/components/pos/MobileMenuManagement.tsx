@@ -63,8 +63,8 @@ export const MobileMenuManagement: React.FC = () => {
   const [barcodeMenuItem, setBarcodeMenuItem] = useState<MenuItem | null>(null);
 
   // Add/Edit form states
-  const [newItem, setNewItem] = useState({ name: '', price: '', category: 'starters', sku: '', stock: '', linkedInventoryId: '', gramagePerUnit: '' });
-  const [editItem, setEditItem] = useState({ name: '', price: '', category: '', sku: '', stock: '', storeStocks: {} as { [key: string]: string }, stockAlertThreshold: '', linkedInventoryId: '', gramagePerUnit: '' });
+  const [newItem, setNewItem] = useState({ name: '', price: '', category: categories[0]?.id || '', sku: '', stock: '', linkedInventoryId: '', gramagePerUnit: '', isVariable: false, isPrompt: false });
+  const [editItem, setEditItem] = useState({ name: '', price: '', category: '', sku: '', stock: '', storeStocks: {} as { [key: string]: string }, stockAlertThreshold: '', linkedInventoryId: '', gramagePerUnit: '', isVariable: false, isPrompt: false });
   
   // Category creation states
   const [showAddCategory, setShowAddCategory] = useState(false);
@@ -77,6 +77,13 @@ export const MobileMenuManagement: React.FC = () => {
   useEffect(() => {
     setInventoryItems(getInventory());
   }, []);
+
+  // Auto-select first category if currently empty and categories load
+  useEffect(() => {
+    if (categories.length > 0 && !newItem.category) {
+      setNewItem(prev => ({ ...prev, category: categories[0].id }));
+    }
+  }, [categories, newItem.category]);
 
   const filteredItems = menuItems.filter(item => {
     const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -109,27 +116,27 @@ export const MobileMenuManagement: React.FC = () => {
   };
 
   const handleAddItem = () => {
-    if (!newItem.name || !newItem.price) {
+    if (!newItem.name || (!newItem.price && !newItem.isPrompt)) {
       toast.error('Please fill all fields');
       return;
     }
     addMenuItems([{
       name: newItem.name,
-      price: Number(newItem.price),
+      price: newItem.isPrompt ? 0 : Number(newItem.price),
       category: newItem.category,
-      preparationTime: 10,
+      preparationTime: newItem.isPrompt ? 998 : (newItem.isVariable ? 999 : 10),
       sku: newItem.sku.trim() || undefined,
       stock: newItem.stock ? Number(newItem.stock) : undefined,
       linkedInventoryId: newItem.linkedInventoryId || undefined,
       gramagePerUnit: newItem.gramagePerUnit ? Number(newItem.gramagePerUnit) : undefined,
     }]);
     toast.success('Item added!');
-    setNewItem({ name: '', price: '', category: 'starters', sku: '', stock: '', linkedInventoryId: '', gramagePerUnit: '' });
+    setNewItem({ name: '', price: '', category: 'starters', sku: '', stock: '', linkedInventoryId: '', gramagePerUnit: '', isVariable: false, isPrompt: false });
     setShowAddItem(false);
   };
 
   const handleEditItem = () => {
-    if (!editingItem || !editItem.name || !editItem.price) {
+    if (!editingItem || !editItem.name || (!editItem.price && !editItem.isPrompt)) {
       toast.error('Please fill all fields');
       return;
     }
@@ -141,8 +148,9 @@ export const MobileMenuManagement: React.FC = () => {
     });
     updateMenuItem(editingItem.id, {
       name: editItem.name,
-      price: Number(editItem.price),
+      price: editItem.isPrompt ? 0 : Number(editItem.price),
       category: editItem.category,
+      preparationTime: editItem.isPrompt ? 998 : (editItem.isVariable ? 999 : 10),
       sku: editItem.sku.trim() || undefined,
       stock: editItem.stock ? Number(editItem.stock) : undefined,
       storeStock: Object.keys(storeStock).length > 0 ? storeStock : undefined,
@@ -173,6 +181,8 @@ export const MobileMenuManagement: React.FC = () => {
       stockAlertThreshold: item.stockAlertThreshold !== undefined ? String(item.stockAlertThreshold) : '',
       linkedInventoryId: item.linkedInventoryId || '',
       gramagePerUnit: item.gramagePerUnit !== undefined ? String(item.gramagePerUnit) : '',
+      isVariable: false,
+      isPrompt: item.preparationTime === 998 || item.preparationTime === 999,
     });
     setShowEditItem(true);
   };
@@ -459,7 +469,14 @@ export const MobileMenuManagement: React.FC = () => {
               </button>
             </div>
             <Input placeholder="Item Name" value={newItem.name} onChange={(e) => setNewItem(prev => ({ ...prev, name: e.target.value }))} className="h-12 text-base" />
-            <Input type="number" placeholder="Price" value={newItem.price} onChange={(e) => setNewItem(prev => ({ ...prev, price: e.target.value }))} className="h-12 text-base" />
+            <Input 
+              type="number" 
+              placeholder={newItem.isPrompt ? "Dynamic Price (Prompt on Selection)" : "Price"} 
+              value={newItem.isPrompt ? "" : newItem.price} 
+              onChange={(e) => setNewItem(prev => ({ ...prev, price: e.target.value }))} 
+              className="h-12 text-base" 
+              disabled={newItem.isPrompt} 
+            />
             <select 
               value={newItem.category} 
               onChange={(e) => {
@@ -474,6 +491,7 @@ export const MobileMenuManagement: React.FC = () => {
               }} 
               className="w-full p-3 h-12 bg-secondary rounded-xl border-none text-base"
             >
+              <option value="" disabled>Select Category</option>
               {categories.map(cat => (
                 <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
               ))}
@@ -510,6 +528,25 @@ export const MobileMenuManagement: React.FC = () => {
             </div>
             )}
 
+            {/* Variable Price/Weight Toggle */}
+            <div className="flex items-center gap-2 pt-1 pb-1">
+              <input
+                type="checkbox"
+                id="mob-new-item-is-prompt"
+                checked={newItem.isPrompt}
+                onChange={(e) => setNewItem(prev => ({ 
+                  ...prev, 
+                  isPrompt: e.target.checked,
+                  isVariable: false,
+                  price: e.target.checked ? '0' : prev.price
+                }))}
+                className="w-4 h-4 rounded border-border accent-primary cursor-pointer"
+              />
+              <label htmlFor="mob-new-item-is-prompt" className="text-sm font-medium text-foreground cursor-pointer select-none">
+                Variable Item (Prompt for Price & Weight on Selection)
+              </label>
+            </div>
+
             <Button onClick={handleAddItem} className="w-full h-12 text-base">
               <Plus className="w-5 h-5 mr-2" /> Add Item
             </Button>
@@ -528,7 +565,14 @@ export const MobileMenuManagement: React.FC = () => {
               </button>
             </div>
             <Input placeholder="Item Name" value={editItem.name} onChange={(e) => setEditItem(prev => ({ ...prev, name: e.target.value }))} className="h-12 text-base" />
-            <Input type="number" placeholder="Price" value={editItem.price} onChange={(e) => setEditItem(prev => ({ ...prev, price: e.target.value }))} className="h-12 text-base" />
+            <Input 
+              type="number" 
+              placeholder={editItem.isPrompt ? "Dynamic Price (Prompt on Selection)" : "Price"} 
+              value={editItem.isPrompt ? "" : editItem.price} 
+              onChange={(e) => setEditItem(prev => ({ ...prev, price: e.target.value }))} 
+              className="h-12 text-base" 
+              disabled={editItem.isPrompt} 
+            />
             <select 
               value={editItem.category} 
               onChange={(e) => {
@@ -543,6 +587,7 @@ export const MobileMenuManagement: React.FC = () => {
               }} 
               className="w-full p-3 h-12 bg-secondary rounded-xl border-none text-base"
             >
+              <option value="" disabled>Select Category</option>
               {categories.map(cat => (
                 <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
               ))}
@@ -593,6 +638,25 @@ export const MobileMenuManagement: React.FC = () => {
               )}
             </div>
             )}
+
+            {/* Variable Price/Weight Toggle */}
+            <div className="flex items-center gap-2 pt-1 pb-1">
+              <input
+                type="checkbox"
+                id="mob-edit-item-is-prompt"
+                checked={editItem.isPrompt}
+                onChange={(e) => setEditItem(prev => ({ 
+                  ...prev, 
+                  isPrompt: e.target.checked,
+                  isVariable: false,
+                  price: e.target.checked ? '0' : prev.price
+                }))}
+                className="w-4 h-4 rounded border-border accent-primary cursor-pointer"
+              />
+              <label htmlFor="mob-edit-item-is-prompt" className="text-sm font-medium text-foreground cursor-pointer select-none">
+                Variable Item (Prompt for Price & Weight on Selection)
+              </label>
+            </div>
 
             {/* Stock Alert */}
             <div className="flex items-center gap-2">

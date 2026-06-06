@@ -60,7 +60,7 @@ export const MenuManagement: React.FC = () => {
   const [showAddItem, setShowAddItem] = useState(false);
   const [showEditItem, setShowEditItem] = useState(false);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
-  const [newItem, setNewItem] = useState({ name: '', price: '', category: categories[0]?.id || 'general', stock: '', linkedInventoryId: '', gramagePerUnit: '', sku: '' });
+  const [newItem, setNewItem] = useState({ name: '', price: '', category: categories[0]?.id || '', stock: '', linkedInventoryId: '', gramagePerUnit: '', sku: '', isVariable: false, isPrompt: false });
   
   // Category creation states
   const [showAddCategory, setShowAddCategory] = useState(false);
@@ -68,7 +68,7 @@ export const MenuManagement: React.FC = () => {
   const [newCategoryIcon, setNewCategoryIcon] = useState('🍽️');
   const [categorySource, setCategorySource] = useState<'new' | 'edit'>('new');
   const [newItemImage, setNewItemImage] = useState('');
-  const [editItem, setEditItem] = useState({ name: '', price: '', category: '', stock: '', storeStocks: {} as { [key: string]: string }, stockAlertThreshold: '', linkedInventoryId: '', gramagePerUnit: '', sku: '', image: '' });
+  const [editItem, setEditItem] = useState({ name: '', price: '', category: '', stock: '', storeStocks: {} as { [key: string]: string }, stockAlertThreshold: '', linkedInventoryId: '', gramagePerUnit: '', sku: '', image: '', isVariable: false, isPrompt: false });
   const [editingStockId, setEditingStockId] = useState<string | null>(null);
   const [tempStock, setTempStock] = useState<string>('');
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
@@ -83,6 +83,13 @@ export const MenuManagement: React.FC = () => {
   useEffect(() => {
     setInventoryItems(getInventory());
   }, []);
+
+  // Auto-select first category if currently empty and categories load
+  useEffect(() => {
+    if (categories.length > 0 && !newItem.category) {
+      setNewItem(prev => ({ ...prev, category: categories[0].id }));
+    }
+  }, [categories, newItem.category]);
 
   const filteredItems = menuItems.filter(item => {
     const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -119,15 +126,15 @@ export const MenuManagement: React.FC = () => {
   };
 
   const handleAddItem = () => {
-    if (!newItem.name || !newItem.price) {
+    if (!newItem.name || (!newItem.price && !newItem.isPrompt)) {
       toast.error('Please fill all fields');
       return;
     }
     addMenuItems([{
       name: newItem.name,
-      price: Number(newItem.price),
+      price: newItem.isPrompt ? 0 : Number(newItem.price),
       category: newItem.category,
-      preparationTime: 10,
+      preparationTime: newItem.isPrompt ? 998 : (newItem.isVariable ? 999 : 10),
       stock: newItem.stock ? Number(newItem.stock) : undefined,
       linkedInventoryId: newItem.linkedInventoryId || undefined,
       gramagePerUnit: newItem.gramagePerUnit ? Number(newItem.gramagePerUnit) : undefined,
@@ -135,13 +142,13 @@ export const MenuManagement: React.FC = () => {
       image: newItemImage || undefined
     }]);
     toast.success('Item added successfully!');
-    setNewItem({ name: '', price: '', category: categories[0]?.id || 'general', stock: '', linkedInventoryId: '', gramagePerUnit: '', sku: '' });
+    setNewItem({ name: '', price: '', category: categories[0]?.id || 'general', stock: '', linkedInventoryId: '', gramagePerUnit: '', sku: '', isVariable: false, isPrompt: false });
     setNewItemImage('');
     setShowAddItem(false);
   };
 
   const handleEditItem = () => {
-    if (!editingItem || !editItem.name || !editItem.price) {
+    if (!editingItem || !editItem.name || (!editItem.price && !editItem.isPrompt)) {
       toast.error('Please fill all fields');
       return;
     }
@@ -156,8 +163,9 @@ export const MenuManagement: React.FC = () => {
     
     updateMenuItem(editingItem.id, {
       name: editItem.name,
-      price: Number(editItem.price),
+      price: editItem.isPrompt ? 0 : Number(editItem.price),
       category: editItem.category,
+      preparationTime: editItem.isPrompt ? 998 : (editItem.isVariable ? 999 : 10),
       stock: editItem.stock ? Number(editItem.stock) : undefined,
       storeStock: Object.keys(storeStock).length > 0 ? storeStock : undefined,
       stockAlertThreshold: editItem.stockAlertThreshold ? Number(editItem.stockAlertThreshold) : undefined,
@@ -189,7 +197,9 @@ export const MenuManagement: React.FC = () => {
       linkedInventoryId: item.linkedInventoryId || '',
       gramagePerUnit: item.gramagePerUnit !== undefined ? String(item.gramagePerUnit) : '',
       sku: item.sku || '',
-      image: item.image || ''
+      image: item.image || '',
+      isVariable: false,
+      isPrompt: item.preparationTime === 998 || item.preparationTime === 999,
     });
     setShowEditItem(true);
   };
@@ -320,9 +330,10 @@ export const MenuManagement: React.FC = () => {
               <MenuImageUpload imageUrl={newItemImage} onImageChange={setNewItemImage} />
               <Input
                 type="number"
-                placeholder="Price"
-                value={newItem.price}
+                placeholder={newItem.isPrompt ? "Dynamic Price (Prompt on Selection)" : "Price"}
+                value={newItem.isPrompt ? "" : newItem.price}
                 onChange={(e) => setNewItem(prev => ({ ...prev, price: e.target.value }))}
+                disabled={newItem.isPrompt}
               />
               <select
                 value={newItem.category}
@@ -338,6 +349,7 @@ export const MenuManagement: React.FC = () => {
                 }}
                 className="w-full p-3 bg-secondary rounded-lg border-none"
               >
+                <option value="" disabled>Select Category</option>
                 {categories.map(cat => (
                   <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
                 ))}
@@ -362,6 +374,25 @@ export const MenuManagement: React.FC = () => {
                   onChange={(e) => setNewItem(prev => ({ ...prev, sku: e.target.value.toUpperCase() }))}
                   className="font-mono"
                 />
+              </div>
+
+              {/* Variable Price/Weight Toggle */}
+              {/* Variable Price/Weight Toggle */}
+              <div className="flex items-center gap-2 pt-1 pb-1">
+                <input
+                  type="checkbox"
+                  id="new-item-is-prompt"
+                  checked={newItem.isPrompt}
+                  onChange={(e) => setNewItem(prev => ({ 
+                    ...prev, 
+                    isPrompt: e.target.checked,
+                    isVariable: false
+                  }))}
+                  className="w-4 h-4 rounded border-border accent-primary cursor-pointer"
+                />
+                <label htmlFor="new-item-is-prompt" className="text-sm font-medium text-foreground cursor-pointer select-none">
+                  Variable Item (Prompt for Price & Weight on Selection)
+                </label>
               </div>
               
               {/* Inventory Linking for Add - Gold+ only */}
@@ -426,9 +457,10 @@ export const MenuManagement: React.FC = () => {
               <MenuImageUpload imageUrl={editItem.image} onImageChange={(url) => setEditItem(prev => ({ ...prev, image: url }))} />
               <Input
                 type="number"
-                placeholder="Price"
-                value={editItem.price}
+                placeholder={editItem.isPrompt ? "Dynamic Price (Prompt on Selection)" : "Price"}
+                value={editItem.isPrompt ? "" : editItem.price}
                 onChange={(e) => setEditItem(prev => ({ ...prev, price: e.target.value }))}
+                disabled={editItem.isPrompt}
               />
               <select
                 value={editItem.category}
@@ -444,6 +476,7 @@ export const MenuManagement: React.FC = () => {
                 }}
                 className="w-full p-3 bg-secondary rounded-lg border-none"
               >
+                <option value="" disabled>Select Category</option>
                 {categories.map(cat => (
                   <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
                 ))}
@@ -533,6 +566,24 @@ export const MenuManagement: React.FC = () => {
                 <p className="text-xs text-muted-foreground">
                   Used for barcode scanning. Leave empty to auto-generate from item ID.
                 </p>
+
+                {/* Variable Price/Weight Toggle */}
+                <div className="flex items-center gap-2 pt-1 pb-1">
+                  <input
+                    type="checkbox"
+                    id="edit-item-is-prompt"
+                    checked={editItem.isPrompt}
+                    onChange={(e) => setEditItem(prev => ({ 
+                      ...prev, 
+                      isPrompt: e.target.checked,
+                      isVariable: false
+                    }))}
+                    className="w-4 h-4 rounded border-border accent-primary cursor-pointer"
+                  />
+                  <label htmlFor="edit-item-is-prompt" className="text-sm font-medium text-foreground cursor-pointer select-none">
+                    Variable Item (Prompt for Price & Weight on Selection)
+                  </label>
+                </div>
               </div>
 
               {/* Stock Alert Threshold */}

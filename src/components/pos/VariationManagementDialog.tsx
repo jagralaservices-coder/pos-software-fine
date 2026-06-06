@@ -6,6 +6,7 @@ import { MenuItem, MenuItemVariation } from '@/lib/store';
 import { Plus, Trash2, GripVertical, Package } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import {
   Select,
   SelectContent,
@@ -33,6 +34,38 @@ const UNIT_OPTIONS = [
   { value: 'full', label: 'Full' },
 ];
 
+const isWeightVolumeUnit = (unit: string) => ['g', 'kg', 'ml', 'ltr'].includes(unit);
+
+const parseVariationName = (fullName: string, unit: string) => {
+  if (isWeightVolumeUnit(unit)) {
+    // Check for parenthesized format: "Default (500g)"
+    const regex = new RegExp(`\\(([^)]+)\\s*${unit}\\)$`, 'i');
+    const match = fullName.match(regex);
+    if (match) {
+      const weightVal = match[1].trim();
+      const nameVal = fullName.slice(0, match.index).trim();
+      return { name: nameVal, weight: weightVal };
+    }
+    // Check if the whole name is just a weight: "500g"
+    if (fullName.toLowerCase().endsWith(unit.toLowerCase())) {
+      const weightVal = fullName.slice(0, -unit.length).trim();
+      if (!isNaN(Number(weightVal))) {
+        return { name: '', weight: weightVal };
+      }
+    }
+  }
+  return { name: fullName, weight: '' };
+};
+
+const formatVariationName = (name: string, weight: string, unit: string) => {
+  const trimmedName = name.trim();
+  const trimmedWeight = weight.trim();
+  if (isWeightVolumeUnit(unit) && trimmedWeight) {
+    return trimmedName ? `${trimmedName} (${trimmedWeight}${unit})` : `${trimmedWeight}${unit}`;
+  }
+  return trimmedName || 'Default';
+};
+
 export const VariationManagementDialog: React.FC<VariationManagementDialogProps> = ({
   open,
   onOpenChange,
@@ -42,6 +75,7 @@ export const VariationManagementDialog: React.FC<VariationManagementDialogProps>
   const [variations, setVariations] = useState<Array<{
     id?: string;
     name: string;
+    weight: string;
     price: string;
     sku: string;
     unit: string;
@@ -70,20 +104,27 @@ export const VariationManagementDialog: React.FC<VariationManagementDialogProps>
       if (error) throw error;
 
       if (data && data.length > 0) {
-        setVariations(data.map(v => ({
-          id: v.id,
-          name: v.name,
-          price: String(v.price),
-          sku: v.sku || '',
-          unit: v.unit || 'pcs',
-          isAvailable: v.is_available,
-          stock: v.stock !== null ? String(v.stock) : ''
-        })));
+        setVariations(data.map(v => {
+          const unit = v.unit || 'pcs';
+          const { name: cleanName, weight: parsedWeight } = parseVariationName(v.name, unit);
+          return {
+            id: v.id,
+            name: cleanName,
+            weight: parsedWeight,
+            price: String(v.price),
+            sku: v.sku || '',
+            unit,
+            isAvailable: v.is_available,
+            stock: v.stock !== null ? String(v.stock) : ''
+          };
+        }));
       } else {
         // Add default variation from base item
+        const isPrompt = menuItem.preparationTime === 998 || menuItem.preparationTime === 999;
         setVariations([{
           name: 'Default',
-          price: String(menuItem.price),
+          weight: '',
+          price: isPrompt ? '' : String(menuItem.price),
           sku: menuItem.sku || '',
           unit: 'pcs',
           isAvailable: true,
@@ -100,6 +141,7 @@ export const VariationManagementDialog: React.FC<VariationManagementDialogProps>
   const addVariation = () => {
     setVariations(prev => [...prev, {
       name: '',
+      weight: '',
       price: '',
       sku: '',
       unit: 'pcs',
@@ -121,10 +163,11 @@ export const VariationManagementDialog: React.FC<VariationManagementDialogProps>
   const handleSave = async () => {
     if (!menuItem) return;
     
-    // Validate
-    const validVariations = variations.filter(v => v.name.trim() && v.price);
+    const isPrompt = menuItem.preparationTime === 998 || menuItem.preparationTime === 999;
+    // Validate: Either name or weight must be filled, and price is required (unless prompt item)
+    const validVariations = variations.filter(v => (v.name.trim() || v.weight.trim()) && (isPrompt ? true : v.price));
     if (validVariations.length === 0) {
-      toast.error('Please add at least one valid variation');
+      toast.error(isPrompt ? 'Please add at least one valid variation' : 'Please add at least one valid variation with a price');
       return;
     }
 
@@ -137,16 +180,20 @@ export const VariationManagementDialog: React.FC<VariationManagementDialogProps>
         .eq('menu_item_id', menuItem.id);
 
       // Insert new variations
-      const variationsToInsert = validVariations.map((v, idx) => ({
-        menu_item_id: menuItem.id,
-        name: v.name.trim(),
-        price: parseFloat(v.price),
-        sku: v.sku.trim() || null,
-        unit: v.unit || 'pcs',
-        is_available: v.isAvailable,
-        stock: v.stock ? parseInt(v.stock) : null,
-        sort_order: idx
-      }));
+      const variationsToInsert = validVariations.map((v, idx) => {
+        const unit = v.unit || 'pcs';
+        const formattedName = formatVariationName(v.name, v.weight, unit);
+        return {
+          menu_item_id: menuItem.id,
+          name: formattedName,
+          price: isPrompt ? 0 : parseFloat(v.price),
+          sku: v.sku.trim() || null,
+          unit,
+          is_available: v.isAvailable,
+          stock: v.stock ? parseInt(v.stock) : null,
+          sort_order: idx
+        };
+      });
 
       const { error } = await supabase
         .from('menu_item_variations')
@@ -155,17 +202,21 @@ export const VariationManagementDialog: React.FC<VariationManagementDialogProps>
       if (error) throw error;
 
       // Convert to MenuItemVariation format
-      const savedVariations: MenuItemVariation[] = validVariations.map((v, idx) => ({
-        id: v.id || `temp-${idx}`,
-        menuItemId: menuItem.id,
-        name: v.name.trim(),
-        price: parseFloat(v.price),
-        sku: v.sku.trim() || undefined,
-        unit: v.unit || 'pcs',
-        isAvailable: v.isAvailable,
-        stock: v.stock ? parseInt(v.stock) : undefined,
-        sortOrder: idx
-      }));
+      const savedVariations: MenuItemVariation[] = validVariations.map((v, idx) => {
+        const unit = v.unit || 'pcs';
+        const formattedName = formatVariationName(v.name, v.weight, unit);
+        return {
+          id: v.id || `temp-${idx}`,
+          menuItemId: menuItem.id,
+          name: formattedName,
+          price: isPrompt ? 0 : parseFloat(v.price),
+          sku: v.sku.trim() || undefined,
+          unit,
+          isAvailable: v.isAvailable,
+          stock: v.stock ? parseInt(v.stock) : undefined,
+          sortOrder: idx
+        };
+      });
 
       onSave(savedVariations);
       toast.success('Variations saved successfully');
@@ -181,7 +232,7 @@ export const VariationManagementDialog: React.FC<VariationManagementDialogProps>
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Package className="w-5 h-5" />
@@ -203,24 +254,47 @@ export const VariationManagementDialog: React.FC<VariationManagementDialogProps>
               >
                 <GripVertical className="w-4 h-4 mt-3 text-muted-foreground cursor-grab" />
                 
-                <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="flex-1 grid grid-cols-2 sm:grid-cols-5 gap-2">
                   <Input
-                    placeholder="Name (e.g., 500ml)"
+                    placeholder="Name (e.g., Packet)"
                     value={variation.name}
                     onChange={(e) => updateVariation(index, 'name', e.target.value)}
-                    className="col-span-2 sm:col-span-1"
+                    className="col-span-1"
                   />
-                  <Input
-                    type="number"
-                    placeholder="Price"
-                    value={variation.price}
-                    onChange={(e) => updateVariation(index, 'price', e.target.value)}
-                  />
+                  {isWeightVolumeUnit(variation.unit) ? (
+                    <Input
+                      type="number"
+                      placeholder="Grams (g)"
+                      value={variation.weight}
+                      onChange={(e) => updateVariation(index, 'weight', e.target.value)}
+                      className="col-span-1"
+                    />
+                  ) : (
+                    <div className="hidden sm:flex items-center justify-center text-muted-foreground/30 text-xs select-none">
+                      N/A
+                    </div>
+                  )}
+                  {menuItem.preparationTime === 998 || menuItem.preparationTime === 999 ? (
+                    <Input
+                      placeholder="Prompted"
+                      value=""
+                      disabled
+                      className="col-span-1 bg-secondary text-muted-foreground opacity-70 cursor-not-allowed text-xs"
+                    />
+                  ) : (
+                    <Input
+                      type="number"
+                      placeholder="Price"
+                      value={variation.price}
+                      onChange={(e) => updateVariation(index, 'price', e.target.value)}
+                      className="col-span-1"
+                    />
+                  )}
                   <Select
                     value={variation.unit}
                     onValueChange={(value) => updateVariation(index, 'unit', value)}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="col-span-1">
                       <SelectValue placeholder="Unit" />
                     </SelectTrigger>
                     <SelectContent>
@@ -235,7 +309,7 @@ export const VariationManagementDialog: React.FC<VariationManagementDialogProps>
                     placeholder="SKU (optional)"
                     value={variation.sku}
                     onChange={(e) => updateVariation(index, 'sku', e.target.value)}
-                    className="col-span-2 sm:col-span-1"
+                    className="col-span-1"
                   />
                 </div>
 

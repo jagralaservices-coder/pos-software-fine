@@ -733,6 +733,194 @@ serve(async (req) => {
       }
     }
 
+    // ===== CREDIT LEDGER =====
+    if (data_type === 'credit_ledger') {
+      if (action === 'fetch') {
+        const { data, error } = await supabaseAdmin
+          .from('credit_ledger').select('*').eq('store_id', store_id).order('created_at', { ascending: false })
+        if (error) throw error
+        return new Response(JSON.stringify({ success: true, items: data || [] }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+
+      if (action === 'save') {
+        const { items } = body
+        if (!items?.length) {
+          return new Response(JSON.stringify({ error: 'items required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        }
+        const dbItems = items.map((item: any) => ({
+          id: item.id || crypto.randomUUID(),
+          store_id,
+          customer_name: item.customer_name || item.customerName || '',
+          customer_phone: item.customer_phone || item.customerPhone || null,
+          bill_number: item.bill_number || item.billNumber || null,
+          total_amount: Number(item.total_amount || item.totalAmount || 0),
+          paid_amount: Number(item.paid_amount || item.paidAmount || 0),
+          due_amount: Number(item.due_amount || item.dueAmount || 0),
+          payment_status: item.payment_status || item.paymentStatus || 'unpaid',
+          notes: item.notes || null,
+          created_at: item.created_at || item.createdAt ? new Date(item.created_at || item.createdAt).toISOString() : new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }))
+        const { data, error } = await supabaseAdmin
+          .from('credit_ledger').upsert(dbItems, { onConflict: 'id' }).select()
+        if (error) throw error
+        return new Response(JSON.stringify({ success: true, items: data || [] }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+
+      if (action === 'delete') {
+        const { item_ids } = body
+        if (!item_ids?.length) {
+          return new Response(JSON.stringify({ error: 'item_ids required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        }
+        const { error } = await supabaseAdmin
+          .from('credit_ledger').delete().eq('store_id', store_id).in('id', item_ids)
+        if (error) throw error
+        return new Response(JSON.stringify({ success: true }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+    }
+
+    // ===== CREDIT PAYMENTS =====
+    if (data_type === 'credit_payments') {
+      if (action === 'fetch') {
+        const { data, error } = await supabaseAdmin
+          .from('credit_payments').select('*').eq('store_id', store_id).order('created_at', { ascending: false })
+        if (error) throw error
+        return new Response(JSON.stringify({ success: true, items: data || [] }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+
+      if (action === 'save') {
+        const { items } = body
+        if (!items?.length) {
+          return new Response(JSON.stringify({ error: 'items required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        }
+        const dbItems = items.map((item: any) => ({
+          id: item.id || crypto.randomUUID(),
+          credit_id: item.credit_id || item.creditId,
+          store_id,
+          amount: Number(item.amount || 0),
+          payment_method: item.payment_method || item.paymentMethod || 'cash',
+          received_by: item.received_by || item.receivedBy || null,
+          notes: item.notes || null,
+          created_at: item.created_at || item.createdAt ? new Date(item.created_at || item.createdAt).toISOString() : new Date().toISOString(),
+        }))
+        const { data, error } = await supabaseAdmin
+          .from('credit_payments').upsert(dbItems, { onConflict: 'id' }).select()
+        if (error) throw error
+        return new Response(JSON.stringify({ success: true, items: data || [] }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+    }
+
+    // ===== WHATSAPP CONFIG =====
+    if (data_type === 'whatsapp_config') {
+      if (action === 'fetch') {
+        const { data, error } = await supabaseAdmin
+          .from('store_whatsapp_config').select('*').eq('store_id', store_id).maybeSingle()
+        if (error) throw error
+        return new Response(JSON.stringify({ success: true, config: data || null }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+
+      if (action === 'save') {
+        const { config } = body
+        if (!config || typeof config !== 'object') {
+          return new Response(JSON.stringify({ error: 'config required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        }
+        const dbConfig = {
+          store_id: store_id,
+          owner_id: config.owner_id || config.ownerId,
+          whatsapp_number: config.whatsapp_number || config.whatsappNumber || '',
+          instance_id: config.instance_id || config.instanceId || '',
+          api_key: config.api_key || config.apiKey || '',
+          is_verified: config.is_verified !== undefined ? config.is_verified : (config.isVerified !== undefined ? config.isVerified : false),
+          updated_at: new Date().toISOString(),
+        }
+        const { data, error } = await supabaseAdmin
+          .from('store_whatsapp_config').upsert(dbConfig, { onConflict: 'store_id' }).select().maybeSingle()
+        if (error) throw error
+        return new Response(JSON.stringify({ success: true, config: data || null }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+    }
+
+    // ===== AUDIT LOG =====
+    if (data_type === 'audit_log') {
+      if (action === 'save') {
+        const { log } = body
+        if (!log || typeof log !== 'object') {
+          return new Response(JSON.stringify({ error: 'log object required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        }
+        
+        const dbLog = {
+          user_id: log.userId || log.user_id || null,
+          action: log.action || '',
+          table_name: log.tableName || log.table_name || null,
+          record_id: log.recordId || log.record_id || null,
+          old_data: log.oldData || log.old_data || null,
+          new_data: log.newData || log.new_data || null,
+          user_agent: log.userAgent || log.user_agent || null,
+          ip_address: req.headers.get('x-forwarded-for') || null,
+          created_at: new Date().toISOString(),
+        }
+
+        const { data, error } = await supabaseAdmin
+          .from('security_audit_log').insert(dbLog).select()
+        if (error) throw error
+        return new Response(JSON.stringify({ success: true, log: data }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+    }
+
+    // ===== STORE DETAILS =====
+    if (data_type === 'store_details') {
+      if (action === 'fetch') {
+        const { data, error } = await supabaseAdmin
+          .from('stores')
+          .select('id, store_name, store_code, address, phone, customer_id, business_type, country, currency_code, tax_type, tax_percentage')
+          .eq('id', store_id)
+          .maybeSingle()
+        if (error) throw error
+        return new Response(JSON.stringify({ success: true, store: data }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+
+      if (action === 'update') {
+        const { updates } = body
+        if (!updates || typeof updates !== 'object') {
+          return new Response(JSON.stringify({ error: 'updates object required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        }
+        const dbUpdates: Record<string, any> = {}
+        if (updates.store_name !== undefined) dbUpdates.store_name = updates.store_name
+        if (updates.address !== undefined) dbUpdates.address = updates.address
+        if (updates.phone !== undefined) dbUpdates.phone = updates.phone
+        if (updates.business_type !== undefined) dbUpdates.business_type = updates.business_type
+        if (updates.country !== undefined) dbUpdates.country = updates.country
+        if (updates.currency_code !== undefined) dbUpdates.currency_code = updates.currency_code
+        if (updates.tax_type !== undefined) dbUpdates.tax_type = updates.tax_type
+        if (updates.tax_percentage !== undefined) dbUpdates.tax_percentage = updates.tax_percentage
+
+        if (Object.keys(dbUpdates).length > 0) {
+          const { error } = await supabaseAdmin
+            .from('stores')
+            .update(dbUpdates)
+            .eq('id', store_id)
+          if (error) throw error
+        }
+        return new Response(JSON.stringify({ success: true }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+    }
+
     return new Response(JSON.stringify({ error: 'Invalid action or data_type' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 

@@ -24,6 +24,8 @@ export interface MenuItem {
   preparationTime?: number;
   stock?: number; // undefined means unlimited stock
   storeStock?: { [storeId: string]: number }; // Store-wise stock
+  lastUpdated?: string | Date;
+  pendingSync?: boolean;
   stockAlertThreshold?: number; // Optional: Alert when stock falls below this value
   linkedInventoryId?: string; // ID of linked inventory item (legacy single link)
   gramagePerUnit?: number; // Grams of inventory item used per unit sold (legacy)
@@ -39,11 +41,61 @@ export interface Category {
   nameHindi?: string;
   icon: string;
   color: string;
+  lastUpdated?: string | Date;
+  pendingSync?: boolean;
+}
+
+export interface Customer {
+  id: string;
+  name: string;
+  phone: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  email?: string;
+  createdAt: string | Date;
+  totalOrders?: number;
+  totalSpent?: number;
+  lastUpdated?: string | Date;
+  pendingSync?: boolean;
+}
+
+export interface CreditEntry {
+  id: string;
+  store_id: string;
+  customer_name: string;
+  customer_phone: string | null;
+  bill_number: string | null;
+  total_amount: number;
+  paid_amount: number;
+  due_amount: number;
+  payment_status: string;
+  notes: string | null;
+  created_at: string | Date;
+  updated_at?: string | Date;
+  lastUpdated?: string | Date;
+  pendingSync?: boolean;
+}
+
+export interface CreditPayment {
+  id: string;
+  credit_id: string;
+  store_id: string;
+  amount: number;
+  payment_method: string;
+  received_by?: string | null;
+  notes?: string | null;
+  created_at: string | Date;
+  updated_at?: string | Date;
+  lastUpdated?: string | Date;
+  pendingSync?: boolean;
 }
 
 export interface CartItem extends MenuItem {
   quantity: number;
   notes?: string;
+  cartItemId?: string;
 }
 
 export interface Order {
@@ -177,7 +229,11 @@ export const defaultCategories: Category[] = [];
 
 export const defaultMenuItems: MenuItem[] = [];
 
-export const defaultTables: Table[] = [];
+export const defaultTables: Table[] = [
+  { id: 't1', number: 1, capacity: 4, status: 'available' },
+  { id: 't2', number: 2, capacity: 2, status: 'available' },
+  { id: 't3', number: 3, capacity: 6, status: 'available' }
+];
 
 // Storage helper functions
 const STORAGE_KEYS = {
@@ -192,6 +248,9 @@ const STORAGE_KEYS = {
   SETTINGS: 'pos_settings',
   STORES: 'pos_stores',
   ACTIVE_STORE: 'pos_active_store',
+  CUSTOMERS: 'pos_customers',
+  CREDIT_LEDGER: 'pos_credit_ledger',
+  CREDIT_PAYMENTS: 'pos_credit_payments',
 };
 
 // Get the current store-scoped storage key
@@ -212,6 +271,12 @@ const getScopedKey = (baseKey: string): string => {
   return baseKey; // fallback to unscoped
 };
 
+let backupCallback: (() => void) | null = null;
+
+export const registerBackupCallback = (cb: () => void) => {
+  backupCallback = cb;
+};
+
 export const storage = {
   get: <T>(key: string, defaultValue: T): T => {
     try {
@@ -225,6 +290,9 @@ export const storage = {
   set: <T>(key: string, value: T): void => {
     try {
       localStorage.setItem(key, JSON.stringify(value));
+      if (backupCallback && key !== 'pos_local_backups' && !key.startsWith('pos_local_backups_')) {
+        backupCallback();
+      }
     } catch (error) {
       console.error('Storage error:', error);
     }
@@ -233,6 +301,9 @@ export const storage = {
   remove: (key: string): void => {
     try {
       localStorage.removeItem(key);
+      if (backupCallback && key !== 'pos_local_backups' && !key.startsWith('pos_local_backups_')) {
+        backupCallback();
+      }
     } catch (error) {
       console.error('Storage error:', error);
     }
@@ -331,13 +402,31 @@ export const initializeData = () => {
   if (!localStorage.getItem(scopedExpenses)) {
     storage.set(scopedExpenses, []);
   }
+  const scopedCustomers = getScopedKey(STORAGE_KEYS.CUSTOMERS);
+  if (!localStorage.getItem(scopedCustomers)) {
+    storage.set(scopedCustomers, []);
+  }
+  const scopedCreditLedger = getScopedKey(STORAGE_KEYS.CREDIT_LEDGER);
+  if (!localStorage.getItem(scopedCreditLedger)) {
+    storage.set(scopedCreditLedger, []);
+  }
+  const scopedCreditPayments = getScopedKey(STORAGE_KEYS.CREDIT_PAYMENTS);
+  if (!localStorage.getItem(scopedCreditPayments)) {
+    storage.set(scopedCreditPayments, []);
+  }
 };
 
 // Data access functions - now fully scoped per store to enforce multi-device isolation
-export const getMenuItems = (): MenuItem[] => storage.get(getScopedKey(STORAGE_KEYS.MENU_ITEMS), defaultMenuItems);
+export const getMenuItems = (): MenuItem[] => {
+  const items = storage.get(getScopedKey(STORAGE_KEYS.MENU_ITEMS), defaultMenuItems);
+  return items.filter(item => !['d1', 'd2', 'dr1', 'dr2', 'pz1', 'bg1', '1', '2', '3'].includes(item.id));
+};
 export const setMenuItems = (items: MenuItem[]) => storage.set(getScopedKey(STORAGE_KEYS.MENU_ITEMS), items);
 
-export const getCategories = (): Category[] => storage.get(getScopedKey(STORAGE_KEYS.CATEGORIES), defaultCategories);
+export const getCategories = (): Category[] => {
+  const cats = storage.get(getScopedKey(STORAGE_KEYS.CATEGORIES), defaultCategories);
+  return cats.filter(cat => !['desserts', 'drinks', 'pizza', 'burgers'].includes(cat.id));
+};
 export const setCategories = (categories: Category[]) => storage.set(getScopedKey(STORAGE_KEYS.CATEGORIES), categories);
 
 // Orders, held bills, inventory, expenses are store-scoped
@@ -363,6 +452,15 @@ export const setInventory = (items: InventoryItem[]) => storage.set(getScopedKey
 
 export const getExpenses = (): Expense[] => storage.get(getScopedKey(STORAGE_KEYS.EXPENSES), []);
 export const setExpenses = (expenses: Expense[]) => storage.set(getScopedKey(STORAGE_KEYS.EXPENSES), expenses);
+
+export const getCustomers = (): Customer[] => storage.get(getScopedKey(STORAGE_KEYS.CUSTOMERS), []);
+export const setCustomers = (items: Customer[]) => storage.set(getScopedKey(STORAGE_KEYS.CUSTOMERS), items);
+
+export const getCreditLedger = (): CreditEntry[] => storage.get(getScopedKey(STORAGE_KEYS.CREDIT_LEDGER), []);
+export const setCreditLedger = (items: CreditEntry[]) => storage.set(getScopedKey(STORAGE_KEYS.CREDIT_LEDGER), items);
+
+export const getCreditPayments = (): CreditPayment[] => storage.get(getScopedKey(STORAGE_KEYS.CREDIT_PAYMENTS), []);
+export const setCreditPayments = (items: CreditPayment[]) => storage.set(getScopedKey(STORAGE_KEYS.CREDIT_PAYMENTS), items);
 
 export const getStores = (): Store[] => storage.get(STORAGE_KEYS.STORES, []);
 export const setStores = (stores: Store[]) => storage.set(STORAGE_KEYS.STORES, stores);
