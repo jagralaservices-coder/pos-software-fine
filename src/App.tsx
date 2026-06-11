@@ -1,10 +1,10 @@
-import { useState, lazy, Suspense } from 'react';
+import { useState, lazy, Suspense, useEffect } from 'react';
 
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { POSProvider, usePOSSafe } from "@/contexts/POSContext";
 import { SupabaseAuthProvider, useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
@@ -214,6 +214,19 @@ const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 const AppRoutes = () => {
   // Enable Android back button handling
   useAndroidBackButton();
+  
+  const location = useLocation();
+  useEffect(() => {
+    if (
+      location.pathname !== '/auth' && 
+      location.pathname !== '/' && 
+      location.pathname !== '/auth/callback' && 
+      location.pathname !== '/~oauth' &&
+      location.pathname !== '/reset-password'
+    ) {
+      localStorage.setItem('pos_last_path', location.pathname + location.search);
+    }
+  }, [location]);
   
   return (
     <Suspense fallback={<LoadingSpinner />}>

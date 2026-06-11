@@ -123,12 +123,16 @@ export const POSBillingPage: React.FC = () => {
     recallBill,
   } = usePOS();
 
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(() => {
+    return localStorage.getItem('pos_billing_search_query') || '';
+  });
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const [showHeldBills, setShowHeldBills] = useState(false);
   const [showQROrders, setShowQROrders] = useState(false);
 
-  const [selectedPayment, setSelectedPayment] = useState<'cash' | 'card' | 'upi' | 'due' | 'part' | 'wallet' | 'credit' | null>(null);
+  const [selectedPayment, setSelectedPayment] = useState<'cash' | 'card' | 'upi' | 'due' | 'part' | 'wallet' | 'credit' | null>(() => {
+    return (localStorage.getItem('pos_billing_selected_payment') as any) || null;
+  });
   const [activeSection, setActiveSection] = useState<'products' | 'cart' | 'payments' | 'actions'>('products');
   const [cartHighlightIndex, setCartHighlightIndex] = useState(0);
   const [paymentHighlightIndex, setPaymentHighlightIndex] = useState(0);
@@ -141,9 +145,18 @@ export const POSBillingPage: React.FC = () => {
   const [showPartPaymentDialog, setShowPartPaymentDialog] = useState(false);
   const [partPaymentDetails, setPartPaymentDetails] = useState<{ method: string; amount: number }[]>([]);
   const [discountReason, setDiscountReason] = useState('');
-  const [deliveryCharge, setDeliveryCharge] = useState(0);
-  const [containerCharge, setContainerCharge] = useState(0);
-  const [tip, setTip] = useState(0);
+  const [deliveryCharge, setDeliveryCharge] = useState(() => {
+    const saved = localStorage.getItem('pos_billing_delivery_charge');
+    return saved ? Number(saved) : 0;
+  });
+  const [containerCharge, setContainerCharge] = useState(() => {
+    const saved = localStorage.getItem('pos_billing_container_charge');
+    return saved ? Number(saved) : 0;
+  });
+  const [tip, setTip] = useState(() => {
+    const saved = localStorage.getItem('pos_billing_tip');
+    return saved ? Number(saved) : 0;
+  });
   const [showTaxDialog, setShowTaxDialog] = useState(false);
   const [showCustomItemDialog, setShowCustomItemDialog] = useState(false);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(selectedTable?.id || null);
@@ -156,7 +169,14 @@ export const POSBillingPage: React.FC = () => {
   const [isComplimentary, setIsComplimentary] = useState(false);
   const [complimentaryNote, setComplimentaryNote] = useState('');
   const [showComplimentaryDialog, setShowComplimentaryDialog] = useState(false);
-  const [customer, setCustomer] = useState({ name: '', phone: '', email: '', address: '', city: '', state: '', pincode: '' });
+  const [customer, setCustomer] = useState(() => {
+    try {
+      const saved = localStorage.getItem('pos_billing_customer');
+      return saved ? JSON.parse(saved) : { name: '', phone: '', email: '', address: '', city: '', state: '', pincode: '' };
+    } catch {
+      return { name: '', phone: '', email: '', address: '', city: '', state: '', pincode: '' };
+    }
+  });
   const [showCustomerDetails, setShowCustomerDetails] = useState(false);
   const [isProcessingSale, setIsProcessingSale] = useState(false);
   const { canAccess } = useSubscription();
@@ -526,7 +546,33 @@ export const POSBillingPage: React.FC = () => {
       setHighlightedIndex(-1);
     }
   }, [filteredItems]);
+  useEffect(() => {
+    localStorage.setItem('pos_billing_customer', JSON.stringify(customer));
+  }, [customer]);
 
+  useEffect(() => {
+    localStorage.setItem('pos_billing_delivery_charge', String(deliveryCharge));
+  }, [deliveryCharge]);
+
+  useEffect(() => {
+    localStorage.setItem('pos_billing_container_charge', String(containerCharge));
+  }, [containerCharge]);
+
+  useEffect(() => {
+    localStorage.setItem('pos_billing_tip', String(tip));
+  }, [tip]);
+
+  useEffect(() => {
+    localStorage.setItem('pos_billing_search_query', searchQuery);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    if (selectedPayment) {
+      localStorage.setItem('pos_billing_selected_payment', selectedPayment);
+    } else {
+      localStorage.removeItem('pos_billing_selected_payment');
+    }
+  }, [selectedPayment]);
   const getButtonActions = useCallback(() => ({
     split: () => setShowSplitDialog(true),
     print: () => {

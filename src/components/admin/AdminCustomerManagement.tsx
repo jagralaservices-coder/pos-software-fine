@@ -44,15 +44,25 @@ interface StoreItem {
   is_active: boolean;
 }
 
+const getPersonalId = (uuid: string): string => {
+  if (!uuid) return '';
+  let hash = 0;
+  for (let i = 0; i < uuid.length; i++) {
+    hash = uuid.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const numericId = Math.abs(hash % 900000) + 100000;
+  return numericId.toString();
+};
+
 const SUBSCRIPTION_TIERS = [
-  { value: 'basic', label: 'Basic', color: 'bg-muted text-muted-foreground' },
-  { value: 'gold', label: 'Gold', color: 'bg-amber-500/10 text-amber-700 dark:text-amber-400' },
-  { value: 'platinum', label: 'Platinum', color: 'bg-purple-500/10 text-purple-700 dark:text-purple-400' },
+  { value: 'basic', label: 'Basic', color: 'bg-slate-100 text-slate-600 border border-slate-200 font-bold uppercase tracking-wider text-[10px] px-2 py-0.5' },
+  { value: 'gold', label: 'Gold', color: 'bg-amber-50 text-amber-600 border border-amber-250 font-bold uppercase tracking-wider text-[10px] px-2 py-0.5' },
+  { value: 'platinum', label: 'Platinum', color: 'bg-violet-50 text-violet-750 border border-violet-250 font-bold uppercase tracking-wider text-[10px] px-2 py-0.5' },
 ];
 
 const BUSINESS_TYPES = [
-  { value: 'restaurant', label: 'Restaurant', icon: UtensilsCrossed, color: 'text-orange-600 dark:text-orange-400' },
-  { value: 'retail', label: 'Retail Store', icon: ShoppingBag, color: 'text-blue-600 dark:text-blue-400' },
+  { value: 'restaurant', label: 'Restaurant', icon: UtensilsCrossed, color: 'text-orange-600' },
+  { value: 'retail', label: 'Retail Store', icon: ShoppingBag, color: 'text-blue-600' },
 ];
 
 const ADDON_LABELS: Record<AddonKey, string> = {
@@ -283,25 +293,34 @@ export const AdminCustomerManagement: React.FC = () => {
     toast.success('Reference code copied!');
   };
 
-  const filteredCustomers = customers.filter(c => 
-    c.business_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    c.owner_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    c.owner_email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    c.ref_code?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    c.phone?.includes(searchQuery)
-  );
+  const filteredCustomers = customers.filter(c => {
+    const pId = getPersonalId(c.id);
+    return c.business_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.owner_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.owner_email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.ref_code?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      pId.includes(searchQuery) ||
+      (c.phone && c.phone.includes(searchQuery));
+  });
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold">{t('admin.customerSettings') || 'Customer Settings'}</h2>
-          <p className="text-muted-foreground">
+          <h2 className="text-2xl font-bold bg-gradient-to-r from-slate-900 via-indigo-950 to-violet-900 bg-clip-text text-transparent">
+            {t('admin.customerSettings') || 'Customer Settings'}
+          </h2>
+          <p className="text-indigo-950/70 mt-1 text-sm font-semibold">
             {t('admin.manageStoreFeatures') || 'Manage customer stores and feature access'}
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={fetchCustomers}>
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={fetchCustomers}
+          className="rounded-xl border-slate-200 bg-slate-50 text-slate-700 hover:text-slate-900 hover:bg-slate-100"
+        >
           <RefreshCw className="w-4 h-4 mr-2" />
           Refresh
         </Button>
@@ -309,66 +328,67 @@ export const AdminCustomerManagement: React.FC = () => {
 
       {/* Search */}
       <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-450" />
         <Input
-          placeholder="Search by name, email, phone or Ref ID..."
+          placeholder="Search by ID, name, email, phone or Ref ID..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-10"
+          className="pl-10 bg-white border border-slate-200 text-slate-800 placeholder-slate-400 focus:border-violet-500 rounded-xl shadow-sm"
         />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Customers List */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="w-5 h-5" />
+        <Card className="bg-white border border-slate-200 shadow-sm overflow-hidden rounded-2xl">
+          <CardHeader className="border-b border-slate-100 bg-slate-50/50 pb-4">
+            <CardTitle className="text-xl font-bold flex items-center gap-2 text-slate-800">
+              <Users className="w-5 h-5 text-violet-650" />
               Customers ({filteredCustomers.length})
             </CardTitle>
-            <CardDescription>Select a customer to view their stores</CardDescription>
+            <CardDescription className="text-slate-555">Select a customer to view their stores</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
             <ScrollArea className="h-[400px]">
               {loading ? (
                 <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin w-6 h-6 border-2 border-primary border-t-transparent rounded-full" />
+                  <div className="animate-spin w-6 h-6 border-2 border-violet-500 border-t-transparent rounded-full" />
                 </div>
               ) : filteredCustomers.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
+                <div className="text-center py-12 text-slate-500 bg-slate-50/50">
                   No customers found
                 </div>
               ) : (
-                <div className="divide-y">
+                <div className="divide-y divide-slate-100">
                   {filteredCustomers.map((customer) => (
                     <button
                       key={customer.id}
                       onClick={() => handleSelectCustomer(customer)}
-                      className={`w-full flex items-center justify-between p-4 text-left hover:bg-muted/50 transition-colors ${
-                        selectedCustomer?.id === customer.id ? 'bg-primary/5 border-l-4 border-primary' : ''
+                      className={`w-full flex items-center justify-between p-4 text-left hover:bg-slate-50/50 transition-colors ${
+                        selectedCustomer?.id === customer.id ? 'bg-violet-50/40 border-l-4 border-violet-600' : ''
                       }`}
                     >
                       <div className="space-y-1 flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-medium">{customer.business_name}</p>
+                          <p className="font-bold text-slate-900 text-base">{customer.business_name}</p>
+                          <Badge variant="outline" className="font-mono text-xs bg-slate-100 border-slate-200 text-slate-700 font-bold">ID: {getPersonalId(customer.id)}</Badge>
                         </div>
-                        <p className="text-sm text-muted-foreground">{customer.owner_name}</p>
-                        <p className="text-xs text-muted-foreground">{customer.owner_email}</p>
-                        <div className="flex items-center gap-3 mt-1.5 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                        <p className="text-sm text-slate-700 font-semibold">{customer.owner_name}</p>
+                        <p className="text-xs text-slate-500 font-semibold font-mono">{customer.owner_email}</p>
+                        <div className="flex items-center gap-3 mt-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center gap-2">
-                            <Crown className="w-3.5 h-3.5 text-muted-foreground" />
+                            <Crown className="w-3.5 h-3.5 text-slate-400" />
                             <Select
                               value={customer.subscription_tier}
                               onValueChange={(val) => handleTierChange(customer.id, val)}
                               disabled={customer.owner_email === 'jagralasalman786@gmail.com'}
                             >
-                              <SelectTrigger className="h-7 w-[130px] text-xs">
+                              <SelectTrigger className="h-7.5 w-[130px] text-xs bg-slate-50 border-slate-200 rounded-lg text-slate-800 font-semibold">
                                 <SelectValue />
                               </SelectTrigger>
-                              <SelectContent>
+                              <SelectContent className="bg-white border-slate-200 text-slate-850">
                                 {SUBSCRIPTION_TIERS.map(tier => (
                                   <SelectItem key={tier.value} value={tier.value}>
-                                    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${tier.color}`}>
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${tier.color}`}>
                                       {tier.label}
                                     </span>
                                   </SelectItem>
@@ -377,21 +397,21 @@ export const AdminCustomerManagement: React.FC = () => {
                             </Select>
                           </div>
                           <div className="flex items-center gap-2">
-                            <Store className="w-3.5 h-3.5 text-muted-foreground" />
+                            <Store className="w-3.5 h-3.5 text-slate-400" />
                             <Select
                               value={customer.business_type || 'restaurant'}
                               onValueChange={(val) => handleBusinessTypeChange(customer.id, val)}
                               disabled={customer.owner_email === 'jagralasalman786@gmail.com'}
                             >
-                              <SelectTrigger className="h-7 w-[140px] text-xs">
+                              <SelectTrigger className="h-7.5 w-[140px] text-xs bg-slate-50 border-slate-200 rounded-lg text-slate-800 font-semibold">
                                 <SelectValue />
                               </SelectTrigger>
-                              <SelectContent>
+                              <SelectContent className="bg-white border-slate-200 text-slate-850">
                                 {BUSINESS_TYPES.map(type => (
                                   <SelectItem key={type.value} value={type.value}>
                                     <span className="flex items-center gap-1.5">
-                                      <type.icon className={`w-3 h-3 ${type.color}`} />
-                                      <span className="text-xs font-medium">{type.label}</span>
+                                      <type.icon className={`w-3.5 h-3.5 ${type.color}`} />
+                                      <span className="text-xs font-semibold">{type.label}</span>
                                     </span>
                                   </SelectItem>
                                 ))}
@@ -400,11 +420,11 @@ export const AdminCustomerManagement: React.FC = () => {
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 ml-4">
                         <Button
                           variant="outline"
                           size="sm"
-                          className="h-7 text-xs"
+                          className="h-8 text-xs border-violet-200 text-violet-650 bg-violet-50 hover:bg-violet-100 rounded-lg font-bold"
                           onClick={(e) => {
                             e.stopPropagation();
                             setAddonCustomer(customer);
@@ -412,10 +432,10 @@ export const AdminCustomerManagement: React.FC = () => {
                           }}
                           disabled={customer.owner_email === 'jagralasalman786@gmail.com'}
                         >
-                          <Puzzle className="w-3 h-3 mr-1" />
+                          <Puzzle className="w-3.5 h-3.5 mr-1" />
                           Add-ons
                         </Button>
-                        <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                        <ChevronRight className="w-4 h-4 text-slate-400" />
                       </div>
                     </button>
                   ))}
@@ -426,13 +446,13 @@ export const AdminCustomerManagement: React.FC = () => {
         </Card>
 
         {/* Stores List */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Store className="w-5 h-5" />
+        <Card className="bg-white border border-slate-200 shadow-sm overflow-hidden rounded-2xl">
+          <CardHeader className="border-b border-slate-100 bg-slate-50/50 pb-4">
+            <CardTitle className="text-xl font-bold flex items-center gap-2 text-slate-800">
+              <Store className="w-5 h-5 text-violet-600" />
               Stores {selectedCustomer && `(${customerStores.length})`}
             </CardTitle>
-            <CardDescription>
+            <CardDescription className="text-slate-555">
               {selectedCustomer 
                 ? `Stores for ${selectedCustomer.business_name}` 
                 : 'Select a customer to view stores'
@@ -442,41 +462,42 @@ export const AdminCustomerManagement: React.FC = () => {
           <CardContent className="p-0">
             <ScrollArea className="h-[400px]">
               {!selectedCustomer ? (
-                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                  <Building className="w-12 h-12 mb-4 opacity-30" />
-                  <p>Select a customer first</p>
+                <div className="flex flex-col items-center justify-center py-12 text-slate-500">
+                  <Building className="w-12 h-12 mb-4 opacity-30 text-slate-600" />
+                  <p className="text-sm font-semibold">Select a customer first</p>
                 </div>
               ) : customerStores.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
+                <div className="text-center py-12 text-slate-505 bg-slate-50/50 font-semibold">
                   No stores found for this customer
                 </div>
               ) : (
-                <div className="divide-y">
+                <div className="divide-y divide-slate-100">
                   {customerStores.map((store) => (
                     <button
                       key={store.id}
                       onClick={() => handleSelectStore(store)}
-                      className="w-full flex items-center justify-between p-4 text-left hover:bg-muted/50 transition-colors"
+                      className="w-full flex items-center justify-between p-4 text-left hover:bg-slate-50/50 transition-colors border-b border-slate-100"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-                          <Store className="w-5 h-5 text-muted-foreground" />
+                        <div className="w-10 h-10 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-500">
+                          <Store className="w-5 h-5" />
                         </div>
-                         <div>
-                          <div className="flex items-center gap-2">
-                            <p className="font-medium">{store.store_name}</p>
-                             <Badge variant={store.is_active ? 'default' : 'secondary'} className="text-xs">
-                               {store.is_active ? 'Active' : 'Inactive'}
-                             </Badge>
-                           </div>
-                           {store.address && (
-                            <p className="text-xs text-muted-foreground">{store.address}</p>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap animate-fade-in">
+                            <p className="font-bold text-slate-900 text-base">{store.store_name}</p>
+                            <Badge variant="outline" className="font-mono text-xs bg-slate-50 border-slate-200 text-slate-700 font-bold">ID: {getPersonalId(store.id)}</Badge>
+                            <Badge variant={store.is_active ? 'default' : 'secondary'} className={store.is_active ? 'bg-emerald-50 text-emerald-600 border border-emerald-250 font-bold' : 'bg-slate-100 text-slate-500 border border-slate-200 shadow-none'}>
+                              {store.is_active ? 'Active' : 'Inactive'}
+                            </Badge>
+                          </div>
+                          {store.address && (
+                            <p className="text-xs text-slate-500 mt-1 font-semibold">📍 {store.address}</p>
                           )}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Settings className="w-4 h-4 text-primary" />
-                        <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                        <Settings className="w-4 h-4 text-violet-600" />
+                        <ChevronRight className="w-4 h-4 text-slate-400" />
                       </div>
                     </button>
                   ))}
@@ -489,54 +510,61 @@ export const AdminCustomerManagement: React.FC = () => {
 
       {/* Store Settings Dialog */}
       <Dialog open={showSettingsDialog} onOpenChange={setShowSettingsDialog}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden">
-          <DialogHeader>
+        <DialogContent className="max-w-2xl max-h-[85vh] bg-white border border-slate-200 text-slate-800 rounded-2xl shadow-2xl flex flex-col p-6 overflow-hidden">
+          <DialogHeader className="pb-3 border-b border-slate-100">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Settings className="w-5 h-5 text-primary" />
+              <div className="w-10 h-10 rounded-xl bg-violet-50 border border-violet-200 flex items-center justify-center text-violet-650">
+                <Settings className="w-5 h-5" />
               </div>
               <div>
-                <DialogTitle>{selectedStore?.store_name} - Feature Settings</DialogTitle>
-                <DialogDescription>
-                  Enable or disable features for this store
+                <DialogTitle className="text-xl font-bold bg-gradient-to-r from-slate-900 to-violet-900 bg-clip-text text-transparent">
+                  {selectedStore?.store_name} - Feature Settings
+                </DialogTitle>
+                <DialogDescription className="text-slate-500 text-xs mt-0.5 font-semibold">
+                  Enable or disable features for this store outlet (Store ID: {selectedStore ? getPersonalId(selectedStore.id) : ''})
                 </DialogDescription>
               </div>
             </div>
           </DialogHeader>
 
-          <ScrollArea className="max-h-[50vh] pr-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 py-4">
+          <ScrollArea className="max-h-[50vh] pr-2 my-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 py-2">
               {STORE_FEATURE_SETTINGS.map((feature) => (
                 <div 
                   key={feature.key} 
-                  className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-muted/30 transition-colors"
+                  className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-slate-50 transition-colors animate-fade-in"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center">
-                      <feature.icon className="w-4 h-4 text-muted-foreground" />
+                    <div className="w-8 h-8 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-500">
+                      <feature.icon className="w-4 h-4" />
                     </div>
                     <div>
-                      <Label htmlFor={feature.key} className="cursor-pointer font-medium">
+                      <Label htmlFor={feature.key} className="cursor-pointer font-bold text-slate-800 text-sm">
                         {feature.label}
                       </Label>
-                      <p className="text-xs text-muted-foreground">{feature.description}</p>
+                      <p className="text-[11px] text-slate-500 font-semibold">{feature.description}</p>
                     </div>
                   </div>
                   <Switch
                     id={feature.key}
                     checked={storeSettings[feature.key] ?? true}
                     onCheckedChange={(checked) => handleToggleSetting(feature.key, checked)}
+                    className="data-[state=checked]:bg-violet-600"
                   />
                 </div>
               ))}
             </div>
           </ScrollArea>
 
-          <div className="flex justify-end gap-2 pt-4 border-t">
-            <Button variant="outline" onClick={() => setShowSettingsDialog(false)}>
+          <div className="flex justify-end gap-2 pt-4 border-t border-slate-100">
+            <Button variant="outline" className="rounded-xl border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-250 font-bold" onClick={() => setShowSettingsDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={saveStoreSettings} disabled={savingSettings}>
+            <Button 
+              className="bg-violet-650 hover:bg-violet-750 text-white font-bold rounded-xl shadow-md"
+              onClick={saveStoreSettings} 
+              disabled={savingSettings}
+            >
               {savingSettings ? (
                 <>
                   <div className="animate-spin w-4 h-4 border-2 border-current border-t-transparent rounded-full mr-2" />
@@ -552,32 +580,34 @@ export const AdminCustomerManagement: React.FC = () => {
 
       {/* Add-ons Dialog */}
       <Dialog open={showAddonsDialog} onOpenChange={setShowAddonsDialog}>
-        <DialogContent className="max-w-lg max-h-[80vh] overflow-hidden">
-          <DialogHeader>
+        <DialogContent className="max-w-lg max-h-[85vh] bg-white border border-slate-200 text-slate-800 rounded-2xl shadow-2xl flex flex-col p-6 overflow-hidden">
+          <DialogHeader className="pb-3 border-b border-slate-100">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-purple-500/10 flex items-center justify-center">
-                <Puzzle className="w-5 h-5 text-purple-600" />
+              <div className="w-10 h-10 rounded-xl bg-purple-50 border border-purple-200 flex items-center justify-center text-purple-600">
+                <Puzzle className="w-5 h-5" />
               </div>
               <div>
-                <DialogTitle>{addonCustomer?.business_name} - Add-ons</DialogTitle>
-                <DialogDescription>
+                <DialogTitle className="text-xl font-bold bg-gradient-to-r from-slate-900 to-purple-900 bg-clip-text text-transparent">
+                  {addonCustomer?.business_name} - Add-ons
+                </DialogTitle>
+                <DialogDescription className="text-slate-500 text-xs mt-0.5 font-semibold">
                   Enable add-on features beyond the current plan ({addonCustomer?.subscription_tier?.toUpperCase()})
                 </DialogDescription>
               </div>
             </div>
           </DialogHeader>
 
-          <ScrollArea className="max-h-[50vh] pr-4">
-            <div className="space-y-2 py-4">
+          <ScrollArea className="max-h-[50vh] pr-2 my-2">
+            <div className="space-y-2.5 py-2">
               {ADDON_KEYS.map((addonKey) => {
                 const isEnabled = addonCustomer?.enabled_addons?.includes(addonKey) || false;
                 return (
                   <div
                     key={addonKey}
-                    className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-muted/30 transition-colors"
+                    className="flex items-center justify-between p-3.5 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-slate-50 transition-colors"
                   >
                     <div>
-                      <Label className="cursor-pointer font-medium text-sm">
+                      <Label className="cursor-pointer font-bold text-sm text-slate-800">
                         {ADDON_LABELS[addonKey]}
                       </Label>
                     </div>
@@ -585,9 +615,10 @@ export const AdminCustomerManagement: React.FC = () => {
                       checked={isEnabled}
                       onCheckedChange={(checked) => {
                         if (addonCustomer) {
-                          handleToggleAddon(addonCustomer.id, addonKey, checked);
+                           handleToggleAddon(addonCustomer.id, addonKey, checked);
                         }
                       }}
+                      className="data-[state=checked]:bg-purple-650"
                     />
                   </div>
                 );
@@ -595,8 +626,8 @@ export const AdminCustomerManagement: React.FC = () => {
             </div>
           </ScrollArea>
 
-          <div className="flex justify-end pt-4 border-t">
-            <Button variant="outline" onClick={() => setShowAddonsDialog(false)}>
+          <div className="flex justify-end pt-4 border-t border-slate-100">
+            <Button variant="outline" className="rounded-xl border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-250 font-bold" onClick={() => setShowAddonsDialog(false)}>
               Close
             </Button>
           </div>

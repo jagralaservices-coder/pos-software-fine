@@ -141,20 +141,65 @@ export const POSContext = createContext<POSContextType | undefined>(undefined);
 export const POSProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [menuItems, setMenuItemsState] = useState<MenuItem[]>([]);
   const [categories, setCategoriesState] = useState<Category[]>([]);
-  const [activeCategory, setActiveCategory] = useState<string>('all');
-  const [cart, setCart] = useState<CartItem[]>([]);
+  const [activeCategory, setActiveCategory] = useState<string>(() => {
+    return localStorage.getItem('pos_active_category') || 'all';
+  });
+  const [cart, setCart] = useState<CartItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('pos_cart');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [orders, setOrdersState] = useState<Order[]>([]);
   const [heldBills, setHeldBillsState] = useState<HeldBill[]>([]);
   const [tables, setTablesState] = useState<Table[]>([]);
-  const [currentOrderType, setCurrentOrderType] = useState<'dine-in' | 'takeaway' | 'delivery' | 'online'>('dine-in');
-  const [selectedTable, setSelectedTable] = useState<Table | null>(null);
-  const [discount, setDiscount] = useState(0);
+  const [currentOrderType, setCurrentOrderType] = useState<'dine-in' | 'takeaway' | 'delivery' | 'online'>(() => {
+    return (localStorage.getItem('pos_current_order_type') as any) || 'dine-in';
+  });
+  const [selectedTable, setSelectedTable] = useState<Table | null>(() => {
+    try {
+      const saved = localStorage.getItem('pos_selected_table');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [discount, setDiscount] = useState(() => {
+    const saved = localStorage.getItem('pos_discount');
+    return saved ? Number(saved) : 0;
+  });
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [stores, setStoresState] = useState<Store[]>([]);
   const [activeStoreId, setActiveStoreIdState] = useState<string | null>(null);
   const [isStoreLogin, setIsStoreLogin] = useState<boolean>(() => {
     return localStorage.getItem('pos_is_store_login') === 'true';
   });
+
+  useEffect(() => {
+    localStorage.setItem('pos_active_category', activeCategory);
+  }, [activeCategory]);
+
+  useEffect(() => {
+    localStorage.setItem('pos_cart', JSON.stringify(cart));
+  }, [cart]);
+
+  useEffect(() => {
+    localStorage.setItem('pos_current_order_type', currentOrderType);
+  }, [currentOrderType]);
+
+  useEffect(() => {
+    if (selectedTable) {
+      localStorage.setItem('pos_selected_table', JSON.stringify(selectedTable));
+    } else {
+      localStorage.removeItem('pos_selected_table');
+    }
+  }, [selectedTable]);
+
+  useEffect(() => {
+    localStorage.setItem('pos_discount', String(discount));
+  }, [discount]);
 
   // Helper to get store_code for edge function auth
   const getStoreCode = useCallback((): string | null => {

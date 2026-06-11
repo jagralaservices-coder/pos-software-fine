@@ -73,6 +73,36 @@ export const useStoreInitializer = () => {
       }
     }
 
+    // Verify if store has data. If it has 0 menu items, run auto-population!
+    try {
+      let menuCount = 0;
+      if (isStoreLogin) {
+        const storeCode = getStoreCode();
+        const { data: menuResult } = await supabase.functions.invoke('sync-store-data', {
+          body: { action: 'fetch', store_id: storeId, data_type: 'menu_items', store_code: storeCode }
+        });
+        if (menuResult?.items) {
+          menuCount = menuResult.items.length;
+        }
+      } else {
+        const { count, error } = await supabase
+          .from('menu_items')
+          .select('id', { count: 'exact', head: true })
+          .eq('store_id', storeId);
+        if (!error && count !== null) {
+          menuCount = count;
+        }
+      }
+
+      if (menuCount === 0) {
+        console.log('[StoreInit] Store has 0 menu items. Automatically populating demo test data...');
+        const { runAutoPopulation } = await import('@/lib/demoDataHelper');
+        await runAutoPopulation(storeId);
+      }
+    } catch (e) {
+      console.warn('[StoreInit] Failed to check and auto-populate store data:', e);
+    }
+
     try {
       if (isStoreLogin) {
         // Use edge function for store login

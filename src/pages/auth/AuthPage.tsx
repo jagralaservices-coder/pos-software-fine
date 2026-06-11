@@ -59,6 +59,11 @@ const AuthPage: React.FC = () => {
 
   // Role-based redirect helper
   const redirectByRole = (role: string) => {
+    const lastPath = localStorage.getItem('pos_last_path');
+    if (role !== 'admin' && lastPath && lastPath !== '/' && lastPath !== '/auth' && lastPath !== '/reset-password') {
+      navigate(lastPath, { replace: true });
+      return;
+    }
     switch (role) {
       case 'admin':
         navigate('/admin-dashboard', { replace: true });
@@ -580,28 +585,7 @@ const AuthPage: React.FC = () => {
                       Sign in with Apple
                     </Button>
 
-                    <div className="relative my-4">
-                      <div className="absolute inset-0 flex items-center">
-                        <span className="w-full border-t border-border" />
-                      </div>
-                      <div className="relative flex justify-center text-xs uppercase">
-                        <span className="bg-card px-2 text-muted-foreground">Demo & Testing</span>
-                      </div>
-                    </div>
 
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      className="w-full gap-2 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 font-bold"
-                      onClick={() => {
-                        loginAsDemo();
-                        toast({ title: t('common.welcomeBack'), description: 'Logged in successfully in Demo Mode!' });
-                        setLoginSuccess(true);
-                      }}
-                    >
-                      <Sparkles className="w-4 h-4 text-primary" />
-                      Try Demo (Offline Mode)
-                    </Button>
                   </>
                 )}
 

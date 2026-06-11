@@ -86,6 +86,36 @@ export const SupabaseAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
 
   const fetchUserData = useCallback(async (userId: string, authUser?: User | null): Promise<UserRoleData | null> => {
     try {
+      if (localStorage.getItem('pos_login_as_demo') === 'true') {
+        const mockRole = {
+          id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+          user_id: '11111111-1111-1111-1111-111111111111',
+          role: 'owner' as UserRole,
+          customer_id: '22222222-2222-2222-2222-222222222222',
+          store_id: '33333333-3333-3333-3333-333333333333',
+          is_active: true,
+          pin: '1234'
+        };
+        setUserRole(mockRole);
+        setCustomer({
+          id: '22222222-2222-2222-2222-222222222222',
+          business_name: 'PayStore Bakery',
+          owner_name: 'Mock Owner',
+          subscription_plan: 'yearly',
+          subscription_tier: 'premium',
+          subscription_end: '2030-01-01',
+          is_active: true,
+          max_stores: 5
+        });
+        setStore({
+          id: '33333333-3333-3333-3333-333333333333',
+          customer_id: '22222222-2222-2222-2222-222222222222',
+          store_name: 'Main Outlet',
+          address: '123 Main St, Mumbai'
+        });
+        return mockRole;
+      }
+
       // If we are offline, directly restore from cache backups
       if (!navigator.onLine) {
         console.log('[Auth] Offline: restoring user role and store from backup cache');
@@ -270,13 +300,25 @@ export const SupabaseAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
       let finalSession = nextSession;
       let finalUser = nextSession?.user ?? null;
 
-      if (!finalSession) {
-        // If there's a cached session backup, restore it to prevent automatic logout when offline
+      const sessionActive = localStorage.getItem('pos_session_active') === 'true';
+
+      if (localStorage.getItem('pos_login_as_demo') === 'true') {
+        finalSession = {
+          access_token: 'mock-token',
+          user: { id: '11111111-1111-1111-1111-111111111111', email: 'owner@paystore.com' }
+        } as any;
+        finalUser = {
+          id: '11111111-1111-1111-1111-111111111111',
+          email: 'owner@paystore.com',
+          user_metadata: { full_name: 'Mock Owner' }
+        } as any;
+      } else if (!finalSession) {
+        // If there's a cached session backup, restore it to prevent automatic logout when offline or refreshing
         const sessionBackupStr = localStorage.getItem('pos_session_backup');
         const userBackupStr = localStorage.getItem('pos_user_backup');
-        if (sessionBackupStr && userBackupStr) {
+        if (sessionBackupStr && userBackupStr && (sessionActive || localStorage.getItem('pos_login_as_demo') === 'true')) {
           try {
-            console.log('[Auth] Restoring session from backup cache (preserves login while offline)');
+            console.log('[Auth] Restoring session from backup cache (preserves login)');
             finalSession = JSON.parse(sessionBackupStr);
             finalUser = JSON.parse(userBackupStr);
           } catch (e) {
@@ -321,6 +363,14 @@ export const SupabaseAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
           }
           return;
         }
+
+        const sessionActive = localStorage.getItem('pos_session_active') === 'true';
+        if (event === 'SIGNED_OUT' && (sessionActive || localStorage.getItem('pos_login_as_demo') === 'true')) {
+          console.log('[Auth] Prevented automatic sign out event');
+          // Intercept SIGNED_OUT and don't clear session if it should be active
+          return;
+        }
+
         applySession(nextSession);
       }
     );
@@ -342,6 +392,7 @@ export const SupabaseAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
 
   const loginAsDemo = () => {
     localStorage.setItem('pos_login_as_demo', 'true');
+    localStorage.setItem('pos_session_active', 'true');
     setUser({
       id: '11111111-1111-1111-1111-111111111111',
       email: 'owner@paystore.com',
@@ -374,7 +425,7 @@ export const SupabaseAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
       id: '33333333-3333-3333-3333-333333333333',
       customer_id: '22222222-2222-2222-2222-222222222222',
       store_name: 'Main Outlet',
-      address: '123 Main St, Mumbai'
+      address: '123 St, Mumbai'
     });
     
     // Ensure localStorage has the items needed
@@ -384,7 +435,7 @@ export const SupabaseAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
       id: '33333333-3333-3333-3333-333333333333',
       storeId: '33333333-3333-3333-3333-333333333333',
       storeName: 'Main Outlet',
-      storeAddress: '123 Main St, Mumbai',
+      storeAddress: '123 St, Mumbai',
       storePhone: '+91 98765 43210',
       customerId: '22222222-2222-2222-2222-222222222222',
       storeCode: '12345678'
@@ -446,6 +497,7 @@ export const SupabaseAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
       }
 
       logSecurityAction('LOGIN', 'profiles', authData.user.id);
+      localStorage.setItem('pos_session_active', 'true');
       return { error: null };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'An unexpected error occurred';
@@ -492,6 +544,7 @@ export const SupabaseAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
     }
 
     localStorage.removeItem('pos_login_as_demo');
+    localStorage.removeItem('pos_session_active');
     // Clear all cached backups on explicit logout
     localStorage.removeItem('pos_session_backup');
     localStorage.removeItem('pos_user_backup');

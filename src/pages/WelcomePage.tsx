@@ -1,13 +1,39 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { LogIn, UserPlus } from 'lucide-react';
 import { useLocale } from '@/contexts/LocaleContext';
+import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
 import paystoreIcon from '@/assets/paystore-icon.png';
 
 const WelcomePage: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useLocale();
+  const { isAuthenticated, userRole } = useSupabaseAuth();
+
+  useEffect(() => {
+    if (isAuthenticated && userRole) {
+      const lastPath = localStorage.getItem('pos_last_path');
+      if (userRole.role !== 'admin' && lastPath && lastPath !== '/' && lastPath !== '/auth' && lastPath !== '/reset-password') {
+        navigate(lastPath, { replace: true });
+      } else {
+        switch (userRole.role) {
+          case 'admin':
+            navigate('/admin-dashboard', { replace: true });
+            break;
+          case 'owner':
+            navigate('/dashboard', { replace: true });
+            break;
+          case 'store_manager':
+            navigate('/pos', { replace: true });
+            break;
+          case 'staff':
+            navigate('/staff-dashboard', { replace: true });
+            break;
+        }
+      }
+    }
+  }, [isAuthenticated, userRole, navigate]);
 
   return (
     <div className="min-h-screen min-h-[100dvh] bg-background flex flex-col items-center justify-center p-4">

@@ -23,6 +23,16 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { AdminCustomerManagement } from '@/components/admin/AdminCustomerManagement';
 import { AdminPlanManagement } from '@/components/admin/AdminPlanManagement';
 
+const getPersonalId = (uuid: string): string => {
+  if (!uuid) return '';
+  let hash = 0;
+  for (let i = 0; i < uuid.length; i++) {
+    hash = uuid.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const numericId = Math.abs(hash % 900000) + 100000;
+  return numericId.toString();
+};
+
 interface Customer {
   id: string;
   business_name: string;
@@ -189,8 +199,60 @@ const AdminDashboardPage: React.FC = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [verifyingPassword, setVerifyingPassword] = useState(false);
 
+  // Bulk delete states
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [bulkDeletePassword, setBulkDeletePassword] = useState('');
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [bulkDeleteProgress, setBulkDeleteProgress] = useState('');
+
   // View image preview dialog state
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+  const [populatingStoreId, setPopulatingStoreId] = useState('');
+  const [autoPopulatedStores, setAutoPopulatedStores] = useState<string[]>([]);
+
+  const generateUUID = () => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  };
+
+  const handlePopulateStoreDummyData = async (storeId: string) => {
+    if (!storeId) return;
+    setPopulatingStoreId(storeId);
+    try {
+      const storeObj = stores.find(s => s.id === storeId);
+      const custId = storeObj?.customer_id || explorerOwnerId;
+      const { runAutoPopulation } = await import('@/lib/demoDataHelper');
+      const success = await runAutoPopulation(storeId, custId);
+      if (!success) throw new Error('Auto-population failed');
+
+      toast({
+        title: 'Dummy Data Populated!',
+        description: 'Successfully created categories, inventory, menu items, orders, expenses, tables, and customers.',
+      });
+
+      // Refresh Explorer Data
+      await fetchExplorerData(storeId);
+      await fetchCustomers();
+      await fetchAllStores();
+      await fetchAllStaff();
+      await fetchAuditLogs();
+    } catch (err: any) {
+      console.error(err);
+      toast({
+        title: 'Error',
+        description: err.message || 'Failed to populate store details',
+        variant: 'destructive',
+      });
+    } finally {
+      setPopulatingStoreId('');
+    }
+  };
 
   // Protect Admin route
   useEffect(() => {
@@ -377,6 +439,13 @@ const AdminDashboardPage: React.FC = () => {
         .select('*')
         .eq('store_id', storeId)
         .order('name');
+
+      if (menuData && menuData.length === 0 && !autoPopulatedStores.includes(storeId)) {
+        setAutoPopulatedStores(prev => [...prev, storeId]);
+        console.log('Explorer: Store is empty. Automatically populating dummy data...');
+        await handlePopulateStoreDummyData(storeId);
+        return;
+      }
 
       // Fetch Inventory
       const { data: invData } = await supabase
@@ -1067,6 +1136,97 @@ const AdminDashboardPage: React.FC = () => {
     }
   };
 
+  // Confirm bulk delete all other owners
+  const handleConfirmBulkDelete = async () => {
+    const targetOwners = customers.filter(c => c.owner_email !== 'jagralasalman786@gmail.com');
+    if (targetOwners.length === 0) {
+      toast({
+        title: 'No Target Owners',
+        description: 'There are no other owner accounts to delete.',
+      });
+      return;
+    }
+
+    if (!bulkDeletePassword) {
+      toast({
+        title: 'Required',
+        description: 'Please enter your admin password to confirm.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setVerifyingPassword(true);
+    try {
+      // Re-authenticate admin using email + entered password
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: user?.email!,
+        password: bulkDeletePassword,
+      });
+
+      if (authError || !authData.user) {
+        toast({
+          title: 'Authentication Failed',
+          description: 'Incorrect admin password.',
+          variant: 'destructive',
+        });
+        setVerifyingPassword(false);
+        return;
+      }
+
+      setVerifyingPassword(false);
+      setIsBulkDeleting(true);
+
+      let successCount = 0;
+      let failCount = 0;
+
+      for (let i = 0; i < targetOwners.length; i++) {
+        const owner = targetOwners[i];
+        setBulkDeleteProgress(`Deleting owner ${i + 1} of ${targetOwners.length}: ${owner.business_name || owner.owner_name}...`);
+
+        try {
+          const response = await supabase.functions.invoke('delete-owner', {
+            body: { customer_id: owner.id }
+          });
+
+          if (response.error || response.data?.error) {
+            console.error(`Failed to delete owner ${owner.id}:`, response.error || response.data?.error);
+            failCount++;
+          } else {
+            successCount++;
+          }
+        } catch (err) {
+          console.error(`Unexpected error deleting owner ${owner.id}:`, err);
+          failCount++;
+        }
+      }
+
+      toast({
+        title: 'Bulk Deletion Finished',
+        description: `Successfully deleted ${successCount} owner accounts. Failed: ${failCount}.`,
+        variant: failCount > 0 ? 'destructive' : 'default',
+      });
+
+      setShowBulkDeleteConfirm(false);
+      setBulkDeletePassword('');
+      setBulkDeleteProgress('');
+      fetchCustomers();
+      fetchAllStores();
+      fetchAllStaff();
+      fetchAuditLogs();
+    } catch (error: any) {
+      console.error('Error during bulk deletion:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to complete bulk deletion.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsBulkDeleting(false);
+      setVerifyingPassword(false);
+    }
+  };
+
   // Suspend owner
   const suspendOwner = async (customerId: string) => {
     if (customers.find(c => c.id === customerId)?.owner_email === 'jagralasalman786@gmail.com') {
@@ -1328,37 +1488,47 @@ const AdminDashboardPage: React.FC = () => {
   };
 
   // Search filter functions
-  const filteredCustomers = customers.filter(c => 
-    (c.approval_status === 'approved' || c.approval_status === 'suspended' || !c.approval_status) && (
+  const filteredCustomers = customers.filter(c => {
+    const pId = getPersonalId(c.id);
+    return (c.approval_status === 'approved' || c.approval_status === 'suspended' || !c.approval_status) && (
       c.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      pId.includes(searchQuery) ||
       c.business_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       c.owner_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       c.owner_email.toLowerCase().includes(searchQuery.toLowerCase())
-    )
-  );
+    );
+  });
 
-  const filteredStores = stores.filter(s => 
-    s.id.toLowerCase().includes(storeSearchQuery.toLowerCase()) ||
-    s.store_name.toLowerCase().includes(storeSearchQuery.toLowerCase()) ||
-    s.owner_name.toLowerCase().includes(storeSearchQuery.toLowerCase()) ||
-    (s.phone && s.phone.includes(storeSearchQuery))
-  );
+  const filteredStores = stores.filter(s => {
+    const sId = getPersonalId(s.id);
+    const cId = getPersonalId(s.customer_id);
+    return s.id.toLowerCase().includes(storeSearchQuery.toLowerCase()) ||
+      sId.includes(storeSearchQuery) ||
+      cId.includes(storeSearchQuery) ||
+      s.store_name.toLowerCase().includes(storeSearchQuery.toLowerCase()) ||
+      s.owner_name.toLowerCase().includes(storeSearchQuery.toLowerCase()) ||
+      (s.phone && s.phone.includes(storeSearchQuery))
+  });
 
-  const filteredStaffList = staff.filter(s => 
-    s.id.toLowerCase().includes(staffSearchQuery.toLowerCase()) ||
-    s.full_name.toLowerCase().includes(staffSearchQuery.toLowerCase()) ||
-    s.email.toLowerCase().includes(staffSearchQuery.toLowerCase()) ||
-    s.phone.includes(staffSearchQuery) ||
-    s.aadhaar_number?.includes(staffSearchQuery)
-  );
+  const filteredStaffList = staff.filter(s => {
+    const staffId = getPersonalId(s.user_id || s.id);
+    return s.id.toLowerCase().includes(staffSearchQuery.toLowerCase()) ||
+      staffId.includes(staffSearchQuery) ||
+      s.full_name.toLowerCase().includes(staffSearchQuery.toLowerCase()) ||
+      s.email.toLowerCase().includes(staffSearchQuery.toLowerCase()) ||
+      s.phone.includes(staffSearchQuery) ||
+      s.aadhaar_number?.includes(staffSearchQuery)
+  });
 
-  const filteredLogs = auditLogs.filter(log => 
-    log.action.toLowerCase().includes(logSearchQuery.toLowerCase()) ||
-    log.table_name?.toLowerCase().includes(logSearchQuery.toLowerCase()) ||
-    log.record_id?.toLowerCase().includes(logSearchQuery.toLowerCase()) ||
-    log.user_email?.toLowerCase().includes(logSearchQuery.toLowerCase()) ||
-    log.user_name?.toLowerCase().includes(logSearchQuery.toLowerCase())
-  );
+  const filteredLogs = auditLogs.filter(log => {
+    const recId = log.record_id ? getPersonalId(log.record_id) : '';
+    return log.action.toLowerCase().includes(logSearchQuery.toLowerCase()) ||
+      log.table_name?.toLowerCase().includes(logSearchQuery.toLowerCase()) ||
+      log.record_id?.toLowerCase().includes(logSearchQuery.toLowerCase()) ||
+      recId.includes(logSearchQuery) ||
+      log.user_email?.toLowerCase().includes(logSearchQuery.toLowerCase()) ||
+      log.user_name?.toLowerCase().includes(logSearchQuery.toLowerCase())
+  });
 
   // Stats calculation
   const pendingOwners = customers.filter(c => c.approval_status === 'pending');
@@ -1396,29 +1566,29 @@ const AdminDashboardPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 antialiased font-sans pb-12">
+    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-50 via-slate-100 to-zinc-200 text-slate-800 antialiased font-sans pb-12">
       {/* Premium Header */}
-      <header className="bg-gradient-to-r from-violet-800 via-indigo-900 to-slate-900 border-b border-indigo-950 p-6 shadow-2xl">
+      <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 p-6 shadow-sm sticky top-0 z-50">
         <div className="container mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <Crown className="w-8 h-8 text-amber-400 animate-pulse" />
-              <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-white via-violet-200 to-indigo-300 bg-clip-text text-transparent">
+              <Crown className="w-8 h-8 text-amber-500 animate-pulse drop-shadow-[0_0_8px_rgba(245,158,11,0.2)]" />
+              <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-slate-900 via-indigo-950 to-violet-900 bg-clip-text text-transparent">
                 Antigravity Master Control
               </h1>
             </div>
-            <p className="text-violet-200/80 mt-1 text-sm font-medium">
+            <p className="text-indigo-950/70 mt-1 text-sm font-semibold">
               System Administration • Central Control & Security Audit Panel
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <Badge variant="outline" className="border-indigo-500/50 bg-indigo-505/20 text-indigo-300 px-3 py-1 text-xs font-semibold gap-1.5 uppercase tracking-wider">
+            <Badge variant="outline" className="border-violet-200 bg-violet-50 text-violet-750 px-3 py-1 text-xs font-bold gap-1.5 uppercase tracking-wider shadow-sm">
               <UserCheck className="w-3.5 h-3.5" />
               Admin Mode
             </Badge>
             <Button 
               variant="destructive" 
-              className="bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-lg border border-rose-500/30 rounded-xl transition-all"
+              className="bg-gradient-to-r from-rose-500 to-red-650 hover:from-rose-600 hover:to-red-750 text-white font-bold shadow-md rounded-xl transition-all active:scale-95"
               onClick={handleLogout}
             >
               <LogOut className="w-4 h-4 mr-2" />
@@ -1431,20 +1601,20 @@ const AdminDashboardPage: React.FC = () => {
       <main className="container mx-auto p-4 md:p-6 space-y-8 mt-4">
         {/* Dynamic Global Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="flex flex-wrap h-auto bg-slate-900 border border-slate-800 p-1 rounded-2xl max-w-full justify-start gap-1 overflow-x-auto">
-            <TabsTrigger value="owners" className="rounded-xl px-4 py-2.5 text-sm font-medium transition-all gap-2 text-slate-400 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+          <TabsList className="flex flex-wrap h-auto bg-slate-100 border border-slate-200 p-1 rounded-2xl max-w-full justify-start gap-1 overflow-x-auto">
+            <TabsTrigger value="owners" className="rounded-xl px-4 py-2.5 text-sm font-medium transition-all gap-2 text-slate-600 data-[state=active]:bg-gradient-to-r data-[state=active]:from-violet-600 data-[state=active]:to-indigo-650 data-[state=active]:text-white shadow-sm">
               <Users className="w-4 h-4" />
               Owners
             </TabsTrigger>
-            <TabsTrigger value="stores" className="rounded-xl px-4 py-2.5 text-sm font-medium transition-all gap-2 text-slate-400 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+            <TabsTrigger value="stores" className="rounded-xl px-4 py-2.5 text-sm font-medium transition-all gap-2 text-slate-600 data-[state=active]:bg-gradient-to-r data-[state=active]:from-violet-600 data-[state=active]:to-indigo-650 data-[state=active]:text-white shadow-sm">
               <Store className="w-4 h-4" />
               Stores
             </TabsTrigger>
-            <TabsTrigger value="staff" className="rounded-xl px-4 py-2.5 text-sm font-medium transition-all gap-2 text-slate-400 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+            <TabsTrigger value="staff" className="rounded-xl px-4 py-2.5 text-sm font-medium transition-all gap-2 text-slate-600 data-[state=active]:bg-gradient-to-r data-[state=active]:from-violet-600 data-[state=active]:to-indigo-650 data-[state=active]:text-white shadow-sm">
               <Crown className="w-4 h-4" />
               Staff
             </TabsTrigger>
-            <TabsTrigger value="verification" className="rounded-xl px-4 py-2.5 text-sm font-medium transition-all gap-2 text-slate-400 data-[state=active]:bg-violet-600 data-[state=active]:text-white relative">
+            <TabsTrigger value="verification" className="rounded-xl px-4 py-2.5 text-sm font-medium transition-all gap-2 text-slate-600 data-[state=active]:bg-gradient-to-r data-[state=active]:from-violet-600 data-[state=active]:to-indigo-650 data-[state=active]:text-white shadow-sm relative">
               <UserCheck className="w-4 h-4" />
               Verification Queue
               {totalPendingVerifications > 0 && (
@@ -1453,19 +1623,19 @@ const AdminDashboardPage: React.FC = () => {
                 </span>
               )}
             </TabsTrigger>
-            <TabsTrigger value="explorer" className="rounded-xl px-4 py-2.5 text-sm font-medium transition-all gap-2 text-slate-400 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+            <TabsTrigger value="explorer" className="rounded-xl px-4 py-2.5 text-sm font-medium transition-all gap-2 text-slate-600 data-[state=active]:bg-gradient-to-r data-[state=active]:from-violet-600 data-[state=active]:to-indigo-650 data-[state=active]:text-white shadow-sm">
               <Building className="w-4 h-4" />
               System Explorer
             </TabsTrigger>
-            <TabsTrigger value="audit_logs" className="rounded-xl px-4 py-2.5 text-sm font-medium transition-all gap-2 text-slate-400 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+            <TabsTrigger value="audit_logs" className="rounded-xl px-4 py-2.5 text-sm font-medium transition-all gap-2 text-slate-600 data-[state=active]:bg-gradient-to-r data-[state=active]:from-violet-600 data-[state=active]:to-indigo-650 data-[state=active]:text-white shadow-sm">
               <ClipboardList className="w-4 h-4" />
               Audit Logs
             </TabsTrigger>
-            <TabsTrigger value="plans" className="rounded-xl px-4 py-2.5 text-sm font-medium transition-all gap-2 text-slate-400 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+            <TabsTrigger value="plans" className="rounded-xl px-4 py-2.5 text-sm font-medium transition-all gap-2 text-slate-600 data-[state=active]:bg-gradient-to-r data-[state=active]:from-violet-600 data-[state=active]:to-indigo-650 data-[state=active]:text-white shadow-sm">
               <Crown className="w-4 h-4" />
               Plans & Features
             </TabsTrigger>
-            <TabsTrigger value="settings" className="rounded-xl px-4 py-2.5 text-sm font-medium transition-all gap-2 text-slate-400 data-[state=active]:bg-violet-600 data-[state=active]:text-white">
+            <TabsTrigger value="settings" className="rounded-xl px-4 py-2.5 text-sm font-medium transition-all gap-2 text-slate-600 data-[state=active]:bg-gradient-to-r data-[state=active]:from-violet-600 data-[state=active]:to-indigo-650 data-[state=active]:text-white shadow-sm">
               <Settings className="w-4 h-4" />
               Customer Settings
             </TabsTrigger>
@@ -1475,93 +1645,108 @@ const AdminDashboardPage: React.FC = () => {
           <TabsContent value="owners" className="mt-6 space-y-6">
             {/* Stats Dashboard */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Card className="bg-slate-900 border-slate-800 hover:border-violet-500/40 transition-all shadow-md transform hover:-translate-y-0.5">
+              <Card className="bg-white border border-slate-200 border-t-2 border-t-violet-500 hover:shadow-md hover:border-violet-400 transition-all duration-300 transform hover:-translate-y-1 rounded-2xl shadow-sm">
                 <CardContent className="p-5 flex items-center gap-4">
-                  <div className="p-3 bg-violet-500/10 rounded-xl text-violet-400">
+                  <div className="p-3 bg-violet-100 rounded-xl text-violet-600">
                     <Users className="w-6 h-6" />
                   </div>
                   <div>
-                    <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Total Owners</p>
-                    <p className="text-3xl font-extrabold text-white mt-1">{customers.length}</p>
+                    <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Total Owners</p>
+                    <p className="text-3xl font-black text-slate-800 mt-1">{customers.length}</p>
                   </div>
                 </CardContent>
               </Card>
 
-              <Card className="bg-slate-900 border-slate-800 hover:border-emerald-500/40 transition-all shadow-md transform hover:-translate-y-0.5">
+              <Card className="bg-white border border-slate-200 border-t-2 border-t-emerald-500 hover:shadow-md hover:border-emerald-400 transition-all duration-300 transform hover:-translate-y-1 rounded-2xl shadow-sm">
                 <CardContent className="p-5 flex items-center gap-4">
-                  <div className="p-3 bg-emerald-500/10 rounded-xl text-emerald-400">
+                  <div className="p-3 bg-emerald-100 rounded-xl text-emerald-600">
                     <CheckCircle className="w-6 h-6" />
                   </div>
                   <div>
-                    <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Active Owners</p>
-                    <p className="text-3xl font-extrabold text-emerald-400 mt-1">{activeCustomers}</p>
+                    <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Active Owners</p>
+                    <p className="text-3xl font-black text-emerald-600 mt-1">{activeCustomers}</p>
                   </div>
                 </CardContent>
               </Card>
 
-              <Card className="bg-slate-900 border-slate-800 hover:border-amber-500/40 transition-all shadow-md transform hover:-translate-y-0.5">
+              <Card className="bg-white border border-slate-200 border-t-2 border-t-amber-500 hover:shadow-md hover:border-amber-450 transition-all duration-300 transform hover:-translate-y-1 rounded-2xl shadow-sm">
                 <CardContent className="p-5 flex items-center gap-4">
-                  <div className="p-3 bg-amber-500/10 rounded-xl text-amber-400">
+                  <div className="p-3 bg-amber-100 rounded-xl text-amber-500">
                     <AlertCircle className="w-6 h-6" />
                   </div>
                   <div>
-                    <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Expiring Soon</p>
-                    <p className="text-3xl font-extrabold text-amber-400 mt-1">{expiringCustomers}</p>
+                    <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Expiring Soon</p>
+                    <p className="text-3xl font-black text-amber-600 mt-1">{expiringCustomers}</p>
                   </div>
                 </CardContent>
               </Card>
 
-              <Card className="bg-slate-900 border-slate-800 hover:border-rose-500/40 transition-all shadow-md transform hover:-translate-y-0.5">
+              <Card className="bg-white border border-slate-200 border-t-2 border-t-rose-500 hover:shadow-md hover:border-rose-455 transition-all duration-300 transform hover:-translate-y-1 rounded-2xl shadow-sm">
                 <CardContent className="p-5 flex items-center gap-4">
-                  <div className="p-3 bg-rose-500/10 rounded-xl text-rose-400">
+                  <div className="p-3 bg-rose-100 rounded-xl text-rose-500">
                     <XCircle className="w-6 h-6" />
                   </div>
                   <div>
-                    <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Expired / Suspended</p>
-                    <p className="text-3xl font-extrabold text-rose-500 mt-1">{expiredCustomers}</p>
+                    <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Expired / Suspended</p>
+                    <p className="text-3xl font-black text-rose-600 mt-1">{expiredCustomers}</p>
                   </div>
                 </CardContent>
               </Card>
-            </div>
-
-            {/* Filter and Actions Bar */}
+            </div>            {/* Filter and Actions Bar */}
             <div className="flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between">
               <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-450" />
                 <Input
                   placeholder="Search owners by Business, Email, or Owner ID..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 bg-slate-900 border-slate-800 text-slate-100 placeholder-slate-500 focus:border-violet-500 rounded-xl"
+                  className="pl-10 bg-white border border-slate-200 text-slate-800 placeholder-slate-400 focus:border-violet-500 rounded-xl shadow-sm"
                 />
               </div>
 
-              {/* Add Owner trigger */}
-              <Dialog open={showAddCustomer} onOpenChange={setShowAddCustomer}>
-                <DialogTrigger asChild>
-                  <Button className="bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl shadow-lg hover:shadow-violet-600/20">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Create Owner
+              <div className="flex flex-wrap gap-3 items-center">
+                {/* Clean Cloud trigger */}
+                {customers.filter(c => c.owner_email !== 'jagralasalman786@gmail.com').length > 0 && (
+                  <Button 
+                    variant="destructive"
+                    className="bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-md hover:shadow-rose-600/10 gap-1.5"
+                    onClick={() => {
+                      setBulkDeletePassword('');
+                      setBulkDeleteProgress('');
+                      setShowBulkDeleteConfirm(true);
+                    }}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Clean Cloud (Delete Other IDs)
                   </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-xl bg-slate-900 border-slate-800 text-slate-100 rounded-2xl">
+                )}
+
+                {/* Add Owner trigger */}
+                <Dialog open={showAddCustomer} onOpenChange={setShowAddCustomer}>
+                  <DialogTrigger asChild>
+                    <Button className="bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl shadow-md hover:shadow-violet-600/10">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Create Owner
+                    </Button>
+                  </DialogTrigger>
+                <DialogContent className="max-w-xl bg-white border-slate-200 text-slate-800 rounded-2xl shadow-2xl">
                   <DialogHeader>
-                    <DialogTitle className="text-xl font-bold bg-gradient-to-r from-white to-violet-300 bg-clip-text text-transparent">
+                    <DialogTitle className="text-xl font-bold bg-gradient-to-r from-slate-900 to-violet-900 bg-clip-text text-transparent">
                       Create New Owner Account
                     </DialogTitle>
                   </DialogHeader>
                   <div className="space-y-4 max-h-[72vh] overflow-y-auto pr-2">
                     {/* Business Details */}
-                    <div className="space-y-2 border-b border-slate-800 pb-3">
-                      <Label className="text-slate-300 font-bold text-xs uppercase tracking-wider">Category & Plans</Label>
+                    <div className="space-y-2 border-b border-slate-100 pb-3">
+                      <Label className="text-slate-600 font-bold text-xs uppercase tracking-wider">Category & Plans</Label>
                       <div className="grid grid-cols-2 gap-3 mt-1">
                         <button
                           type="button"
                           onClick={() => setNewCustomer({...newCustomer, business_type: 'restaurant'})}
                           className={`p-3.5 rounded-xl border-2 text-center transition-all ${
                             newCustomer.business_type === 'restaurant' 
-                              ? 'border-violet-500 bg-violet-500/10 text-violet-300' 
-                              : 'border-slate-800 bg-slate-900/40 text-slate-400 hover:border-slate-700'
+                              ? 'border-violet-600 bg-violet-50 text-violet-700 font-bold' 
+                              : 'border-slate-200 bg-slate-50/50 text-slate-500 hover:border-slate-350'
                           }`}
                         >
                           <UtensilsCrossed className="w-6 h-6 mx-auto mb-1.5" />
@@ -1572,8 +1757,8 @@ const AdminDashboardPage: React.FC = () => {
                           onClick={() => setNewCustomer({...newCustomer, business_type: 'retail'})}
                           className={`p-3.5 rounded-xl border-2 text-center transition-all ${
                             newCustomer.business_type === 'retail' 
-                              ? 'border-violet-500 bg-violet-500/10 text-violet-300' 
-                              : 'border-slate-800 bg-slate-900/40 text-slate-400 hover:border-slate-700'
+                              ? 'border-violet-600 bg-violet-50 text-violet-700 font-bold' 
+                              : 'border-slate-200 bg-slate-50/50 text-slate-500 hover:border-slate-350'
                           }`}
                         >
                           <ShoppingBag className="w-6 h-6 mx-auto mb-1.5" />
@@ -1584,15 +1769,15 @@ const AdminDashboardPage: React.FC = () => {
 
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
-                        <Label className="text-xs text-slate-300">Subscription Tier *</Label>
+                        <Label className="text-xs text-slate-600 font-bold">Subscription Tier *</Label>
                         <Select
                           value={newCustomer.subscription_tier}
                           onValueChange={(v) => setNewCustomer({...newCustomer, subscription_tier: v})}
                         >
-                          <SelectTrigger className="bg-slate-950 border-slate-800 rounded-xl">
+                          <SelectTrigger className="bg-slate-50 border-slate-200 rounded-xl text-slate-800">
                             <SelectValue />
                           </SelectTrigger>
-                          <SelectContent className="bg-slate-950 border-slate-800 text-slate-100">
+                          <SelectContent className="bg-white border-slate-200 text-slate-850">
                             <SelectItem value="basic">Basic</SelectItem>
                             <SelectItem value="gold">Gold</SelectItem>
                             <SelectItem value="platinum">Platinum</SelectItem>
@@ -1600,12 +1785,12 @@ const AdminDashboardPage: React.FC = () => {
                         </Select>
                       </div>
                       <div className="space-y-1.5">
-                        <Label className="text-xs text-slate-300">Max Stores *</Label>
+                        <Label className="text-xs text-slate-600 font-bold">Max Stores *</Label>
                         <Input
                           type="number"
                           value={newCustomer.max_stores}
                           onChange={(e) => setNewCustomer({...newCustomer, max_stores: parseInt(e.target.value) || 2})}
-                          className="bg-slate-950 border-slate-800 rounded-xl text-slate-100"
+                          className="bg-slate-50 border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 font-medium"
                         />
                       </div>
                     </div>
@@ -1613,47 +1798,47 @@ const AdminDashboardPage: React.FC = () => {
                     {/* Contact details */}
                     <div className="space-y-3 pt-2">
                       <div className="space-y-1">
-                        <Label className="text-xs text-slate-300">Business Name *</Label>
+                        <Label className="text-xs text-slate-600 font-bold">Business Name *</Label>
                         <Input
                           value={newCustomer.business_name}
                           onChange={(e) => setNewCustomer({...newCustomer, business_name: e.target.value})}
                           placeholder="Restaurant / Outlet Name"
-                          className="bg-slate-950 border-slate-800 rounded-xl"
+                          className="bg-slate-50 border-slate-200 rounded-xl placeholder-slate-400"
                         />
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-xs text-slate-300">Owner Full Name *</Label>
+                        <Label className="text-xs text-slate-600 font-bold">Owner Full Name *</Label>
                         <Input
                           value={newCustomer.owner_name}
                           onChange={(e) => setNewCustomer({...newCustomer, owner_name: e.target.value})}
                           placeholder="Full Name"
-                          className="bg-slate-950 border-slate-800 rounded-xl"
+                          className="bg-slate-50 border-slate-200 rounded-xl placeholder-slate-400"
                         />
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-xs text-slate-300">Owner Email *</Label>
+                        <Label className="text-xs text-slate-600 font-bold">Owner Email *</Label>
                         <Input
                           type="email"
                           value={newCustomer.owner_email}
                           onChange={(e) => setNewCustomer({...newCustomer, owner_email: e.target.value})}
                           placeholder="owner@email.com"
-                          className="bg-slate-950 border-slate-800 rounded-xl"
+                          className="bg-slate-50 border-slate-200 rounded-xl placeholder-slate-400"
                         />
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-xs text-slate-300">Password *</Label>
+                        <Label className="text-xs text-slate-600 font-bold">Password *</Label>
                         <div className="relative">
                           <Input
                             type={showPassword ? 'text' : 'password'}
                             value={newCustomer.owner_password}
                             onChange={(e) => setNewCustomer({...newCustomer, owner_password: e.target.value})}
                             placeholder="Minimum 6 characters"
-                            className="bg-slate-950 border-slate-800 rounded-xl pr-10"
+                            className="bg-slate-50 border-slate-200 rounded-xl pr-10 placeholder-slate-400"
                           />
                           <button
                             type="button"
                             onClick={() => setShowPassword(!showPassword)}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-650"
                           >
                             {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                           </button>
@@ -1661,9 +1846,9 @@ const AdminDashboardPage: React.FC = () => {
                       </div>
 
                       {/* COMPULSORY ADDRESS COMPONENTS */}
-                      <div className="space-y-2 border-t border-slate-800 pt-3">
-                        <Label className="text-slate-300 font-bold text-xs uppercase tracking-wider flex items-center gap-1">
-                          <MapPin className="w-3.5 h-3.5 text-violet-400" />
+                      <div className="space-y-2 border-t border-slate-100 pt-3">
+                        <Label className="text-slate-600 font-bold text-xs uppercase tracking-wider flex items-center gap-1">
+                          <MapPin className="w-3.5 h-3.5 text-violet-600" />
                           Compulsory Address Details
                         </Label>
                         <div className="space-y-2">
@@ -1671,20 +1856,20 @@ const AdminDashboardPage: React.FC = () => {
                             placeholder="Address Line 1 (Street, Building) *"
                             value={newCustomer.address_line1}
                             onChange={(e) => setNewCustomer({...newCustomer, address_line1: e.target.value})}
-                            className="bg-slate-950 border-slate-800 rounded-xl"
+                            className="bg-slate-50 border-slate-200 rounded-xl placeholder-slate-400"
                           />
                           <div className="grid grid-cols-2 gap-2">
                             <Input
                               placeholder="Locality / Area *"
                               value={newCustomer.locality}
                               onChange={(e) => setNewCustomer({...newCustomer, locality: e.target.value})}
-                              className="bg-slate-950 border-slate-800 rounded-xl"
+                              className="bg-slate-50 border-slate-200 rounded-xl placeholder-slate-400"
                             />
                             <Input
                               placeholder="City *"
                               value={newCustomer.city}
                               onChange={(e) => setNewCustomer({...newCustomer, city: e.target.value})}
-                              className="bg-slate-950 border-slate-800 rounded-xl"
+                              className="bg-slate-50 border-slate-200 rounded-xl placeholder-slate-400"
                             />
                           </div>
                           <div className="grid grid-cols-2 gap-2">
@@ -1692,22 +1877,22 @@ const AdminDashboardPage: React.FC = () => {
                               placeholder="State *"
                               value={newCustomer.state}
                               onChange={(e) => setNewCustomer({...newCustomer, state: e.target.value})}
-                              className="bg-slate-950 border-slate-800 rounded-xl"
+                              className="bg-slate-50 border-slate-200 rounded-xl placeholder-slate-400"
                             />
                             <Input
                               placeholder="Pincode *"
                               value={newCustomer.pincode}
                               onChange={(e) => setNewCustomer({...newCustomer, pincode: e.target.value})}
-                              className="bg-slate-950 border-slate-800 rounded-xl"
+                              className="bg-slate-50 border-slate-200 rounded-xl placeholder-slate-400"
                             />
                           </div>
                         </div>
                       </div>
 
                       {/* SIMULATED MOBILE OTP VERIFICATION GATE */}
-                      <div className="space-y-2 border-t border-slate-800 pt-3">
-                        <Label className="text-slate-300 font-bold text-xs uppercase tracking-wider flex items-center gap-1">
-                          <Phone className="w-3.5 h-3.5 text-violet-400" />
+                      <div className="space-y-2 border-t border-slate-100 pt-3">
+                        <Label className="text-slate-600 font-bold text-xs uppercase tracking-wider flex items-center gap-1">
+                          <Phone className="w-3.5 h-3.5 text-violet-600" />
                           Simulated Mobile OTP Gateway *
                         </Label>
                         <div className="flex gap-2">
@@ -1717,31 +1902,31 @@ const AdminDashboardPage: React.FC = () => {
                             value={newCustomer.phone}
                             onChange={(e) => setNewCustomer({...newCustomer, phone: e.target.value})}
                             disabled={ownerOtpVerified}
-                            className="bg-slate-950 border-slate-800 rounded-xl flex-1"
+                            className="bg-slate-50 border-slate-200 rounded-xl flex-1 placeholder-slate-400"
                           />
                           <Button
                             type="button"
                             onClick={handleSendOwnerOtp}
                             disabled={ownerOtpVerified || isSendingOwnerOtp}
                             variant="secondary"
-                            className="rounded-xl font-semibold bg-slate-800 hover:bg-slate-700 text-slate-100"
+                            className="rounded-xl font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200"
                           >
                             {isSendingOwnerOtp ? 'Sending...' : ownerOtpSent ? 'Resend' : 'Send OTP'}
                           </Button>
                         </div>
 
                         {ownerOtpSent && !ownerOtpVerified && (
-                          <div className="flex gap-2 mt-2 p-3 bg-slate-950 rounded-xl border border-slate-850">
+                          <div className="flex gap-2 mt-2 p-3 bg-slate-50 rounded-xl border border-slate-200">
                             <Input
                               placeholder="Enter 6-digit OTP *"
                               value={ownerEnteredOtp}
                               onChange={(e) => setOwnerEnteredOtp(e.target.value)}
-                              className="bg-slate-900 border-slate-800 rounded-xl flex-1 text-center font-mono tracking-widest text-lg"
+                              className="bg-white border-slate-200 rounded-xl flex-1 text-center font-mono tracking-widest text-lg text-slate-800"
                             />
                             <Button
                               type="button"
                               onClick={handleVerifyOwnerOtp}
-                              className="bg-violet-600 hover:bg-violet-700 text-white rounded-xl"
+                              className="bg-violet-600 hover:bg-violet-700 text-white rounded-xl shadow-md"
                             >
                               Verify OTP
                             </Button>
@@ -1749,8 +1934,8 @@ const AdminDashboardPage: React.FC = () => {
                         )}
 
                         {ownerOtpVerified && (
-                          <div className="flex items-center gap-2 text-emerald-400 bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/20 text-xs font-semibold">
-                            <CheckCircle className="w-4 h-4 text-emerald-400" />
+                          <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 p-2.5 rounded-xl border border-emerald-250 text-xs font-semibold">
+                            <CheckCircle className="w-4 h-4 text-emerald-500" />
                             Mobile number verified! Proceed to save.
                           </div>
                         )}
@@ -1759,7 +1944,7 @@ const AdminDashboardPage: React.FC = () => {
                     
                     <Button 
                       onClick={handleAddCustomer} 
-                      className="w-full mt-4 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl h-11" 
+                      className="w-full mt-4 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl h-11 shadow-md" 
                       disabled={isCreating || !ownerOtpVerified}
                     >
                       {isCreating ? 'Creating Owner...' : 'Create Owner Account'}
@@ -1768,29 +1953,30 @@ const AdminDashboardPage: React.FC = () => {
                 </DialogContent>
               </Dialog>
             </div>
+          </div>
 
             {/* Owners Table */}
-            <Card className="bg-slate-900 border-slate-800 shadow-xl overflow-hidden rounded-2xl">
-              <CardHeader className="border-b border-slate-850">
-                <CardTitle className="text-xl font-bold flex items-center gap-2">
-                  <Users className="w-5 h-5 text-violet-400" />
+            <Card className="bg-white border border-slate-200 shadow-sm overflow-hidden rounded-2xl">
+              <CardHeader className="border-b border-slate-100 bg-slate-50/50 pb-4">
+                <CardTitle className="text-xl font-bold flex items-center gap-2 text-slate-800">
+                  <Users className="w-5 h-5 text-violet-600" />
                   Active System Owners
                 </CardTitle>
-                <CardDescription className="text-slate-400">
+                <CardDescription className="text-slate-500">
                   Total of {filteredCustomers.length} approved system owners listed with full details
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-0">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
+                  <table className="w-full min-w-[1250px] text-left border-collapse">
                     <thead>
-                      <tr className="border-b border-slate-800 bg-slate-950 text-slate-400 text-xs font-bold uppercase tracking-wider">
-                        <th className="p-4">Owner ID</th>
+                      <tr className="border-b border-slate-200 bg-slate-50 text-slate-650 text-xs font-bold uppercase tracking-wider">
+                        <th className="p-4">Personal ID</th>
                         <th className="p-4">Business & Email</th>
                         <th className="p-4">Owner Name</th>
                         <th className="p-4">Phone & Address</th>
                         <th className="p-4">Verification</th>
-                        <th className="p-4 text-center">Stores</th>
+                        <th className="p-4 text-center">Stores Limit</th>
                         <th className="p-4">Plan / Expiry</th>
                         <th className="p-4 text-center">Status</th>
                         <th className="p-4 text-right">Actions</th>
@@ -1803,16 +1989,17 @@ const AdminDashboardPage: React.FC = () => {
                         const isExpiring = daysLeft <= 7 && daysLeft > 0;
 
                         return (
-                          <tr key={customer.id} className="border-b border-slate-850 hover:bg-slate-900/50 transition-colors text-sm">
+                          <tr key={customer.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors text-sm">
                             {/* OWNER ID */}
-                            <td className="p-4 font-mono text-xs text-slate-400">
-                              <div className="flex items-center gap-1.5 bg-slate-950/80 p-1.5 rounded-lg border border-slate-850 max-w-[140px] justify-between">
-                                <span className="truncate">{customer.id}</span>
+                            <td className="p-4 font-mono text-sm font-semibold">
+                              <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-lg border border-slate-200 max-w-[120px] justify-between text-slate-700">
+                                <span>{getPersonalId(customer.id)}</span>
                                 <Button 
                                   size="icon" 
                                   variant="ghost" 
-                                  className="w-5 h-5 text-slate-500 hover:text-slate-300"
-                                  onClick={() => copyToClipboard(customer.id, 'Owner ID')}
+                                  className="w-5 h-5 text-slate-400 hover:text-slate-600 hover:bg-slate-200/50"
+                                  onClick={() => copyToClipboard(getPersonalId(customer.id), 'Personal Owner ID')}
+                                  title="Copy Personal ID"
                                 >
                                   <Copy className="w-3 h-3" />
                                 </Button>
@@ -1821,18 +2008,18 @@ const AdminDashboardPage: React.FC = () => {
                             {/* Business Info */}
                             <td className="p-4">
                               <div>
-                                <p className="font-bold text-white text-base">{customer.business_name}</p>
-                                <p className="text-xs text-slate-400 font-medium mt-0.5">{customer.owner_email}</p>
+                                <p className="font-bold text-slate-900 text-base">{customer.business_name}</p>
+                                <p className="text-xs text-slate-500 font-semibold mt-0.5">{customer.owner_email}</p>
                               </div>
                             </td>
                             {/* Owner Name */}
-                            <td className="p-4 font-semibold text-slate-200">{customer.owner_name}</td>
+                            <td className="p-4 font-semibold text-slate-700">{customer.owner_name}</td>
                             {/* Phone and Address */}
                             <td className="p-4">
                               <div className="max-w-[200px] space-y-1">
-                                {customer.phone && <p className="text-xs text-slate-300 font-bold">📞 {customer.phone}</p>}
+                                {customer.phone && <p className="text-xs text-slate-800 font-bold">📞 {customer.phone}</p>}
                                 {customer.address_line1 && (
-                                  <p className="text-[11px] text-slate-400 line-clamp-2 leading-relaxed">
+                                  <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">
                                     📍 {customer.address_line1}, {customer.locality}, {customer.city}, {customer.state} - {customer.pincode}
                                   </p>
                                 )}
@@ -1841,14 +2028,14 @@ const AdminDashboardPage: React.FC = () => {
                             {/* Verification Gates */}
                             <td className="p-4 space-y-1 text-xs">
                               <div className="flex items-center gap-1.5">
-                                <span className="text-slate-400">Mobile:</span>
-                                <Badge variant={customer.mobile_verified ? 'default' : 'secondary'} className={customer.mobile_verified ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-slate-800 text-slate-400 border-transparent'}>
+                                <span className="text-slate-500 font-medium">Mobile:</span>
+                                <Badge variant={customer.mobile_verified ? 'default' : 'secondary'} className={customer.mobile_verified ? 'bg-emerald-50 text-emerald-600 border border-emerald-250' : 'bg-slate-100 text-slate-500 border border-slate-200 shadow-none'}>
                                   {customer.mobile_verified ? 'Verified' : 'Unverified'}
                                 </Badge>
                               </div>
                               <div className="flex items-center gap-1.5">
-                                <span className="text-slate-400">Email:</span>
-                                <Badge variant={customer.email_verified ? 'default' : 'secondary'} className={customer.email_verified ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-slate-800 text-slate-400 border-transparent'}>
+                                <span className="text-slate-550 font-medium">Email:</span>
+                                <Badge variant={customer.email_verified ? 'default' : 'secondary'} className={customer.email_verified ? 'bg-emerald-50 text-emerald-600 border border-emerald-250' : 'bg-slate-100 text-slate-500 border border-slate-200 shadow-none'}>
                                   {customer.email_verified ? 'Verified' : 'Unverified'}
                                 </Badge>
                               </div>
@@ -1860,10 +2047,10 @@ const AdminDashboardPage: React.FC = () => {
                                   value={String(customer.max_stores)}
                                   onValueChange={(v) => updateMaxStores(customer.id, parseInt(v))}
                                 >
-                                  <SelectTrigger className="w-16 h-8 bg-slate-950 border-slate-800 text-xs">
+                                  <SelectTrigger className="w-16 h-8 bg-slate-50 border-slate-250 text-slate-800 text-xs">
                                     <SelectValue />
                                   </SelectTrigger>
-                                  <SelectContent className="bg-slate-950 border-slate-800 text-slate-100">
+                                  <SelectContent className="bg-white border-slate-200 text-slate-800">
                                     {[1, 2, 3, 5, 10, 20, 50].map(n => (
                                       <SelectItem key={n} value={String(n)}>{n}</SelectItem>
                                     ))}
@@ -1875,22 +2062,22 @@ const AdminDashboardPage: React.FC = () => {
                             <td className="p-4">
                               <div className="space-y-0.5">
                                 <div className="flex items-center gap-1">
-                                  <Crown className="w-3.5 h-3.5 text-amber-400" />
-                                  <Badge className="capitalize text-[10px] py-0 bg-indigo-950 text-indigo-300 border border-indigo-500/30">
+                                  <Crown className="w-3.5 h-3.5 text-amber-500" />
+                                  <Badge className="capitalize text-[10px] py-0 bg-violet-50 text-violet-700 border border-violet-200 font-bold tracking-wider">
                                     {customer.subscription_tier} ({customer.subscription_plan})
                                   </Badge>
                                 </div>
-                                <p className="text-xs font-semibold text-slate-300 mt-1">
+                                <p className="text-xs font-semibold text-slate-700 mt-1">
                                   Expires: {format(new Date(customer.subscription_end), 'dd MMM yyyy')}
                                 </p>
-                                <p className={`text-[11px] font-bold ${isExpired ? 'text-rose-400' : isExpiring ? 'text-amber-400' : 'text-slate-400'}`}>
+                                <p className={`text-[11px] font-bold ${isExpired ? 'text-rose-600' : isExpiring ? 'text-amber-600' : 'text-slate-500'}`}>
                                   {isExpired ? 'Expired' : `${daysLeft} days left`}
                                 </p>
                               </div>
                             </td>
                             {/* Status */}
                             <td className="p-4 text-center">
-                              <Badge variant={customer.approval_status === 'suspended' ? 'destructive' : customer.is_active ? 'default' : 'secondary'} className={customer.approval_status === 'suspended' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' : customer.is_active ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-850 text-slate-400'}>
+                              <Badge variant={customer.approval_status === 'suspended' ? 'destructive' : customer.is_active ? 'default' : 'secondary'} className={customer.approval_status === 'suspended' ? 'bg-rose-50 text-rose-600 border border-rose-200' : customer.is_active ? 'bg-emerald-50 text-emerald-600 border border-emerald-250' : 'bg-slate-100 text-slate-500 border border-slate-200 shadow-none'}>
                                 {customer.approval_status === 'suspended' ? 'Suspended' : customer.is_active ? 'Active' : 'Inactive'}
                               </Badge>
                             </td>
@@ -1900,7 +2087,7 @@ const AdminDashboardPage: React.FC = () => {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="h-8 border-slate-800 bg-slate-900/60 text-slate-300 hover:text-white"
+                                  className="h-8 border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900"
                                   onClick={() => extendSubscription(customer.id, 30)}
                                   disabled={customer.owner_email === 'jagralasalman786@gmail.com'}
                                 >
@@ -1909,7 +2096,7 @@ const AdminDashboardPage: React.FC = () => {
                                 <Button
                                   size="sm"
                                   variant={customer.is_active ? 'destructive' : 'default'}
-                                  className="h-8"
+                                  className="h-8 shadow-sm"
                                   onClick={() => toggleCustomerStatus(customer.id, customer.is_active)}
                                   disabled={customer.owner_email === 'jagralasalman786@gmail.com'}
                                 >
@@ -1919,7 +2106,7 @@ const AdminDashboardPage: React.FC = () => {
                                   <Button
                                     size="sm"
                                     variant="outline"
-                                    className="h-8 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
+                                    className="h-8 border-emerald-300 text-emerald-600 hover:bg-emerald-50"
                                     onClick={() => unsuspendOwner(customer.id)}
                                     disabled={customer.owner_email === 'jagralasalman786@gmail.com'}
                                   >
@@ -1930,7 +2117,7 @@ const AdminDashboardPage: React.FC = () => {
                                   <Button
                                     size="sm"
                                     variant="outline"
-                                    className="h-8 border-rose-500/30 text-rose-400 hover:bg-rose-500/10"
+                                    className="h-8 border-rose-300 text-rose-600 hover:bg-rose-50"
                                     onClick={() => suspendOwner(customer.id)}
                                     disabled={customer.owner_email === 'jagralasalman786@gmail.com'}
                                   >
@@ -1941,7 +2128,7 @@ const AdminDashboardPage: React.FC = () => {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="h-8 border-rose-600/30 text-rose-500 hover:bg-rose-600/20"
+                                  className="h-8 border-rose-300 text-rose-600 hover:bg-rose-50"
                                   onClick={() => initiateDeleteOwner(customer)}
                                   disabled={customer.owner_email === 'jagralasalman786@gmail.com'}
                                 >
@@ -1957,7 +2144,7 @@ const AdminDashboardPage: React.FC = () => {
                   </table>
 
                   {filteredCustomers.length === 0 && (
-                    <div className="text-center py-12 text-slate-500 bg-slate-900/20">
+                    <div className="text-center py-12 text-slate-500 bg-slate-50/50">
                       No owners found matching search criteria
                     </div>
                   )}
@@ -1970,43 +2157,43 @@ const AdminDashboardPage: React.FC = () => {
           <TabsContent value="stores" className="mt-6 space-y-6">
             <div className="flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between">
               <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-450" />
                 <Input
                   placeholder="Search stores by Store Name, Owner, or Store ID..."
                   value={storeSearchQuery}
                   onChange={(e) => setStoreSearchQuery(e.target.value)}
-                  className="pl-10 bg-slate-900 border-slate-800 text-slate-100 placeholder-slate-500 rounded-xl"
+                  className="pl-10 bg-white border border-slate-200 text-slate-800 placeholder-slate-400 focus:border-violet-500 rounded-xl shadow-sm"
                 />
               </div>
 
               {/* Add Store Dialog */}
               <Dialog open={showAddStore} onOpenChange={setShowAddStore}>
                 <DialogTrigger asChild>
-                  <Button className="bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl shadow-lg">
+                  <Button className="bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl shadow-md hover:shadow-violet-600/10">
                     <Plus className="w-4 h-4 mr-2" />
                     Create Store ID
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-xl bg-slate-900 border-slate-800 text-slate-100 rounded-2xl">
+                <DialogContent className="max-w-xl bg-white border-slate-200 text-slate-800 rounded-2xl shadow-2xl">
                   <DialogHeader>
-                    <DialogTitle className="text-xl font-bold bg-gradient-to-r from-white to-violet-300 bg-clip-text text-transparent">
+                    <DialogTitle className="text-xl font-bold bg-gradient-to-r from-slate-900 to-violet-905 bg-clip-text text-transparent">
                       Create New Store Outlet
                     </DialogTitle>
                   </DialogHeader>
                   <div className="space-y-4 max-h-[72vh] overflow-y-auto pr-2">
                     <div className="space-y-2">
-                      <Label className="text-xs text-slate-300">Select Owner / Customer *</Label>
+                      <Label className="text-xs text-slate-600 font-bold">Select Owner / Customer *</Label>
                       <Select
                         value={newStore.customer_id}
                         onValueChange={(v) => setNewStore({...newStore, customer_id: v})}
                       >
-                        <SelectTrigger className="bg-slate-950 border-slate-800 rounded-xl">
+                        <SelectTrigger className="bg-slate-50 border-slate-200 rounded-xl text-slate-800">
                           <SelectValue placeholder="Choose Owner Account" />
                         </SelectTrigger>
-                        <SelectContent className="bg-slate-950 border-slate-800 text-slate-100">
+                        <SelectContent className="bg-white border-slate-200 text-slate-855">
                           {customers.filter(c => c.approval_status === 'approved').map(customer => (
                             <SelectItem key={customer.id} value={customer.id}>
-                              {customer.business_name} ({customer.owner_name})
+                              {customer.business_name} ({customer.owner_name}) - ID: {getPersonalId(customer.id)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -2014,48 +2201,48 @@ const AdminDashboardPage: React.FC = () => {
                     </div>
 
                     <div className="space-y-1">
-                      <Label className="text-xs text-slate-300">Store Name *</Label>
+                      <Label className="text-xs text-slate-600 font-bold">Store Name *</Label>
                       <Input
                         value={newStore.name}
                         onChange={(e) => setNewStore({...newStore, name: e.target.value})}
                         placeholder="e.g. Downtown Outlet"
-                        className="bg-slate-950 border-slate-800 rounded-xl"
+                        className="bg-slate-50 border-slate-200 rounded-xl placeholder-slate-400"
                       />
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
-                        <Label className="text-xs text-slate-300">Manager Email (Login ID) *</Label>
+                        <Label className="text-xs text-slate-600 font-bold">Manager Email (Login ID) *</Label>
                         <Input
                           type="email"
                           value={newStore.email}
                           onChange={(e) => setNewStore({...newStore, email: e.target.value})}
                           placeholder="store@email.com"
-                          className="bg-slate-950 border-slate-800 rounded-xl"
+                          className="bg-slate-50 border-slate-200 rounded-xl placeholder-slate-400"
                         />
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-xs text-slate-300">Manager Password *</Label>
+                        <Label className="text-xs text-slate-600 font-bold">Manager Password *</Label>
                         <Input
                           type="password"
                           value={newStore.password}
                           onChange={(e) => setNewStore({...newStore, password: e.target.value})}
                           placeholder="Min 6 chars"
-                          className="bg-slate-950 border-slate-800 rounded-xl"
+                          className="bg-slate-50 border-slate-200 rounded-xl placeholder-slate-400"
                         />
                       </div>
                     </div>
 
                     <div className="space-y-1">
-                      <Label className="text-xs text-slate-300">Business Type *</Label>
+                      <Label className="text-xs text-slate-600 font-bold">Business Type *</Label>
                       <Select
                         value={newStore.business_type}
                         onValueChange={(v) => setNewStore({...newStore, business_type: v})}
                       >
-                        <SelectTrigger className="bg-slate-950 border-slate-800 rounded-xl">
+                        <SelectTrigger className="bg-slate-50 border-slate-200 rounded-xl text-slate-800">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent className="bg-slate-950 border-slate-800 text-slate-100">
+                        <SelectContent className="bg-white border-slate-200 text-slate-850">
                           <SelectItem value="restaurant">Restaurant</SelectItem>
                           <SelectItem value="retail">Retail Store</SelectItem>
                         </SelectContent>
@@ -2063,9 +2250,9 @@ const AdminDashboardPage: React.FC = () => {
                     </div>
 
                     {/* Compulsory Address Components */}
-                    <div className="space-y-2 border-t border-slate-800 pt-3">
-                      <Label className="text-slate-300 font-bold text-xs uppercase tracking-wider flex items-center gap-1">
-                        <MapPin className="w-3.5 h-3.5 text-violet-400" />
+                    <div className="space-y-2 border-t border-slate-100 pt-3">
+                      <Label className="text-slate-600 font-bold text-xs uppercase tracking-wider flex items-center gap-1">
+                        <MapPin className="w-3.5 h-3.5 text-violet-600" />
                         Compulsory Store Address
                       </Label>
                       <div className="space-y-2">
@@ -2073,20 +2260,20 @@ const AdminDashboardPage: React.FC = () => {
                           placeholder="Address Line 1 *"
                           value={newStore.addressLine1}
                           onChange={(e) => setNewStore({...newStore, addressLine1: e.target.value})}
-                          className="bg-slate-950 border-slate-800 rounded-xl"
+                          className="bg-slate-50 border-slate-200 rounded-xl placeholder-slate-400"
                         />
                         <div className="grid grid-cols-2 gap-2">
                           <Input
                             placeholder="Locality *"
                             value={newStore.locality}
                             onChange={(e) => setNewStore({...newStore, locality: e.target.value})}
-                            className="bg-slate-950 border-slate-800 rounded-xl"
+                            className="bg-slate-50 border-slate-200 rounded-xl placeholder-slate-400"
                           />
                           <Input
                             placeholder="City *"
                             value={newStore.city}
                             onChange={(e) => setNewStore({...newStore, city: e.target.value})}
-                            className="bg-slate-950 border-slate-800 rounded-xl"
+                            className="bg-slate-50 border-slate-200 rounded-xl placeholder-slate-400"
                           />
                         </div>
                         <div className="grid grid-cols-2 gap-2">
@@ -2094,22 +2281,22 @@ const AdminDashboardPage: React.FC = () => {
                             placeholder="State *"
                             value={newStore.state}
                             onChange={(e) => setNewStore({...newStore, state: e.target.value})}
-                            className="bg-slate-950 border-slate-800 rounded-xl"
+                            className="bg-slate-50 border-slate-200 rounded-xl placeholder-slate-400"
                           />
                           <Input
                             placeholder="Pincode *"
                             value={newStore.pincode}
                             onChange={(e) => setNewStore({...newStore, pincode: e.target.value})}
-                            className="bg-slate-950 border-slate-800 rounded-xl"
+                            className="bg-slate-50 border-slate-200 rounded-xl placeholder-slate-400"
                           />
                         </div>
                       </div>
                     </div>
 
                     {/* Store Mobile OTP Sim */}
-                    <div className="space-y-2 border-t border-slate-800 pt-3">
-                      <Label className="text-slate-300 font-bold text-xs uppercase tracking-wider flex items-center gap-1">
-                        <Phone className="w-3.5 h-3.5 text-violet-400" />
+                    <div className="space-y-2 border-t border-slate-100 pt-3">
+                      <Label className="text-slate-600 font-bold text-xs uppercase tracking-wider flex items-center gap-1">
+                        <Phone className="w-3.5 h-3.5 text-violet-600" />
                         Mobile OTP Verification *
                       </Label>
                       <div className="flex gap-2">
@@ -2118,31 +2305,31 @@ const AdminDashboardPage: React.FC = () => {
                           value={newStore.phone}
                           onChange={(e) => setNewStore({...newStore, phone: e.target.value})}
                           disabled={storeOtpVerified}
-                          className="bg-slate-950 border-slate-800 rounded-xl flex-1"
+                          className="bg-slate-50 border-slate-200 rounded-xl flex-1 placeholder-slate-400"
                         />
                         <Button
                           type="button"
                           onClick={handleSendStoreOtp}
                           disabled={storeOtpVerified || isSendingStoreOtp}
                           variant="secondary"
-                          className="rounded-xl bg-slate-800 text-slate-200"
+                          className="rounded-xl font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200"
                         >
                           {isSendingStoreOtp ? 'Sending...' : storeOtpSent ? 'Resend' : 'Send OTP'}
                         </Button>
                       </div>
 
                       {storeOtpSent && !storeOtpVerified && (
-                        <div className="flex gap-2 mt-2 p-3 bg-slate-950 border border-slate-850 rounded-xl">
+                        <div className="flex gap-2 mt-2 p-3 bg-slate-50 border border-slate-200 rounded-xl">
                           <Input
                             placeholder="Enter Code *"
                             value={storeEnteredOtp}
                             onChange={(e) => setStoreEnteredOtp(e.target.value)}
-                            className="bg-slate-900 border-slate-800 rounded-xl flex-1 text-center font-mono tracking-widest text-lg"
+                            className="bg-white border-slate-200 rounded-xl flex-1 text-center font-mono tracking-widest text-lg text-slate-800"
                           />
                           <Button
                             type="button"
                             onClick={handleVerifyStoreOtp}
-                            className="bg-violet-600 hover:bg-violet-700 text-white rounded-xl"
+                            className="bg-violet-600 hover:bg-violet-700 text-white rounded-xl shadow-sm"
                           >
                             Verify
                           </Button>
@@ -2150,7 +2337,7 @@ const AdminDashboardPage: React.FC = () => {
                       )}
 
                       {storeOtpVerified && (
-                        <div className="flex items-center gap-2 text-emerald-400 bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/20 text-xs font-semibold">
+                        <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 p-2.5 rounded-xl border border-emerald-250 text-xs font-semibold">
                           <CheckCircle className="w-4 h-4" />
                           Mobile OTP verified! Ready to save.
                         </div>
@@ -2159,7 +2346,7 @@ const AdminDashboardPage: React.FC = () => {
 
                     <Button 
                       onClick={handleAddStore} 
-                      className="w-full mt-4 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl h-11" 
+                      className="w-full mt-4 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl h-11 shadow-md" 
                       disabled={isCreatingStore || !storeOtpVerified}
                     >
                       {isCreatingStore ? 'Creating Store...' : 'Create Store Outlet'}
@@ -2170,21 +2357,21 @@ const AdminDashboardPage: React.FC = () => {
             </div>
 
             {/* Stores List Table */}
-            <Card className="bg-slate-900 border-slate-800 shadow-xl overflow-hidden rounded-2xl">
-              <CardHeader>
-                <CardTitle className="text-xl font-bold flex items-center gap-2">
-                  <Store className="w-5 h-5 text-violet-400" />
+            <Card className="bg-white border border-slate-200 shadow-sm overflow-hidden rounded-2xl">
+              <CardHeader className="border-b border-slate-100 bg-slate-50/50 pb-4">
+                <CardTitle className="text-xl font-bold flex items-center gap-2 text-slate-800">
+                  <Store className="w-5 h-5 text-violet-600" />
                   Outlet Stores ID List
                 </CardTitle>
-                <CardDescription className="text-slate-400">
+                <CardDescription className="text-slate-500">
                   Detailed view of all registered stores in the system
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-0">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
+                  <table className="w-full min-w-[1050px] text-left border-collapse">
                     <thead>
-                      <tr className="border-b border-slate-800 bg-slate-950 text-slate-400 text-xs font-bold uppercase tracking-wider">
+                      <tr className="border-b border-slate-200 bg-slate-50 text-slate-650 text-xs font-bold uppercase tracking-wider">
                         <th className="p-4">Store ID</th>
                         <th className="p-4">Store Code</th>
                         <th className="p-4">Store Name</th>
@@ -2197,49 +2384,49 @@ const AdminDashboardPage: React.FC = () => {
                     </thead>
                     <tbody>
                       {filteredStores.map((store) => (
-                        <tr key={store.id} className="border-b border-slate-850 hover:bg-slate-900/50 transition-colors text-sm">
+                        <tr key={store.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors text-sm">
                           {/* STORE ID */}
-                          <td className="p-4 font-mono text-xs">
-                            <div className="flex items-center gap-1.5 bg-slate-950/80 p-1.5 rounded-lg border border-slate-850 max-w-[140px] justify-between text-slate-400">
-                              <span className="truncate">{store.id}</span>
+                          <td className="p-4 font-mono text-sm font-semibold">
+                            <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-lg border border-slate-200 max-w-[120px] justify-between text-slate-700">
+                              <span>{getPersonalId(store.id)}</span>
                               <Button 
                                 size="icon" 
                                 variant="ghost" 
-                                className="w-5 h-5 text-slate-500 hover:text-slate-300"
-                                onClick={() => copyToClipboard(store.id, 'Store ID')}
+                                className="w-5 h-5 text-slate-400 hover:text-slate-600 hover:bg-slate-200/50"
+                                onClick={() => copyToClipboard(getPersonalId(store.id), 'Personal Store ID')}
                               >
                                 <Copy className="w-3 h-3" />
                               </Button>
                             </div>
                           </td>
-                          <td className="p-4 font-bold text-violet-400">{store.store_code || 'PENDING'}</td>
-                          <td className="p-4 font-bold text-slate-100">{store.store_name}</td>
+                          <td className="p-4 font-bold text-violet-600">{store.store_code || 'PENDING'}</td>
+                          <td className="p-4 font-bold text-slate-800">{store.store_name}</td>
                           <td className="p-4">
                             <div className="space-y-0.5">
-                              {store.phone && <p className="text-xs text-slate-300">📞 {store.phone}</p>}
-                              {store.address && <p className="text-[11px] text-slate-400 truncate max-w-[200px]" title={store.address}>📍 {store.address}</p>}
+                              {store.phone && <p className="text-xs text-slate-800 font-bold">📞 {store.phone}</p>}
+                              {store.address && <p className="text-[11px] text-slate-500 truncate max-w-[200px]" title={store.address}>📍 {store.address}</p>}
                             </div>
                           </td>
                           {/* OWNER ID */}
-                          <td className="p-4 font-mono text-xs">
-                            <div className="flex items-center gap-1 bg-slate-950/40 px-1.5 py-1 rounded text-slate-400 max-w-[130px] justify-between">
-                              <span className="truncate">{store.customer_id}</span>
+                          <td className="p-4 font-mono text-sm font-semibold">
+                            <div className="flex items-center gap-1 bg-slate-100 px-1.5 py-1 rounded text-slate-700 border border-slate-200 max-w-[120px] justify-between">
+                              <span>{getPersonalId(store.customer_id)}</span>
                               <Button 
                                 size="icon" 
                                 variant="ghost" 
-                                className="w-4 h-4 text-slate-500 hover:text-slate-300"
-                                onClick={() => copyToClipboard(store.customer_id, 'Owner ID')}
+                                className="w-4 h-4 text-slate-400 hover:text-slate-600 hover:bg-slate-200/50"
+                                onClick={() => copyToClipboard(getPersonalId(store.customer_id), 'Personal Owner ID')}
                               >
                                 <Copy className="w-2.5 h-2.5" />
                               </Button>
                             </div>
                           </td>
-                          <td className="p-4 text-slate-300 font-semibold">{store.owner_name}</td>
-                          <td className="p-4 text-slate-400">
+                          <td className="p-4 text-slate-700 font-semibold">{store.owner_name}</td>
+                          <td className="p-4 text-slate-550">
                             {store.created_at ? format(new Date(store.created_at), 'dd MMM yyyy') : 'N/A'}
                           </td>
                           <td className="p-4 text-center">
-                            <Badge variant={store.is_active ? 'default' : 'secondary'} className={store.is_active ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-850 text-slate-400'}>
+                            <Badge variant={store.is_active ? 'default' : 'secondary'} className={store.is_active ? 'bg-emerald-50 text-emerald-600 border border-emerald-250' : 'bg-slate-100 text-slate-500 border border-slate-200 shadow-none'}>
                               {store.is_active ? 'Active' : 'Inactive'}
                             </Badge>
                           </td>
@@ -2249,7 +2436,7 @@ const AdminDashboardPage: React.FC = () => {
                   </table>
 
                   {filteredStores.length === 0 && (
-                    <div className="text-center py-12 text-slate-500">
+                    <div className="text-center py-12 text-slate-500 bg-slate-50/50">
                       No stores found matching search queries
                     </div>
                   )}
@@ -2262,44 +2449,44 @@ const AdminDashboardPage: React.FC = () => {
           <TabsContent value="staff" className="mt-6 space-y-6">
             <div className="flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between">
               <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-450" />
                 <Input
                   placeholder="Search staff by Name, Phone, Aadhaar, or Staff ID..."
                   value={staffSearchQuery}
                   onChange={(e) => setStaffSearchQuery(e.target.value)}
-                  className="pl-10 bg-slate-900 border-slate-800 text-slate-100 placeholder-slate-500 rounded-xl"
+                  className="pl-10 bg-white border border-slate-200 text-slate-800 placeholder-slate-400 focus:border-violet-500 rounded-xl shadow-sm"
                 />
               </div>
 
               {/* Add Staff Dialog */}
               <Dialog open={showAddStaff} onOpenChange={setShowAddStaff}>
                 <DialogTrigger asChild>
-                  <Button className="bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl shadow-lg">
+                  <Button className="bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl shadow-md hover:shadow-violet-600/10">
                     <Plus className="w-4 h-4 mr-2" />
                     Create Staff
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-xl bg-slate-900 border-slate-800 text-slate-100 rounded-2xl">
+                <DialogContent className="max-w-xl bg-white border-slate-200 text-slate-800 rounded-2xl shadow-2xl">
                   <DialogHeader>
-                    <DialogTitle className="text-xl font-bold bg-gradient-to-r from-white to-violet-300 bg-clip-text text-transparent">
+                    <DialogTitle className="text-xl font-bold bg-gradient-to-r from-slate-900 to-violet-900 bg-clip-text text-transparent">
                       Create New Staff Account
                     </DialogTitle>
                   </DialogHeader>
                   <div className="space-y-4 max-h-[72vh] overflow-y-auto pr-2">
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
-                        <Label className="text-xs text-slate-300">Select Owner *</Label>
+                        <Label className="text-xs text-slate-600 font-bold">Select Owner *</Label>
                         <Select
                           value={newStaff.customer_id}
                           onValueChange={(v) => setNewStaff({...newStaff, customer_id: v, store_id: ''})}
                         >
-                          <SelectTrigger className="bg-slate-950 border-slate-800 rounded-xl">
+                          <SelectTrigger className="bg-slate-50 border-slate-200 rounded-xl text-slate-800">
                             <SelectValue placeholder="Choose Owner" />
                           </SelectTrigger>
-                          <SelectContent className="bg-slate-950 border-slate-800 text-slate-100">
+                          <SelectContent className="bg-white border-slate-200 text-slate-850">
                             {customers.filter(c => c.approval_status === 'approved').map(customer => (
                               <SelectItem key={customer.id} value={customer.id}>
-                                {customer.business_name}
+                                {customer.business_name} - ID: {getPersonalId(customer.id)}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -2307,19 +2494,19 @@ const AdminDashboardPage: React.FC = () => {
                       </div>
 
                       <div className="space-y-1">
-                        <Label className="text-xs text-slate-300">Select Store *</Label>
+                        <Label className="text-xs text-slate-600 font-bold">Select Store *</Label>
                         <Select
                           value={newStaff.store_id}
                           onValueChange={(v) => setNewStaff({...newStaff, store_id: v})}
                           disabled={!newStaff.customer_id}
                         >
-                          <SelectTrigger className="bg-slate-950 border-slate-800 rounded-xl">
+                          <SelectTrigger className="bg-slate-50 border-slate-200 rounded-xl text-slate-800">
                             <SelectValue placeholder="Choose Store" />
                           </SelectTrigger>
-                          <SelectContent className="bg-slate-950 border-slate-800 text-slate-100">
+                          <SelectContent className="bg-white border-slate-200 text-slate-850">
                             {stores.filter(s => s.customer_id === newStaff.customer_id).map(store => (
                               <SelectItem key={store.id} value={store.id}>
-                                {store.store_name}
+                                {store.store_name} - ID: {getPersonalId(store.id)}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -2329,48 +2516,48 @@ const AdminDashboardPage: React.FC = () => {
 
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
-                        <Label className="text-xs text-slate-300">Staff Full Name *</Label>
+                        <Label className="text-xs text-slate-600 font-bold">Staff Full Name *</Label>
                         <Input
                           value={newStaff.name}
                           onChange={(e) => setNewStaff({...newStaff, name: e.target.value})}
                           placeholder="e.g. John Doe"
-                          className="bg-slate-950 border-slate-800 rounded-xl"
+                          className="bg-slate-55 border-slate-200 rounded-xl placeholder-slate-400"
                         />
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-xs text-slate-300">Email (Login ID) *</Label>
+                        <Label className="text-xs text-slate-600 font-bold">Email (Login ID) *</Label>
                         <Input
                           type="email"
                           value={newStaff.email}
                           onChange={(e) => setNewStaff({...newStaff, email: e.target.value})}
                           placeholder="john@store.com"
-                          className="bg-slate-950 border-slate-800 rounded-xl"
+                          className="bg-slate-55 border-slate-200 rounded-xl placeholder-slate-400"
                         />
                       </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
-                        <Label className="text-xs text-slate-300">Login PIN (4 digits) *</Label>
+                        <Label className="text-xs text-slate-600 font-bold">Login PIN (4 digits) *</Label>
                         <Input
                           type="password"
                           maxLength={4}
                           value={newStaff.pin}
                           onChange={(e) => setNewStaff({...newStaff, pin: e.target.value.replace(/\D/g, '')})}
                           placeholder="1234"
-                          className="bg-slate-950 border-slate-800 rounded-xl font-mono text-center tracking-widest text-lg"
+                          className="bg-slate-55 border-slate-200 rounded-xl font-mono text-center tracking-widest text-lg text-slate-800 placeholder-slate-350"
                         />
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-xs text-slate-300">Role *</Label>
+                        <Label className="text-xs text-slate-600 font-bold">Role *</Label>
                         <Select
                           value={newStaff.role}
                           onValueChange={(v) => setNewStaff({...newStaff, role: v})}
                         >
-                          <SelectTrigger className="bg-slate-950 border-slate-800 rounded-xl">
+                          <SelectTrigger className="bg-slate-50 border-slate-200 rounded-xl text-slate-800">
                             <SelectValue />
                           </SelectTrigger>
-                          <SelectContent className="bg-slate-950 border-slate-800 text-slate-100">
+                          <SelectContent className="bg-white border-slate-200 text-slate-850">
                             <SelectItem value="staff">Staff Member</SelectItem>
                             <SelectItem value="store_manager">Store Manager</SelectItem>
                           </SelectContent>
@@ -2379,59 +2566,59 @@ const AdminDashboardPage: React.FC = () => {
                     </div>
 
                     {/* Aadhaar Details (MANDATORY FOR STAFF) */}
-                    <div className="space-y-3 border-t border-slate-800 pt-3">
-                      <Label className="text-slate-300 font-bold text-xs uppercase tracking-wider flex items-center gap-1">
-                        <UserCheck className="w-3.5 h-3.5 text-violet-400" />
+                    <div className="space-y-3 border-t border-slate-100 pt-3">
+                      <Label className="text-slate-650 font-bold text-xs uppercase tracking-wider flex items-center gap-1">
+                        <UserCheck className="w-3.5 h-3.5 text-violet-600" />
                         Staff Aadhaar Document Gate
                       </Label>
                       <div className="grid grid-cols-2 gap-2">
                         <div className="space-y-1">
-                          <Label className="text-[11px] text-slate-400">Aadhaar 12-Digit Number *</Label>
+                          <Label className="text-[11px] text-slate-500 font-semibold">Aadhaar 12-Digit Number *</Label>
                           <Input
                             maxLength={12}
                             value={newStaff.aadhaarNumber}
                             onChange={(e) => setNewStaff({...newStaff, aadhaarNumber: e.target.value.replace(/\D/g, '')})}
                             placeholder="123456789012"
-                            className="bg-slate-950 border-slate-800 rounded-xl font-mono"
+                            className="bg-slate-55 border-slate-200 rounded-xl font-mono placeholder-slate-400"
                           />
                         </div>
                         <div className="space-y-1">
-                          <Label className="text-[11px] text-slate-400">Aadhaar Name *</Label>
+                          <Label className="text-[11px] text-slate-500 font-semibold">Aadhaar Name *</Label>
                           <Input
                             value={newStaff.aadhaarName}
                             onChange={(e) => setNewStaff({...newStaff, aadhaarName: e.target.value})}
                             placeholder="Name exactly as on card"
-                            className="bg-slate-950 border-slate-800 rounded-xl"
+                            className="bg-slate-55 border-slate-200 rounded-xl placeholder-slate-400"
                           />
                         </div>
                       </div>
 
                       <div className="grid grid-cols-2 gap-3 mt-2">
                         <div className="space-y-1">
-                          <Label className="text-[11px] text-slate-400">Aadhaar Front Scan *</Label>
+                          <Label className="text-[11px] text-slate-500 font-semibold">Aadhaar Front Scan *</Label>
                           <div className="flex flex-col gap-2">
                             <Input
                               type="file"
                               accept="image/*"
                               onChange={(e) => handleAadhaarUpload(e, 'front')}
-                              className="bg-slate-950 border-slate-800 rounded-xl text-xs"
+                              className="bg-slate-55 border-slate-200 rounded-xl text-xs"
                             />
                             {aadhaarFrontPreview && (
-                              <img src={aadhaarFrontPreview} alt="Front Preview" className="h-16 w-full object-cover rounded-xl border border-slate-800" />
+                              <img src={aadhaarFrontPreview} alt="Front Preview" className="h-16 w-full object-cover rounded-xl border border-slate-200" />
                             )}
                           </div>
                         </div>
                         <div className="space-y-1">
-                          <Label className="text-[11px] text-slate-400">Aadhaar Back Scan *</Label>
+                          <Label className="text-[11px] text-slate-500 font-semibold">Aadhaar Back Scan *</Label>
                           <div className="flex flex-col gap-2">
                             <Input
                               type="file"
                               accept="image/*"
                               onChange={(e) => handleAadhaarUpload(e, 'back')}
-                              className="bg-slate-950 border-slate-800 rounded-xl text-xs"
+                              className="bg-slate-55 border-slate-200 rounded-xl text-xs"
                             />
                             {aadhaarBackPreview && (
-                              <img src={aadhaarBackPreview} alt="Back Preview" className="h-16 w-full object-cover rounded-xl border border-slate-800" />
+                              <img src={aadhaarBackPreview} alt="Back Preview" className="h-16 w-full object-cover rounded-xl border border-slate-200" />
                             )}
                           </div>
                         </div>
@@ -2439,9 +2626,9 @@ const AdminDashboardPage: React.FC = () => {
                     </div>
 
                     {/* Compulsory Address Components */}
-                    <div className="space-y-2 border-t border-slate-800 pt-3">
-                      <Label className="text-slate-300 font-bold text-xs uppercase tracking-wider flex items-center gap-1">
-                        <MapPin className="w-3.5 h-3.5 text-violet-400" />
+                    <div className="space-y-2 border-t border-slate-100 pt-3">
+                      <Label className="text-slate-650 font-bold text-xs uppercase tracking-wider flex items-center gap-1">
+                        <MapPin className="w-3.5 h-3.5 text-violet-600" />
                         Compulsory Staff Address
                       </Label>
                       <div className="space-y-2">
@@ -2449,20 +2636,20 @@ const AdminDashboardPage: React.FC = () => {
                           placeholder="Address Line 1 *"
                           value={newStaff.addressLine1}
                           onChange={(e) => setNewStaff({...newStaff, addressLine1: e.target.value})}
-                          className="bg-slate-950 border-slate-800 rounded-xl"
+                          className="bg-slate-55 border-slate-200 rounded-xl placeholder-slate-400"
                         />
                         <div className="grid grid-cols-2 gap-2">
                           <Input
                             placeholder="Locality *"
                             value={newStaff.locality}
                             onChange={(e) => setNewStaff({...newStaff, locality: e.target.value})}
-                            className="bg-slate-950 border-slate-800 rounded-xl"
+                            className="bg-slate-55 border-slate-200 rounded-xl placeholder-slate-400"
                           />
                           <Input
                             placeholder="City *"
                             value={newStaff.city}
                             onChange={(e) => setNewStaff({...newStaff, city: e.target.value})}
-                            className="bg-slate-950 border-slate-800 rounded-xl"
+                            className="bg-slate-55 border-slate-200 rounded-xl placeholder-slate-400"
                           />
                         </div>
                         <div className="grid grid-cols-2 gap-2">
@@ -2470,22 +2657,22 @@ const AdminDashboardPage: React.FC = () => {
                             placeholder="State *"
                             value={newStaff.state}
                             onChange={(e) => setNewStaff({...newStaff, state: e.target.value})}
-                            className="bg-slate-950 border-slate-800 rounded-xl"
+                            className="bg-slate-55 border-slate-200 rounded-xl placeholder-slate-400"
                           />
                           <Input
                             placeholder="Pincode *"
                             value={newStaff.pincode}
                             onChange={(e) => setNewStaff({...newStaff, pincode: e.target.value})}
-                            className="bg-slate-950 border-slate-800 rounded-xl"
+                            className="bg-slate-55 border-slate-200 rounded-xl placeholder-slate-400"
                           />
                         </div>
                       </div>
                     </div>
 
                     {/* Staff Mobile OTP Sim */}
-                    <div className="space-y-2 border-t border-slate-800 pt-3">
-                      <Label className="text-slate-300 font-bold text-xs uppercase tracking-wider flex items-center gap-1">
-                        <Phone className="w-3.5 h-3.5 text-violet-400" />
+                    <div className="space-y-2 border-t border-slate-100 pt-3">
+                      <Label className="text-slate-650 font-bold text-xs uppercase tracking-wider flex items-center gap-1">
+                        <Phone className="w-3.5 h-3.5 text-violet-600" />
                         Mobile OTP Verification *
                       </Label>
                       <div className="flex gap-2">
@@ -2494,31 +2681,31 @@ const AdminDashboardPage: React.FC = () => {
                           value={newStaff.phone}
                           onChange={(e) => setNewStaff({...newStaff, phone: e.target.value})}
                           disabled={staffOtpVerified}
-                          className="bg-slate-950 border-slate-800 rounded-xl flex-1"
+                          className="bg-slate-55 border-slate-200 rounded-xl flex-1 placeholder-slate-400"
                         />
                         <Button
                           type="button"
                           onClick={handleSendStaffOtp}
                           disabled={staffOtpVerified || isSendingStaffOtp}
                           variant="secondary"
-                          className="rounded-xl bg-slate-800 text-slate-200"
+                          className="rounded-xl font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200"
                         >
                           {isSendingStaffOtp ? 'Sending...' : staffOtpSent ? 'Resend' : 'Send OTP'}
                         </Button>
                       </div>
 
                       {staffOtpSent && !staffOtpVerified && (
-                        <div className="flex gap-2 mt-2 p-3 bg-slate-950 border border-slate-850 rounded-xl">
+                        <div className="flex gap-2 mt-2 p-3 bg-slate-50 border border-slate-200 rounded-xl">
                           <Input
                             placeholder="Enter 6-digit Code *"
                             value={staffEnteredOtp}
                             onChange={(e) => setStaffEnteredOtp(e.target.value)}
-                            className="bg-slate-900 border-slate-800 rounded-xl flex-1 text-center font-mono tracking-widest text-lg"
+                            className="bg-white border-slate-200 rounded-xl flex-1 text-center font-mono tracking-widest text-lg text-slate-800"
                           />
                           <Button
                             type="button"
                             onClick={handleVerifyStaffOtp}
-                            className="bg-violet-600 hover:bg-violet-700 text-white rounded-xl"
+                            className="bg-violet-600 hover:bg-violet-700 text-white rounded-xl shadow-sm"
                           >
                             Verify
                           </Button>
@@ -2526,8 +2713,8 @@ const AdminDashboardPage: React.FC = () => {
                       )}
 
                       {staffOtpVerified && (
-                        <div className="flex items-center gap-2 text-emerald-400 bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/20 text-xs font-semibold">
-                          <CheckCircle className="w-4 h-4" />
+                        <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 p-2.5 rounded-xl border border-emerald-250 text-xs font-semibold">
+                          <CheckCircle className="w-4 h-4 text-emerald-500" />
                           Mobile OTP verified! Ready to save.
                         </div>
                       )}
@@ -2535,7 +2722,7 @@ const AdminDashboardPage: React.FC = () => {
 
                     <Button 
                       onClick={handleAddStaff} 
-                      className="w-full mt-4 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl h-11" 
+                      className="w-full mt-4 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl h-11 shadow-md" 
                       disabled={isCreatingStaff || !staffOtpVerified}
                     >
                       {isCreatingStaff ? 'Creating Staff...' : 'Create Staff (Sets as Inactive)'}
@@ -2546,21 +2733,21 @@ const AdminDashboardPage: React.FC = () => {
             </div>
 
             {/* Staff Table */}
-            <Card className="bg-slate-900 border-slate-800 shadow-xl overflow-hidden rounded-2xl">
-              <CardHeader>
-                <CardTitle className="text-xl font-bold flex items-center gap-2">
-                  <UserCheck className="w-5 h-5 text-violet-400" />
+            <Card className="bg-white border border-slate-200 shadow-sm overflow-hidden rounded-2xl">
+              <CardHeader className="border-b border-slate-100 bg-slate-50/50 pb-4">
+                <CardTitle className="text-xl font-bold flex items-center gap-2 text-slate-800">
+                  <UserCheck className="w-5 h-5 text-violet-600" />
                   Staff Members System-wide
                 </CardTitle>
-                <CardDescription className="text-slate-400">
+                <CardDescription className="text-slate-500">
                   Global staff directory across all customers and stores
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-0">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
+                  <table className="w-full min-w-[1100px] text-left border-collapse">
                     <thead>
-                      <tr className="border-b border-slate-800 bg-slate-950 text-slate-400 text-xs font-bold uppercase tracking-wider">
+                      <tr className="border-b border-slate-200 bg-slate-50 text-slate-650 text-xs font-bold uppercase tracking-wider">
                         <th className="p-4">Staff ID</th>
                         <th className="p-4">Name & Email</th>
                         <th className="p-4">Contact & Address</th>
@@ -2573,16 +2760,16 @@ const AdminDashboardPage: React.FC = () => {
                     </thead>
                     <tbody>
                       {filteredStaffList.map((staffMember) => (
-                        <tr key={staffMember.id} className="border-b border-slate-850 hover:bg-slate-900/50 transition-colors text-sm">
+                        <tr key={staffMember.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors text-sm">
                           {/* STAFF ID */}
-                          <td className="p-4 font-mono text-xs text-slate-400">
-                            <div className="flex items-center gap-1.5 bg-slate-950/80 p-1.5 rounded-lg border border-slate-850 max-w-[140px] justify-between">
-                              <span className="truncate">{staffMember.id}</span>
+                          <td className="p-4 font-mono text-sm font-semibold">
+                            <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-lg border border-slate-200 max-w-[120px] justify-between text-slate-700">
+                              <span>{getPersonalId(staffMember.user_id || staffMember.id)}</span>
                               <Button 
                                 size="icon" 
                                 variant="ghost" 
-                                className="w-5 h-5 text-slate-500 hover:text-slate-300"
-                                onClick={() => copyToClipboard(staffMember.id, 'Staff ID')}
+                                className="w-5 h-5 text-slate-400 hover:text-slate-600 hover:bg-slate-200/50"
+                                onClick={() => copyToClipboard(getPersonalId(staffMember.user_id || staffMember.id), 'Personal Staff ID')}
                               >
                                 <Copy className="w-3 h-3" />
                               </Button>
@@ -2590,47 +2777,47 @@ const AdminDashboardPage: React.FC = () => {
                           </td>
                           <td className="p-4 font-bold">
                             <div>
-                              <p className="text-slate-200">{staffMember.full_name}</p>
-                              <p className="text-xs text-slate-400 font-medium">{staffMember.email}</p>
+                              <p className="text-slate-900 text-base">{staffMember.full_name}</p>
+                              <p className="text-xs text-slate-500 font-semibold mt-0.5">{staffMember.email}</p>
                             </div>
                           </td>
                           <td className="p-4">
-                            <div className="space-y-0.5">
-                              {staffMember.phone && <p className="text-xs text-slate-300 font-bold">📞 {staffMember.phone}</p>}
+                            <div className="space-y-0.5 font-medium">
+                              {staffMember.phone && <p className="text-xs text-slate-800 font-bold">📞 {staffMember.phone}</p>}
                               {staffMember.address_line1 && (
-                                <p className="text-[11px] text-slate-400 truncate max-w-[180px]" title={`${staffMember.address_line1}, ${staffMember.locality}, ${staffMember.city}`}>
+                                <p className="text-[11px] text-slate-500 truncate max-w-[180px]" title={`${staffMember.address_line1}, ${staffMember.locality}, ${staffMember.city}`}>
                                   📍 {staffMember.address_line1}, {staffMember.locality}
                                 </p>
                               )}
                             </div>
                           </td>
                           <td className="p-4 text-center">
-                            <Badge className="capitalize bg-indigo-950 text-indigo-300 border border-indigo-500/20">
+                            <Badge className="capitalize bg-indigo-50 text-indigo-750 border border-indigo-200 font-bold shadow-sm">
                               {staffMember.role?.replace('_', ' ')}
                             </Badge>
                           </td>
                           <td className="p-4">
                             <div className="space-y-1">
                               <Badge 
-                                className={`capitalize text-[10px] ${
+                                className={`capitalize text-[10px] py-0 font-bold ${
                                   staffMember.aadhaar_verification_status === 'verified' 
-                                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                                    ? 'bg-emerald-50 text-emerald-600 border border-emerald-250' 
                                     : staffMember.aadhaar_verification_status === 'rejected'
-                                    ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                                    : 'bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse'
+                                    ? 'bg-rose-50 text-rose-600 border border-rose-250'
+                                    : 'bg-amber-50 text-amber-600 border border-amber-250 animate-pulse'
                                 }`}
                               >
                                 {staffMember.aadhaar_verification_status || 'Pending'}
                               </Badge>
                               {staffMember.aadhaar_number && (
-                                <p className="text-[10px] font-mono text-slate-400">No: {staffMember.aadhaar_number}</p>
+                                <p className="text-[10px] font-mono font-semibold text-slate-500">No: {staffMember.aadhaar_number}</p>
                               )}
                             </div>
                           </td>
-                          <td className="p-4 text-slate-300 font-semibold">{staffMember.store_name}</td>
-                          <td className="p-4 text-slate-400">{staffMember.owner_name}</td>
+                          <td className="p-4 text-slate-700 font-semibold">{staffMember.store_name}</td>
+                          <td className="p-4 text-slate-600 font-medium">{staffMember.owner_name}</td>
                           <td className="p-4 text-center">
-                            <Badge variant={staffMember.is_active ? 'default' : 'secondary'} className={staffMember.is_active ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-850 text-slate-500'}>
+                            <Badge variant={staffMember.is_active ? 'default' : 'secondary'} className={staffMember.is_active ? 'bg-emerald-50 text-emerald-600 border border-emerald-250' : 'bg-slate-100 text-slate-500 border border-slate-200 shadow-none'}>
                               {staffMember.is_active ? 'Active' : 'Inactive'}
                             </Badge>
                           </td>
@@ -2640,7 +2827,7 @@ const AdminDashboardPage: React.FC = () => {
                   </table>
 
                   {filteredStaffList.length === 0 && (
-                    <div className="text-center py-12 text-slate-500">
+                    <div className="text-center py-12 text-slate-500 bg-slate-50/50">
                       No staff members found matching search queries
                     </div>
                   )}
@@ -2654,30 +2841,30 @@ const AdminDashboardPage: React.FC = () => {
             <div className="grid grid-cols-1 gap-6">
               
               {/* PENDING OWNER SIGNUPS */}
-              <Card className="bg-slate-900 border-slate-800 shadow-xl overflow-hidden rounded-2xl">
-                <CardHeader className="bg-slate-950/40 border-b border-slate-850">
-                  <CardTitle className="text-lg font-bold text-amber-400 flex items-center gap-2">
-                    <AlertCircle className="w-5 h-5 text-amber-400" />
+              <Card className="bg-white border border-slate-200 shadow-sm overflow-hidden rounded-2xl">
+                <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
+                  <CardTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <AlertCircle className="w-5 h-5 text-amber-500" />
                     New Owner Signups Approvals Queue ({pendingOwners.length})
                   </CardTitle>
-                  <CardDescription className="text-slate-400">
+                  <CardDescription className="text-slate-500">
                     Review and approve/reject new owner subscription registration accounts
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="p-4">
                   <div className="space-y-3">
                     {pendingOwners.map((cust) => (
-                      <div key={cust.id} className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-slate-950 rounded-xl border border-slate-850 gap-4">
+                      <div key={cust.id} className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-slate-50/50 rounded-xl border border-slate-200 gap-4">
                         <div className="space-y-1 flex-1">
-                          <p className="font-extrabold text-white text-lg">{cust.business_name}</p>
-                          <p className="text-sm text-slate-400">{cust.owner_name} • {cust.owner_email}</p>
-                          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400 mt-2 font-medium">
-                            <Badge variant="outline" className="capitalize border-slate-700 bg-slate-900">{cust.subscription_tier} ({cust.subscription_plan})</Badge>
-                            {cust.phone && <span className="bg-slate-900/60 px-2 py-0.5 rounded border border-slate-800">📞 {cust.phone}</span>}
+                          <p className="font-extrabold text-slate-900 text-lg">{cust.business_name}</p>
+                          <p className="text-sm text-slate-600 font-medium">{cust.owner_name} • {cust.owner_email}</p>
+                          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 mt-2 font-bold">
+                            <Badge variant="outline" className="capitalize border-slate-250 bg-slate-100 text-slate-700">{cust.subscription_tier} ({cust.subscription_plan})</Badge>
+                            {cust.phone && <span className="bg-slate-100 px-2 py-0.5 rounded border border-slate-200">📞 {cust.phone}</span>}
                             <span>Requested: {format(new Date(cust.created_at), 'dd MMM yyyy')}</span>
                           </div>
                           {cust.address_line1 && (
-                            <p className="text-xs text-slate-400 mt-2 bg-slate-900 p-2 rounded-lg border border-slate-850">
+                            <p className="text-xs text-slate-600 mt-2 bg-slate-100 p-2 rounded-lg border border-slate-200">
                               📍 Address: {cust.address_line1}, {cust.locality}, {cust.city}, {cust.state} - {cust.pincode}
                             </p>
                           )}
@@ -2686,7 +2873,7 @@ const AdminDashboardPage: React.FC = () => {
                           <Button 
                             size="sm" 
                             variant="outline"
-                            className="border-rose-600/30 text-rose-500 hover:bg-rose-600/10 rounded-xl px-4"
+                            className="border-rose-300 text-rose-500 hover:bg-rose-50 rounded-xl px-4"
                             onClick={() => rejectCustomer(cust.id)}
                           >
                             <XCircle className="w-4 h-4 mr-1.5" />
@@ -2694,7 +2881,7 @@ const AdminDashboardPage: React.FC = () => {
                           </Button>
                           <Button 
                             size="sm"
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl px-4 shadow-lg hover:shadow-emerald-600/20"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl px-4 shadow-md hover:shadow-emerald-600/10"
                             onClick={() => approveCustomer(cust.id)}
                           >
                             <CheckCircle className="w-4 h-4 mr-1.5" />
@@ -2714,40 +2901,40 @@ const AdminDashboardPage: React.FC = () => {
               </Card>
 
               {/* PENDING STAFF AADHAAR DOCUMENTS */}
-              <Card className="bg-slate-900 border-slate-800 shadow-xl overflow-hidden rounded-2xl">
-                <CardHeader className="bg-slate-950/40 border-b border-slate-850">
-                  <CardTitle className="text-lg font-bold text-amber-400 flex items-center gap-2">
-                    <UserCheck className="w-5 h-5 text-amber-400" />
+              <Card className="bg-white border border-slate-200 shadow-sm overflow-hidden rounded-2xl">
+                <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
+                  <CardTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <UserCheck className="w-5 h-5 text-violet-650" />
                     Staff Aadhaar Document Verification Queue ({pendingStaff.length})
                   </CardTitle>
-                  <CardDescription className="text-slate-400">
+                  <CardDescription className="text-slate-500">
                     Review and verify staff Aadhaar number, name and documents to activate accounts
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="p-4">
                   <div className="space-y-4">
                     {pendingStaff.map((staffMember) => (
-                      <div key={staffMember.id} className="p-4 bg-slate-950 rounded-xl border border-slate-850 space-y-4">
+                      <div key={staffMember.id} className="p-4 bg-slate-50/50 rounded-xl border border-slate-200 space-y-4">
                         <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
                           <div className="space-y-1">
-                            <p className="font-extrabold text-white text-lg">{staffMember.full_name}</p>
-                            <p className="text-sm text-slate-400">{staffMember.email} • {staffMember.phone}</p>
+                            <p className="font-extrabold text-slate-900 text-lg">{staffMember.full_name}</p>
+                            <p className="text-sm text-slate-600 font-medium">{staffMember.email} • {staffMember.phone}</p>
                             <div className="flex flex-wrap items-center gap-2 text-xs mt-1">
-                              <Badge className="bg-indigo-950 text-indigo-300 border border-indigo-500/20 capitalize">{staffMember.role?.replace('_', ' ')}</Badge>
-                              <span className="text-slate-500">Store: {staffMember.store_name} • Owner: {staffMember.owner_name}</span>
+                              <Badge className="bg-indigo-50 text-indigo-750 border border-indigo-200 font-bold capitalize">{staffMember.role?.replace('_', ' ')}</Badge>
+                              <span className="text-slate-500 font-semibold">Store: {staffMember.store_name} • Owner: {staffMember.owner_name}</span>
                             </div>
-                            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 p-3 bg-slate-900/40 rounded-lg border border-slate-850 text-xs">
+                            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 p-3 bg-slate-100 rounded-lg border border-slate-200 text-xs">
                               <div>
-                                <span className="text-slate-400">Aadhaar Number:</span>{' '}
-                                <strong className="text-white font-mono tracking-wider">{staffMember.aadhaar_number}</strong>
+                                <span className="text-slate-500 font-medium">Aadhaar Number:</span>{' '}
+                                <strong className="text-slate-800 font-mono tracking-wider">{staffMember.aadhaar_number}</strong>
                               </div>
                               <div>
-                                <span className="text-slate-400">Aadhaar Name:</span>{' '}
-                                <strong className="text-white">{staffMember.aadhaar_name}</strong>
+                                <span className="text-slate-500 font-medium">Aadhaar Name:</span>{' '}
+                                <strong className="text-slate-800">{staffMember.aadhaar_name}</strong>
                               </div>
                               <div className="sm:col-span-2">
-                                <span className="text-slate-400">Address:</span>{' '}
-                                <span className="text-slate-300">{staffMember.address_line1}, {staffMember.locality}, {staffMember.city}, {staffMember.state} - {staffMember.pincode}</span>
+                                <span className="text-slate-500 font-medium">Address:</span>{' '}
+                                <span className="text-slate-700 font-medium">{staffMember.address_line1}, {staffMember.locality}, {staffMember.city}, {staffMember.state} - {staffMember.pincode}</span>
                               </div>
                             </div>
                           </div>
@@ -2756,7 +2943,7 @@ const AdminDashboardPage: React.FC = () => {
                             <Button 
                               size="sm" 
                               variant="outline"
-                              className="border-rose-600/30 text-rose-500 hover:bg-rose-600/10 rounded-xl px-4"
+                              className="border-rose-300 text-rose-500 hover:bg-rose-50 rounded-xl px-4"
                               onClick={() => rejectStaffAadhaar(staffMember.id)}
                             >
                               <XCircle className="w-4 h-4 mr-1.5" />
@@ -2764,7 +2951,7 @@ const AdminDashboardPage: React.FC = () => {
                             </Button>
                             <Button 
                               size="sm"
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl px-4 shadow-lg hover:shadow-emerald-600/20"
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl px-4 shadow-md hover:shadow-emerald-600/10"
                               onClick={() => approveStaffAadhaar(staffMember.id)}
                             >
                               <CheckCircle className="w-4 h-4 mr-1.5" />
@@ -2774,40 +2961,40 @@ const AdminDashboardPage: React.FC = () => {
                         </div>
 
                         {/* Aadhaar Image Previews */}
-                        <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-850">
+                        <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-200">
                           <div>
-                            <p className="text-xs text-slate-400 font-bold mb-2">Aadhaar Card Front Scan:</p>
+                            <p className="text-xs text-slate-650 font-bold mb-2">Aadhaar Card Front Scan:</p>
                             {staffMember.aadhaar_front_url ? (
                               <div 
-                                className="relative group cursor-zoom-in border border-slate-800 rounded-xl overflow-hidden bg-slate-900 aspect-video flex items-center justify-center"
+                                className="relative group cursor-zoom-in border border-slate-200 rounded-xl overflow-hidden bg-slate-50 aspect-video flex items-center justify-center shadow-sm"
                                 onClick={() => setPreviewImage(staffMember.aadhaar_front_url)}
                               >
                                 <img src={staffMember.aadhaar_front_url} alt="Aadhaar Front" className="max-h-36 object-contain w-full transition-transform group-hover:scale-105" />
-                                <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                  <EyeIcon className="w-6 h-6 text-white" />
+                                <div className="absolute inset-0 bg-slate-900/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                  <EyeIcon className="w-6 h-6 text-slate-800" />
                                 </div>
                               </div>
                             ) : (
-                              <div className="p-4 bg-slate-900 border border-dashed border-slate-800 text-xs text-slate-500 rounded-xl text-center">
+                              <div className="p-4 bg-slate-50 border border-dashed border-slate-200 text-xs text-slate-400 rounded-xl text-center font-medium">
                                 Front image scan not uploaded
                               </div>
                             )}
                           </div>
 
                           <div>
-                            <p className="text-xs text-slate-400 font-bold mb-2">Aadhaar Card Back Scan:</p>
+                            <p className="text-xs text-slate-650 font-bold mb-2">Aadhaar Card Back Scan:</p>
                             {staffMember.aadhaar_back_url ? (
                               <div 
-                                className="relative group cursor-zoom-in border border-slate-800 rounded-xl overflow-hidden bg-slate-900 aspect-video flex items-center justify-center"
+                                className="relative group cursor-zoom-in border border-slate-200 rounded-xl overflow-hidden bg-slate-50 aspect-video flex items-center justify-center shadow-sm"
                                 onClick={() => setPreviewImage(staffMember.aadhaar_back_url)}
                               >
                                 <img src={staffMember.aadhaar_back_url} alt="Aadhaar Back" className="max-h-36 object-contain w-full transition-transform group-hover:scale-105" />
-                                <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                  <EyeIcon className="w-6 h-6 text-white" />
+                                <div className="absolute inset-0 bg-slate-900/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                  <EyeIcon className="w-6 h-6 text-slate-800" />
                                 </div>
                               </div>
                             ) : (
-                              <div className="p-4 bg-slate-900 border border-dashed border-slate-800 text-xs text-slate-500 rounded-xl text-center">
+                              <div className="p-4 bg-slate-50 border border-dashed border-slate-200 text-xs text-slate-400 rounded-xl text-center font-medium">
                                 Back image scan not uploaded
                               </div>
                             )}
@@ -2829,13 +3016,13 @@ const AdminDashboardPage: React.FC = () => {
 
           {/* TAB 5: SYSTEM EXPLORER */}
           <TabsContent value="explorer" className="mt-6 space-y-6">
-            <Card className="bg-slate-900 border-slate-800 shadow-xl overflow-hidden rounded-2xl">
-              <CardHeader className="border-b border-slate-850">
-                <CardTitle className="text-xl font-bold flex items-center gap-2 text-violet-400">
-                  <Building className="w-5 h-5 text-violet-400" />
+            <Card className="bg-white border border-slate-200 shadow-sm overflow-hidden rounded-2xl">
+              <CardHeader className="border-b border-slate-100 bg-slate-50/50 pb-4">
+                <CardTitle className="text-xl font-bold flex items-center gap-2 text-slate-800">
+                  <Building className="w-5 h-5 text-violet-600" />
                   System-Wide Account & Store Explorer
                 </CardTitle>
-                <CardDescription className="text-slate-400">
+                <CardDescription className="text-slate-500">
                   Query and examine active orders, products, inventory, expenses, and configurations directly for any store outlet in the system
                 </CardDescription>
               </CardHeader>
@@ -2844,7 +3031,7 @@ const AdminDashboardPage: React.FC = () => {
                 {/* Store Selectors */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-slate-300">1. Select Owner Business *</Label>
+                    <Label className="text-xs text-slate-600 font-bold">1. Select Owner Business *</Label>
                     <Select
                       value={explorerOwnerId}
                       onValueChange={(v) => {
@@ -2852,13 +3039,13 @@ const AdminDashboardPage: React.FC = () => {
                         setExplorerStoreId('');
                       }}
                     >
-                      <SelectTrigger className="bg-slate-950 border-slate-800 rounded-xl text-slate-100">
+                      <SelectTrigger className="bg-slate-50 border-slate-200 rounded-xl text-slate-800">
                         <SelectValue placeholder="Choose Owner Account" />
                       </SelectTrigger>
-                      <SelectContent className="bg-slate-950 border-slate-800 text-slate-100">
+                      <SelectContent className="bg-white border-slate-200 text-slate-850">
                         {customers.filter(c => c.approval_status === 'approved').map(customer => (
                           <SelectItem key={customer.id} value={customer.id}>
-                            {customer.business_name} ({customer.owner_name})
+                            {customer.business_name} ({customer.owner_name}) - ID: {getPersonalId(customer.id)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -2866,19 +3053,19 @@ const AdminDashboardPage: React.FC = () => {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-slate-300">2. Select Outlet Store *</Label>
+                    <Label className="text-xs text-slate-600 font-bold">2. Select Outlet Store *</Label>
                     <Select
                       value={explorerStoreId}
                       onValueChange={(v) => setExplorerStoreId(v)}
                       disabled={!explorerOwnerId}
                     >
-                      <SelectTrigger className="bg-slate-950 border-slate-800 rounded-xl text-slate-100">
+                      <SelectTrigger className="bg-slate-50 border-slate-200 rounded-xl text-slate-800">
                         <SelectValue placeholder={explorerOwnerId ? "Choose Store Outlet" : "Select Owner First"} />
                       </SelectTrigger>
-                      <SelectContent className="bg-slate-950 border-slate-800 text-slate-100">
+                      <SelectContent className="bg-white border-slate-200 text-slate-850">
                         {stores.filter(s => s.customer_id === explorerOwnerId).map(store => (
                           <SelectItem key={store.id} value={store.id}>
-                            {store.store_name} ({store.store_code || 'No Code'})
+                            {store.store_name} ({store.store_code || 'No Code'}) - ID: {getPersonalId(store.id)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -2888,36 +3075,51 @@ const AdminDashboardPage: React.FC = () => {
 
                 {/* Explorer Viewer Area */}
                 {!explorerStoreId ? (
-                  <div className="flex flex-col items-center justify-center py-20 text-slate-500 border border-dashed border-slate-800 rounded-2xl bg-slate-950/20">
-                    <Store className="w-16 h-16 mb-4 opacity-20 text-violet-400" />
+                  <div className="flex flex-col items-center justify-center py-20 text-slate-500 border border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
+                    <Store className="w-16 h-16 mb-4 opacity-30 text-violet-600" />
                     <p className="text-sm font-semibold">Select an Owner and a Store Outlet to begin exploring database records</p>
                   </div>
                 ) : isFetchingExplorer ? (
                   <div className="flex flex-col items-center justify-center py-20">
                     <div className="animate-spin w-10 h-10 border-4 border-violet-500 border-t-transparent rounded-full" />
-                    <p className="text-sm text-slate-400 mt-4">Connecting to store tables...</p>
+                    <p className="text-sm text-slate-600 font-semibold mt-4">Connecting to store tables...</p>
                   </div>
                 ) : (
                   <div className="space-y-6">
+                    <div className="flex flex-col sm:flex-row items-center justify-between p-4 bg-violet-50 border border-violet-200 rounded-2xl gap-3">
+                      <div>
+                        <h4 className="text-sm font-bold text-violet-900">Manage Explorer Store Data</h4>
+                        <p className="text-xs text-violet-700 mt-0.5">Need sample data? Click populate to instantly fill all sections with rich dummy data.</p>
+                      </div>
+                      <Button 
+                        size="sm"
+                        onClick={() => handlePopulateStoreDummyData(explorerStoreId)}
+                        disabled={populatingStoreId === explorerStoreId}
+                        className="bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl shrink-0"
+                      >
+                        {populatingStoreId === explorerStoreId ? 'Populating...' : 'Populate Store Dummy Data'}
+                      </Button>
+                    </div>
+
                     {/* Explorer Tabs */}
                     <Tabs value={explorerTab} onValueChange={setExplorerTab} className="w-full">
-                      <TabsList className="bg-slate-950 border border-slate-850 p-1 rounded-xl w-full flex flex-wrap h-auto gap-1">
-                        <TabsTrigger value="orders" className="flex-1 rounded-lg py-2 text-xs font-semibold data-[state=active]:bg-violet-600">
+                      <TabsList className="bg-slate-100 border border-slate-200 p-1 rounded-2xl w-full flex flex-wrap h-auto gap-1">
+                        <TabsTrigger value="orders" className="flex-1 rounded-xl py-2 text-xs font-bold text-slate-650 data-[state=active]:bg-gradient-to-r data-[state=active]:from-violet-600 data-[state=active]:to-indigo-650 data-[state=active]:text-white shadow-sm">
                           Sales & Orders ({explorerData.orders.length})
                         </TabsTrigger>
-                        <TabsTrigger value="products" className="flex-1 rounded-lg py-2 text-xs font-semibold data-[state=active]:bg-violet-600">
+                        <TabsTrigger value="products" className="flex-1 rounded-xl py-2 text-xs font-bold text-slate-650 data-[state=active]:bg-gradient-to-r data-[state=active]:from-violet-600 data-[state=active]:to-indigo-650 data-[state=active]:text-white shadow-sm">
                           Menu Items ({explorerData.menuItems.length})
                         </TabsTrigger>
-                        <TabsTrigger value="inventory" className="flex-1 rounded-lg py-2 text-xs font-semibold data-[state=active]:bg-violet-600">
+                        <TabsTrigger value="inventory" className="flex-1 rounded-xl py-2 text-xs font-bold text-slate-650 data-[state=active]:bg-gradient-to-r data-[state=active]:from-violet-600 data-[state=active]:to-indigo-650 data-[state=active]:text-white shadow-sm">
                           Raw Inventory ({explorerData.inventory.length})
                         </TabsTrigger>
-                        <TabsTrigger value="credits" className="flex-1 rounded-lg py-2 text-xs font-semibold data-[state=active]:bg-violet-600">
+                        <TabsTrigger value="credits" className="flex-1 rounded-xl py-2 text-xs font-bold text-slate-650 data-[state=active]:bg-gradient-to-r data-[state=active]:from-violet-600 data-[state=active]:to-indigo-650 data-[state=active]:text-white shadow-sm">
                           Credit Ledger ({explorerData.credits.length})
                         </TabsTrigger>
-                        <TabsTrigger value="expenses" className="flex-1 rounded-lg py-2 text-xs font-semibold data-[state=active]:bg-violet-600">
+                        <TabsTrigger value="expenses" className="flex-1 rounded-xl py-2 text-xs font-bold text-slate-650 data-[state=active]:bg-gradient-to-r data-[state=active]:from-violet-600 data-[state=active]:to-indigo-650 data-[state=active]:text-white shadow-sm">
                           Expenses ({explorerData.expenses.length})
                         </TabsTrigger>
-                        <TabsTrigger value="whatsapp" className="flex-1 rounded-lg py-2 text-xs font-semibold data-[state=active]:bg-violet-600">
+                        <TabsTrigger value="whatsapp" className="flex-1 rounded-xl py-2 text-xs font-bold text-slate-650 data-[state=active]:bg-gradient-to-r data-[state=active]:from-violet-600 data-[state=active]:to-indigo-650 data-[state=active]:text-white shadow-sm">
                           WhatsApp Configuration
                         </TabsTrigger>
                       </TabsList>
@@ -2925,22 +3127,22 @@ const AdminDashboardPage: React.FC = () => {
                       {/* EXPLORER TAB: ORDERS */}
                       <TabsContent value="orders" className="mt-4 space-y-4">
                         <div className="grid grid-cols-2 gap-4">
-                          <Card className="bg-slate-950 border-slate-850 p-4">
-                            <p className="text-xs text-slate-400 font-bold uppercase">Total Store Sales</p>
-                            <p className="text-3xl font-black text-emerald-400 mt-1">
+                          <Card className="bg-slate-50 border border-slate-200 p-4 rounded-xl shadow-sm">
+                            <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Total Store Sales</p>
+                            <p className="text-3xl font-black text-emerald-600 mt-1">
                               ₹{explorerData.orders.reduce((sum, o) => sum + (o.total || 0), 0).toFixed(2)}
                             </p>
                           </Card>
-                          <Card className="bg-slate-950 border-slate-850 p-4">
-                            <p className="text-xs text-slate-400 font-bold uppercase">Total Store Bills</p>
-                            <p className="text-3xl font-black text-violet-400 mt-1">{explorerData.orders.length}</p>
+                          <Card className="bg-slate-50 border border-slate-200 p-4 rounded-xl shadow-sm">
+                            <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Total Store Bills</p>
+                            <p className="text-3xl font-black text-violet-650 mt-1">{explorerData.orders.length}</p>
                           </Card>
                         </div>
 
-                        <div className="overflow-x-auto border border-slate-850 rounded-xl bg-slate-950">
-                          <table className="w-full text-left border-collapse text-xs">
+                        <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-sm">
+                          <table className="w-full min-w-[950px] text-left border-collapse text-xs">
                             <thead>
-                              <tr className="border-b border-slate-800 bg-slate-900/50 text-slate-400 font-bold">
+                              <tr className="border-b border-slate-200 bg-slate-50 text-slate-650 font-bold">
                                 <th className="p-3">Bill Number</th>
                                 <th className="p-3">Customer</th>
                                 <th className="p-3">Order Type</th>
@@ -2954,27 +3156,27 @@ const AdminDashboardPage: React.FC = () => {
                             </thead>
                             <tbody>
                               {explorerData.orders.map((ord) => (
-                                <tr key={ord.id} className="border-b border-slate-850 hover:bg-slate-900/30">
-                                  <td className="p-3 font-mono font-bold text-violet-400">{ord.bill_number}</td>
+                                <tr key={ord.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+                                  <td className="p-3 font-mono font-bold text-violet-650">{ord.bill_number}</td>
                                   <td className="p-3">
-                                    <p className="font-semibold text-slate-200">{ord.customer_name || 'Walk-in'}</p>
+                                    <p className="font-semibold text-slate-800">{ord.customer_name || 'Walk-in'}</p>
                                     {ord.customer_phone && <p className="text-[10px] text-slate-500">{ord.customer_phone}</p>}
                                   </td>
-                                  <td className="p-3 capitalize">{ord.order_type}</td>
-                                  <td className="p-3 uppercase font-medium">{ord.payment_method}</td>
-                                  <td className="p-3 text-right">₹{ord.subtotal.toFixed(2)}</td>
-                                  <td className="p-3 text-right">₹{ord.tax.toFixed(2)}</td>
-                                  <td className="p-3 text-right font-black text-slate-100">₹{ord.total.toFixed(2)}</td>
-                                  <td className="p-3 text-slate-400">{format(new Date(ord.created_at), 'dd MMM yyyy HH:mm')}</td>
+                                  <td className="p-3 capitalize text-slate-700 font-medium">{ord.order_type}</td>
+                                  <td className="p-3 uppercase font-semibold text-slate-700">{ord.payment_method}</td>
+                                  <td className="p-3 text-right font-medium text-slate-700">₹{ord.subtotal.toFixed(2)}</td>
+                                  <td className="p-3 text-right font-medium text-slate-700">₹{ord.tax.toFixed(2)}</td>
+                                  <td className="p-3 text-right font-black text-slate-900">₹{ord.total.toFixed(2)}</td>
+                                  <td className="p-3 text-slate-500 font-medium">{format(new Date(ord.created_at), 'dd MMM yyyy HH:mm')}</td>
                                   <td className="p-3 text-center">
-                                    <Badge className="text-[10px] bg-slate-900 border border-slate-800 capitalize">{ord.status}</Badge>
+                                    <Badge className="text-[10px] bg-slate-100 text-slate-700 border border-slate-200 shadow-none capitalize">{ord.status}</Badge>
                                   </td>
                                 </tr>
                               ))}
 
                               {explorerData.orders.length === 0 && (
                                 <tr>
-                                  <td colSpan={9} className="text-center py-6 text-slate-500">No sales transactions found for this store</td>
+                                  <td colSpan={9} className="text-center py-6 text-slate-500 font-semibold bg-slate-50/50">No sales transactions found for this store</td>
                                 </tr>
                               )}
                             </tbody>
@@ -2984,10 +3186,10 @@ const AdminDashboardPage: React.FC = () => {
 
                       {/* EXPLORER TAB: PRODUCTS */}
                       <TabsContent value="products" className="mt-4">
-                        <div className="overflow-x-auto border border-slate-850 rounded-xl bg-slate-950">
-                          <table className="w-full text-left border-collapse text-xs">
+                        <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-sm">
+                          <table className="w-full min-w-[700px] text-left border-collapse text-xs">
                             <thead>
-                              <tr className="border-b border-slate-800 bg-slate-900/50 text-slate-400 font-bold">
+                              <tr className="border-b border-slate-200 bg-slate-50 text-slate-650 font-bold">
                                 <th className="p-3">Product ID</th>
                                 <th className="p-3">Name</th>
                                 <th className="p-3">Category</th>
@@ -2998,16 +3200,16 @@ const AdminDashboardPage: React.FC = () => {
                             </thead>
                             <tbody>
                               {explorerData.menuItems.map((item) => (
-                                <tr key={item.id} className="border-b border-slate-850 hover:bg-slate-900/30">
+                                <tr key={item.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
                                   <td className="p-3 font-mono text-[10px] text-slate-500">{item.id}</td>
-                                  <td className="p-3 font-bold text-slate-200">{item.name}</td>
+                                  <td className="p-3 font-bold text-slate-800">{item.name}</td>
                                   <td className="p-3">
-                                    <Badge variant="outline" className="border-slate-800 bg-slate-900 text-slate-300 capitalize">{item.category}</Badge>
+                                    <Badge variant="outline" className="border-slate-250 bg-slate-100 text-slate-700 capitalize font-semibold">{item.category}</Badge>
                                   </td>
-                                  <td className="p-3 text-right font-bold text-slate-200">₹{item.price.toFixed(2)}</td>
-                                  <td className="p-3 text-center text-slate-300 font-medium">{item.stock ?? 'N/A'}</td>
+                                  <td className="p-3 text-right font-bold text-slate-800">₹{item.price.toFixed(2)}</td>
+                                  <td className="p-3 text-center text-slate-700 font-semibold">{item.stock ?? 'N/A'}</td>
                                   <td className="p-3 text-center">
-                                    <Badge className={`text-[10px] ${item.is_available ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                                    <Badge className={`text-[10px] font-bold ${item.is_available ? 'bg-emerald-50 text-emerald-600 border border-emerald-250' : 'bg-rose-50 text-rose-600 border border-rose-250'}`}>
                                       {item.is_available ? 'Available' : 'Disabled'}
                                     </Badge>
                                   </td>
@@ -3016,7 +3218,7 @@ const AdminDashboardPage: React.FC = () => {
 
                               {explorerData.menuItems.length === 0 && (
                                 <tr>
-                                  <td colSpan={6} className="text-center py-6 text-slate-500">No products/menu items added yet</td>
+                                  <td colSpan={6} className="text-center py-6 text-slate-500 font-semibold bg-slate-50/50">No products/menu items added yet</td>
                                 </tr>
                               )}
                             </tbody>
@@ -3026,10 +3228,10 @@ const AdminDashboardPage: React.FC = () => {
 
                       {/* EXPLORER TAB: INVENTORY */}
                       <TabsContent value="inventory" className="mt-4">
-                        <div className="overflow-x-auto border border-slate-850 rounded-xl bg-slate-950">
-                          <table className="w-full text-left border-collapse text-xs">
+                        <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-sm">
+                          <table className="w-full min-w-[800px] text-left border-collapse text-xs">
                             <thead>
-                              <tr className="border-b border-slate-800 bg-slate-900/50 text-slate-400 font-bold">
+                              <tr className="border-b border-slate-200 bg-slate-50 text-slate-650 font-bold">
                                 <th className="p-3">Inventory ID</th>
                                 <th className="p-3">Material Name</th>
                                 <th className="p-3">SKU</th>
@@ -3043,15 +3245,15 @@ const AdminDashboardPage: React.FC = () => {
                               {explorerData.inventory.map((inv) => {
                                 const isLow = (inv.current_stock || 0) <= (inv.min_stock || 0);
                                 return (
-                                  <tr key={inv.id} className="border-b border-slate-850 hover:bg-slate-900/30">
+                                  <tr key={inv.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
                                     <td className="p-3 font-mono text-[10px] text-slate-500">{inv.id}</td>
-                                    <td className="p-3 font-bold text-slate-200">{inv.name}</td>
-                                    <td className="p-3 font-mono text-slate-400">{inv.sku || 'N/A'}</td>
-                                    <td className="p-3 text-right font-black text-slate-200">{inv.current_stock || 0}</td>
-                                    <td className="p-3 text-right text-slate-400">{inv.min_stock || 0}</td>
-                                    <td className="p-3 text-slate-300 font-medium">{inv.unit || 'units'}</td>
+                                    <td className="p-3 font-bold text-slate-800">{inv.name}</td>
+                                    <td className="p-3 font-mono text-slate-600">{inv.sku || 'N/A'}</td>
+                                    <td className="p-3 text-right font-black text-slate-800">{inv.current_stock || 0}</td>
+                                    <td className="p-3 text-right text-slate-550">{inv.min_stock || 0}</td>
+                                    <td className="p-3 text-slate-700 font-semibold">{inv.unit || 'units'}</td>
                                     <td className="p-3 text-center">
-                                      <Badge className={`text-[10px] ${isLow ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' : 'bg-emerald-500/10 text-emerald-400'}`}>
+                                      <Badge className={`text-[10px] font-bold ${isLow ? 'bg-rose-50 text-rose-600 border border-rose-250 animate-pulse' : 'bg-emerald-50 text-emerald-600 border border-emerald-250'}`}>
                                         {isLow ? 'Low Stock' : 'Healthy'}
                                       </Badge>
                                     </td>
@@ -3061,7 +3263,7 @@ const AdminDashboardPage: React.FC = () => {
 
                               {explorerData.inventory.length === 0 && (
                                 <tr>
-                                  <td colSpan={7} className="text-center py-6 text-slate-500">No raw materials or inventory components recorded</td>
+                                  <td colSpan={7} className="text-center py-6 text-slate-500 font-semibold bg-slate-50/50">No raw materials or inventory components recorded</td>
                                 </tr>
                               )}
                             </tbody>
@@ -3071,10 +3273,10 @@ const AdminDashboardPage: React.FC = () => {
 
                       {/* EXPLORER TAB: CREDIT LEDGER */}
                       <TabsContent value="credits" className="mt-4">
-                        <div className="overflow-x-auto border border-slate-850 rounded-xl bg-slate-950">
-                          <table className="w-full text-left border-collapse text-xs">
+                        <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-sm">
+                          <table className="w-full min-w-[800px] text-left border-collapse text-xs">
                             <thead>
-                              <tr className="border-b border-slate-800 bg-slate-900/50 text-slate-400 font-bold">
+                              <tr className="border-b border-slate-200 bg-slate-50 text-slate-650 font-bold">
                                 <th className="p-3">Customer Name</th>
                                 <th className="p-3">Mobile Contact</th>
                                 <th className="p-3 text-right">Total Borrowed</th>
@@ -3086,18 +3288,18 @@ const AdminDashboardPage: React.FC = () => {
                             </thead>
                             <tbody>
                               {explorerData.credits.map((cred) => (
-                                <tr key={cred.id} className="border-b border-slate-850 hover:bg-slate-900/30">
-                                  <td className="p-3 font-bold text-slate-200">{cred.customer_name}</td>
-                                  <td className="p-3 text-slate-400">{cred.customer_phone || 'N/A'}</td>
-                                  <td className="p-3 text-right text-slate-300">₹{cred.total_amount.toFixed(2)}</td>
-                                  <td className="p-3 text-right text-emerald-400 font-medium">₹{cred.paid_amount.toFixed(2)}</td>
-                                  <td className="p-3 text-right text-rose-400 font-bold">₹{cred.due_amount.toFixed(2)}</td>
+                                <tr key={cred.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+                                  <td className="p-3 font-bold text-slate-800">{cred.customer_name}</td>
+                                  <td className="p-3 text-slate-600">{cred.customer_phone || 'N/A'}</td>
+                                  <td className="p-3 text-right text-slate-700 font-semibold">₹{cred.total_amount.toFixed(2)}</td>
+                                  <td className="p-3 text-right text-emerald-600 font-black">₹{cred.paid_amount.toFixed(2)}</td>
+                                  <td className="p-3 text-right text-rose-600 font-black">₹{cred.due_amount.toFixed(2)}</td>
                                   <td className="p-3 text-center">
-                                    <Badge className={`text-[10px] ${cred.payment_status === 'paid' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
+                                    <Badge className={`text-[10px] font-bold ${cred.payment_status === 'paid' ? 'bg-emerald-50 text-emerald-600 border border-emerald-250' : 'bg-amber-50 text-amber-600 border border-amber-250'}`}>
                                       {cred.payment_status}
                                     </Badge>
                                   </td>
-                                  <td className="p-3 text-slate-400">
+                                  <td className="p-3 text-slate-500 font-medium">
                                     {format(new Date(cred.updated_at), 'dd MMM yyyy')}
                                   </td>
                                 </tr>
@@ -3105,7 +3307,7 @@ const AdminDashboardPage: React.FC = () => {
 
                               {explorerData.credits.length === 0 && (
                                 <tr>
-                                  <td colSpan={7} className="text-center py-6 text-slate-500">No customer credit records registered</td>
+                                  <td colSpan={7} className="text-center py-6 text-slate-500 font-semibold bg-slate-50/50">No customer credit records registered</td>
                                 </tr>
                               )}
                             </tbody>
@@ -3115,10 +3317,10 @@ const AdminDashboardPage: React.FC = () => {
 
                       {/* EXPLORER TAB: EXPENSES */}
                       <TabsContent value="expenses" className="mt-4">
-                        <div className="overflow-x-auto border border-slate-850 rounded-xl bg-slate-950">
-                          <table className="w-full text-left border-collapse text-xs">
+                        <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-sm">
+                          <table className="w-full min-w-[700px] text-left border-collapse text-xs">
                             <thead>
-                              <tr className="border-b border-slate-800 bg-slate-900/50 text-slate-400 font-bold">
+                              <tr className="border-b border-slate-200 bg-slate-50 text-slate-650 font-bold">
                                 <th className="p-3">Expense ID</th>
                                 <th className="p-3">Category</th>
                                 <th className="p-3">Description</th>
@@ -3129,15 +3331,15 @@ const AdminDashboardPage: React.FC = () => {
                             </thead>
                             <tbody>
                               {explorerData.expenses.map((exp) => (
-                                <tr key={exp.id} className="border-b border-slate-850 hover:bg-slate-900/30">
+                                <tr key={exp.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
                                   <td className="p-3 font-mono text-[10px] text-slate-500">{exp.id}</td>
                                   <td className="p-3">
-                                    <Badge variant="outline" className="border-slate-800 bg-slate-900 text-slate-300 capitalize">{exp.category}</Badge>
+                                    <Badge variant="outline" className="border-slate-250 bg-slate-100 text-slate-700 capitalize font-semibold">{exp.category}</Badge>
                                   </td>
-                                  <td className="p-3 text-slate-200">{exp.description || 'N/A'}</td>
-                                  <td className="p-3 text-right font-bold text-rose-400">₹{exp.amount.toFixed(2)}</td>
-                                  <td className="p-3 text-slate-300">{exp.paid_by || 'Unknown'}</td>
-                                  <td className="p-3 text-slate-400">
+                                  <td className="p-3 text-slate-700 font-medium">{exp.description || 'N/A'}</td>
+                                  <td className="p-3 text-right font-black text-rose-600">₹{exp.amount.toFixed(2)}</td>
+                                  <td className="p-3 text-slate-700 font-semibold">{exp.paid_by || 'Unknown'}</td>
+                                  <td className="p-3 text-slate-500 font-medium">
                                     {format(new Date(exp.date), 'dd MMM yyyy')}
                                   </td>
                                 </tr>
@@ -3145,7 +3347,7 @@ const AdminDashboardPage: React.FC = () => {
 
                               {explorerData.expenses.length === 0 && (
                                 <tr>
-                                  <td colSpan={6} className="text-center py-6 text-slate-500">No expense records found for this store</td>
+                                  <td colSpan={6} className="text-center py-6 text-slate-500 font-semibold bg-slate-50/50">No expense records found for this store</td>
                                 </tr>
                               )}
                             </tbody>
@@ -3156,34 +3358,34 @@ const AdminDashboardPage: React.FC = () => {
                       {/* EXPLORER TAB: WHATSAPP */}
                       <TabsContent value="whatsapp" className="mt-4">
                         {explorerData.whatsapp ? (
-                          <Card className="bg-slate-950 border-slate-850 p-6 space-y-4 max-w-xl mx-auto rounded-2xl">
+                          <Card className="bg-white border border-slate-200 p-6 space-y-4 max-w-xl mx-auto rounded-2xl shadow-md">
                             <div className="flex items-center justify-between">
-                              <h3 className="font-bold text-base text-slate-100 flex items-center gap-2">
-                                <Sparkles className="w-5 h-5 text-green-400 animate-pulse" />
+                              <h3 className="font-bold text-base text-slate-800 flex items-center gap-2">
+                                <Sparkles className="w-5 h-5 text-emerald-500 animate-pulse" />
                                 WhatsApp Gateway Active
                               </h3>
-                              <Badge className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                              <Badge className="bg-emerald-50 text-emerald-600 border border-emerald-250 font-bold">
                                 Verified Connection
                               </Badge>
                             </div>
-                            <div className="space-y-3 pt-2 text-sm text-slate-300">
-                              <div className="flex justify-between border-b border-slate-850 pb-2">
-                                <span className="text-slate-400">Connected Phone Number:</span>
-                                <strong className="text-slate-200">{explorerData.whatsapp.whatsapp_number}</strong>
+                            <div className="space-y-3 pt-2 text-sm text-slate-700">
+                              <div className="flex justify-between border-b border-slate-100 pb-2">
+                                <span className="text-slate-500 font-medium">Connected Phone Number:</span>
+                                <strong className="text-slate-800">{explorerData.whatsapp.whatsapp_number}</strong>
                               </div>
-                              <div className="flex justify-between border-b border-slate-850 pb-2">
-                                <span className="text-slate-400">API Instance ID:</span>
-                                <code className="text-xs bg-slate-900 px-2 py-0.5 rounded font-mono text-violet-300">{explorerData.whatsapp.instance_id}</code>
+                              <div className="flex justify-between border-b border-slate-100 pb-2">
+                                <span className="text-slate-500 font-medium">API Instance ID:</span>
+                                <code className="text-xs bg-slate-100 border border-slate-200 px-2 py-0.5 rounded font-mono text-violet-750 font-bold">{explorerData.whatsapp.instance_id}</code>
                               </div>
                               <div className="flex justify-between pb-1">
-                                <span className="text-slate-400">API Key token:</span>
-                                <code className="text-xs bg-slate-900 px-2 py-0.5 rounded font-mono text-violet-300">{explorerData.whatsapp.api_key}</code>
+                                <span className="text-slate-500 font-medium">API Key token:</span>
+                                <code className="text-xs bg-slate-100 border border-slate-200 px-2 py-0.5 rounded font-mono text-violet-750 font-bold">{explorerData.whatsapp.api_key}</code>
                               </div>
                             </div>
                           </Card>
                         ) : (
-                          <div className="flex flex-col items-center justify-center py-12 text-slate-500 border border-dashed border-slate-850 rounded-xl bg-slate-950/40">
-                            <Sparkles className="w-10 h-10 mb-3 opacity-20 text-green-400" />
+                          <div className="flex flex-col items-center justify-center py-12 text-slate-500 border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+                            <Sparkles className="w-10 h-10 mb-3 opacity-30 text-emerald-500" />
                             <p className="text-xs font-semibold">WhatsApp notifications configuration not registered for this outlet</p>
                           </div>
                         )}
@@ -3191,20 +3393,19 @@ const AdminDashboardPage: React.FC = () => {
                     </Tabs>
                   </div>
                 )}
-
               </CardContent>
             </Card>
           </TabsContent>
 
           {/* TAB 6: SECURITY AUDIT LOGS */}
           <TabsContent value="audit_logs" className="mt-6 space-y-6">
-            <Card className="bg-slate-900 border-slate-800 shadow-xl overflow-hidden rounded-2xl">
-              <CardHeader className="border-b border-slate-850">
-                <CardTitle className="text-xl font-bold flex items-center gap-2">
-                  <ClipboardList className="w-5 h-5 text-violet-400" />
+            <Card className="bg-white border border-slate-200 shadow-sm overflow-hidden rounded-2xl">
+              <CardHeader className="border-b border-slate-100 bg-slate-50/50 pb-4">
+                <CardTitle className="text-xl font-bold flex items-center gap-2 text-slate-800">
+                  <ClipboardList className="w-5 h-5 text-violet-650" />
                   Security & Hierarchy Audit Logs
                 </CardTitle>
-                <CardDescription className="text-slate-400">
+                <CardDescription className="text-slate-500">
                   Real-time database-level logging of creations, updates, deletions, and verification queue decisions
                 </CardDescription>
               </CardHeader>
@@ -3212,19 +3413,19 @@ const AdminDashboardPage: React.FC = () => {
                 
                 {/* Search Log filter */}
                 <div className="relative max-w-md">
-                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-450" />
                   <Input
                     placeholder="Search logs by action, table, user, or record ID..."
                     value={logSearchQuery}
                     onChange={(e) => setLogSearchQuery(e.target.value)}
-                    className="pl-10 bg-slate-950 border-slate-850 text-slate-100 placeholder-slate-500 rounded-xl"
+                    className="pl-10 bg-white border border-slate-200 text-slate-800 placeholder-slate-400 focus:border-violet-500 rounded-xl shadow-sm"
                   />
                 </div>
 
-                <div className="overflow-x-auto border border-slate-850 rounded-xl bg-slate-950">
-                  <table className="w-full text-left border-collapse text-xs">
+                <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-sm">
+                  <table className="w-full min-w-[1000px] text-left border-collapse text-xs">
                     <thead>
-                      <tr className="border-b border-slate-800 bg-slate-900/50 text-slate-400 font-bold uppercase tracking-wider">
+                      <tr className="border-b border-slate-200 bg-slate-50 text-slate-650 font-bold uppercase tracking-wider">
                         <th className="p-4">Log ID</th>
                         <th className="p-4">Action Type</th>
                         <th className="p-4">Target Table</th>
@@ -3241,50 +3442,50 @@ const AdminDashboardPage: React.FC = () => {
                         const isVerify = log.action.includes('verification');
 
                         return (
-                          <tr key={log.id} className="border-b border-slate-850 hover:bg-slate-900/30">
+                          <tr key={log.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
                             <td className="p-4 font-mono text-[10px] text-slate-500">{log.id}</td>
                             <td className="p-4">
                               <Badge 
                                 className={`capitalize text-[10px] font-bold ${
                                   isDelete 
-                                    ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' 
+                                    ? 'bg-rose-50 text-rose-600 border border-rose-250' 
                                     : isCreate 
-                                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                    ? 'bg-emerald-50 text-emerald-600 border border-emerald-250'
                                     : isVerify
-                                    ? 'bg-violet-500/10 text-violet-400 border border-violet-500/20 font-black'
-                                    : 'bg-indigo-950 text-indigo-300 border border-indigo-500/10'
+                                    ? 'bg-violet-50 text-violet-750 border border-violet-250 font-black'
+                                    : 'bg-indigo-50 text-indigo-750 border border-indigo-200'
                                 }`}
                               >
                                 {log.action.replace('_', ' ')}
                               </Badge>
                             </td>
-                            <td className="p-4 font-mono text-slate-400">{log.table_name || 'N/A'}</td>
+                            <td className="p-4 font-mono text-slate-600 font-semibold">{log.table_name || 'N/A'}</td>
                             {/* RECORD REFERENCE */}
-                            <td className="p-4">
+                            <td className="p-4 font-mono text-sm font-semibold">
                               {log.record_id ? (
-                                <div className="flex items-center gap-1 font-mono text-[10px] text-slate-400 bg-slate-900 p-1.5 rounded border border-slate-850 justify-between max-w-[130px]">
-                                  <span className="truncate">{log.record_id}</span>
+                                <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-lg border border-slate-200 max-w-[120px] justify-between text-slate-700">
+                                  <span>{getPersonalId(log.record_id)}</span>
                                   <Button 
                                     size="icon" 
                                     variant="ghost" 
-                                    className="w-4 h-4 text-slate-600 hover:text-slate-300"
-                                    onClick={() => copyToClipboard(log.record_id, 'Record ID')}
+                                    className="w-5 h-5 text-slate-400 hover:text-slate-600 hover:bg-slate-200/50"
+                                    onClick={() => copyToClipboard(getPersonalId(log.record_id), 'Personal Record ID')}
                                   >
-                                    <Copy className="w-2.5 h-2.5" />
+                                    <Copy className="w-3 h-3" />
                                   </Button>
                                 </div>
                               ) : (
-                                <span className="text-slate-600 font-mono">NULL</span>
+                                <span className="text-slate-400 font-mono">-</span>
                               )}
                             </td>
-                            <td className="p-4 text-slate-400">
+                            <td className="p-4 text-slate-600 font-medium">
                               {log.created_at ? format(new Date(log.created_at), 'dd MMM yyyy HH:mm:ss') : 'N/A'}
                             </td>
                             <td className="p-4">
-                              <p className="font-semibold text-slate-200">{log.user_name}</p>
-                              <p className="text-[10px] text-slate-500">{log.user_email}</p>
+                              <p className="font-semibold text-slate-800">{log.user_name}</p>
+                              <p className="text-[10px] text-slate-500 font-medium">{log.user_email}</p>
                             </td>
-                            <td className="p-4 text-slate-400 max-w-[200px] truncate leading-relaxed">
+                            <td className="p-4 text-slate-500 max-w-[200px] truncate leading-relaxed">
                               {log.new_data ? JSON.stringify(log.new_data) : log.old_data ? JSON.stringify(log.old_data) : 'N/A'}
                             </td>
                           </tr>
@@ -3293,7 +3494,7 @@ const AdminDashboardPage: React.FC = () => {
 
                       {filteredLogs.length === 0 && (
                         <tr>
-                          <td colSpan={7} className="text-center py-8 text-slate-500">No security audit logs found</td>
+                          <td colSpan={7} className="text-center py-8 text-slate-500 font-semibold bg-slate-50/50">No security audit logs found</td>
                         </tr>
                       )}
                     </tbody>
@@ -3318,63 +3519,63 @@ const AdminDashboardPage: React.FC = () => {
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
-        <DialogContent className="max-w-md bg-slate-900 border-slate-800 text-slate-100 rounded-2xl shadow-2xl">
+        <DialogContent className="max-w-md bg-white border border-slate-200 text-slate-800 rounded-2xl shadow-2xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-rose-500 font-black">
+            <DialogTitle className="flex items-center gap-2 text-rose-600 font-black">
               <ShieldAlert className="w-6 h-6 text-rose-500 animate-bounce" />
               Confirm Permanent Owner Deletion
             </DialogTitle>
           </DialogHeader>
           {deleteCustomerData && (
             <div className="space-y-4 pt-2">
-              <div className="p-3.5 bg-rose-500/10 text-rose-300 rounded-xl text-sm border border-rose-500/20 leading-relaxed">
+              <div className="p-3.5 bg-rose-50 text-rose-700 rounded-xl text-sm border border-rose-250 leading-relaxed">
                 <p className="font-extrabold mb-1 uppercase tracking-wider flex items-center gap-1 text-xs">
-                  <AlertCircle className="w-4 h-4 text-rose-400" />
+                  <AlertCircle className="w-4 h-4 text-rose-600" />
                   WARNING: Cascade Delete
                 </p>
-                <p>
+                <p className="font-medium">
                   Deleting this owner will permanently delete all connected stores, staff, products, reports, orders, customers and credit ledger logs. This action is irreversible.
                 </p>
               </div>
 
               {connectedCounts === null ? (
-                <div className="flex items-center justify-center py-6 text-sm text-slate-400 gap-2">
+                <div className="flex items-center justify-center py-6 text-sm text-slate-500 gap-2 font-medium">
                   <div className="animate-spin w-4 h-4 border-2 border-violet-500 border-t-transparent rounded-full" />
                   Calculating total connected records to be deleted...
                 </div>
               ) : (
-                <div className="p-3.5 bg-slate-950 rounded-xl space-y-2.5 text-xs border border-slate-850">
-                  <p className="font-bold text-[10px] text-slate-400 uppercase tracking-widest">Cascade Report Summary:</p>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] font-mono text-slate-300">
+                <div className="p-3.5 bg-slate-50 rounded-xl space-y-2.5 text-xs border border-slate-205">
+                  <p className="font-bold text-[10px] text-slate-500 uppercase tracking-widest">Cascade Report Summary:</p>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] font-mono text-slate-705">
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Stores:</span>
-                      <span className="font-bold text-white">{connectedCounts.stores}</span>
+                      <span className="text-slate-500 font-medium">Stores:</span>
+                      <span className="font-bold text-slate-900">{connectedCounts.stores}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Staff Accounts:</span>
-                      <span className="font-bold text-white">{connectedCounts.staff}</span>
+                      <span className="text-slate-500 font-medium">Staff Accounts:</span>
+                      <span className="font-bold text-slate-900">{connectedCounts.staff}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Products:</span>
-                      <span className="font-bold text-white">{connectedCounts.products}</span>
+                      <span className="text-slate-500 font-medium">Products:</span>
+                      <span className="font-bold text-slate-900">{connectedCounts.products}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Orders & Bills:</span>
-                      <span className="font-bold text-white">{connectedCounts.orders}</span>
+                      <span className="text-slate-500 font-medium">Orders & Bills:</span>
+                      <span className="font-bold text-slate-900">{connectedCounts.orders}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Customers:</span>
-                      <span className="font-bold text-white">{connectedCounts.customers}</span>
+                      <span className="text-slate-500 font-medium">Customers:</span>
+                      <span className="font-bold text-slate-900">{connectedCounts.customers}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Expenses:</span>
-                      <span className="font-bold text-white">{connectedCounts.expenses}</span>
+                      <span className="text-slate-500 font-medium">Expenses:</span>
+                      <span className="font-bold text-slate-900">{connectedCounts.expenses}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Credits/Ledger:</span>
-                      <span className="font-bold text-white">{connectedCounts.credits}</span>
+                      <span className="text-slate-500 font-medium">Credits/Ledger:</span>
+                      <span className="font-bold text-slate-900">{connectedCounts.credits}</span>
                     </div>
-                    <div className="flex justify-between border-t border-slate-800 pt-1.5 font-bold text-rose-400 col-span-2 text-xs">
+                    <div className="flex justify-between border-t border-slate-200 pt-1.5 font-bold text-rose-600 col-span-2 text-xs">
                       <span>Total Cascade Records:</span>
                       <span>{connectedCounts.total}</span>
                     </div>
@@ -3383,23 +3584,23 @@ const AdminDashboardPage: React.FC = () => {
               )}
 
               <div className="space-y-1.5">
-                <Label htmlFor="confirm-pass" className="text-slate-350 text-xs">Admin Password Authentication</Label>
+                <Label htmlFor="confirm-pass" className="text-slate-600 text-xs font-bold">Admin Password Authentication</Label>
                 <Input
                   id="confirm-pass"
                   type="password"
                   placeholder="Enter admin password to confirm deletion"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="rounded-xl bg-slate-950 border-slate-800 text-slate-100"
+                  className="rounded-xl bg-slate-50 border-slate-205 text-slate-800 placeholder-slate-400 font-medium"
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-850">
-                <Button variant="outline" className="rounded-xl border-slate-800 bg-slate-900/60 hover:bg-slate-800" onClick={() => setShowDeleteConfirm(false)} disabled={isDeleting || verifyingPassword}>
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
+                <Button variant="outline" className="rounded-xl border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200" onClick={() => setShowDeleteConfirm(false)} disabled={isDeleting || verifyingPassword}>
                   Cancel
                 </Button>
                 <Button 
-                  className="bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold shadow-lg"
+                  className="bg-rose-650 hover:bg-rose-700 text-white rounded-xl font-bold shadow-md"
                   onClick={handleConfirmDelete}
                   disabled={isDeleting || verifyingPassword || connectedCounts === null}
                 >
@@ -3408,6 +3609,78 @@ const AdminDashboardPage: React.FC = () => {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <Dialog open={showBulkDeleteConfirm} onOpenChange={setShowBulkDeleteConfirm}>
+        <DialogContent className="max-w-md bg-white border border-slate-200 text-slate-800 rounded-2xl shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-rose-600 font-black">
+              <ShieldAlert className="w-6 h-6 text-rose-600 animate-bounce" />
+              Confirm Cloud Clean Up
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="p-3.5 bg-rose-50 text-rose-700 rounded-xl text-sm border border-rose-250 leading-relaxed">
+              <p className="font-extrabold mb-1 uppercase tracking-wider flex items-center gap-1 text-xs">
+                <AlertCircle className="w-4 h-4 text-rose-600" />
+                CRITICAL WARNING: Permanent Clean Up
+              </p>
+              <p className="font-medium">
+                You are about to delete ALL owner accounts, store outlets, staff accounts, orders, products, and other records from the cloud.
+              </p>
+              <p className="mt-1.5 font-bold">
+                ONLY your primary admin account (jagralasalman786@gmail.com) will be preserved. This action cannot be undone.
+              </p>
+            </div>
+
+            {bulkDeleteProgress ? (
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex flex-col items-center justify-center gap-3">
+                <div className="animate-spin w-6 h-6 border-2 border-violet-500 border-t-transparent rounded-full" />
+                <p className="text-xs text-slate-700 text-center font-bold">{bulkDeleteProgress}</p>
+              </div>
+            ) : (
+              <div className="p-3.5 bg-slate-50 rounded-xl text-xs border border-slate-205 space-y-1">
+                <span className="font-bold text-[10px] text-slate-500 uppercase tracking-widest">Accounts to Delete:</span>
+                <p className="text-slate-700 font-semibold text-[11px] leading-relaxed">
+                  Total of <span className="text-rose-600 font-bold">{customers.filter(c => c.owner_email !== 'jagralasalman786@gmail.com').length}</span> other owner accounts and all their child stores/staff data will be wiped out from Supabase.
+                </p>
+              </div>
+            )}
+
+            {!isBulkDeleting && (
+              <div className="space-y-1.5">
+                <Label htmlFor="bulk-confirm-pass" className="text-slate-650 text-xs font-bold">Admin Password Authentication</Label>
+                <Input
+                  id="bulk-confirm-pass"
+                  type="password"
+                  placeholder="Enter admin password to authorize clean-up"
+                  value={bulkDeletePassword}
+                  onChange={(e) => setBulkDeletePassword(e.target.value)}
+                  className="rounded-xl bg-slate-50 border-slate-200 text-slate-800 placeholder-slate-400 font-semibold"
+                />
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
+              <Button 
+                variant="outline" 
+                className="rounded-xl border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200" 
+                onClick={() => setShowBulkDeleteConfirm(false)} 
+                disabled={isBulkDeleting || verifyingPassword}
+              >
+                Cancel
+              </Button>
+              <Button 
+                className="bg-rose-650 hover:bg-rose-700 text-white rounded-xl font-bold shadow-md"
+                onClick={handleConfirmBulkDelete}
+                disabled={isBulkDeleting || verifyingPassword || customers.filter(c => c.owner_email !== 'jagralasalman786@gmail.com').length === 0}
+              >
+                {verifyingPassword ? 'Verifying Admin...' : isBulkDeleting ? 'Cleaning Cloud...' : 'Start Cloud Clean Up'}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
