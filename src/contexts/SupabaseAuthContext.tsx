@@ -99,7 +99,7 @@ export const SupabaseAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
         setUserRole(mockRole);
         setCustomer({
           id: '22222222-2222-2222-2222-222222222222',
-          business_name: 'PayStore Bakery',
+          business_name: 'MAXORA Bakery',
           owner_name: 'Mock Owner',
           subscription_plan: 'yearly',
           subscription_tier: 'premium',
@@ -258,12 +258,12 @@ export const SupabaseAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
     if (localStorage.getItem('pos_login_as_demo') === 'true') {
       setUser({
         id: '11111111-1111-1111-1111-111111111111',
-        email: 'owner@paystore.com',
+        email: 'owner@MAXORA.com',
         user_metadata: { full_name: 'Mock Owner' }
       } as any);
       setSession({
         access_token: 'mock-token',
-        user: { id: '11111111-1111-1111-1111-111111111111', email: 'owner@paystore.com' }
+        user: { id: '11111111-1111-1111-1111-111111111111', email: 'owner@MAXORA.com' }
       } as any);
       setUserRole({
         id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
@@ -276,7 +276,7 @@ export const SupabaseAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
       });
       setCustomer({
         id: '22222222-2222-2222-2222-222222222222',
-        business_name: 'PayStore Bakery',
+        business_name: 'MAXORA Bakery',
         owner_name: 'Mock Owner',
         subscription_plan: 'yearly',
         subscription_tier: 'premium',
@@ -305,11 +305,11 @@ export const SupabaseAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
       if (localStorage.getItem('pos_login_as_demo') === 'true') {
         finalSession = {
           access_token: 'mock-token',
-          user: { id: '11111111-1111-1111-1111-111111111111', email: 'owner@paystore.com' }
+          user: { id: '11111111-1111-1111-1111-111111111111', email: 'owner@MAXORA.com' }
         } as any;
         finalUser = {
           id: '11111111-1111-1111-1111-111111111111',
-          email: 'owner@paystore.com',
+          email: 'owner@MAXORA.com',
           user_metadata: { full_name: 'Mock Owner' }
         } as any;
       } else if (!finalSession) {
@@ -378,8 +378,22 @@ export const SupabaseAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
     void supabase.auth.getSession().then(({ data: { session }, error }) => {
       if (error) {
         // Do NOT force sign-out on transient refresh errors — keep user logged in.
-        // Supabase client will retry token refresh automatically.
         console.warn('[Auth] getSession warning (keeping session):', error.message);
+        
+        // If there's a transient error, try to restore from backup instead of passing null session
+        const sessionActive = localStorage.getItem('pos_session_active') === 'true';
+        if (sessionActive) {
+          const sessionBackupStr = localStorage.getItem('pos_session_backup');
+          if (sessionBackupStr) {
+            try {
+              const cachedSession = JSON.parse(sessionBackupStr);
+              applySession(cachedSession);
+              return;
+            } catch (e) {
+              console.error('[Auth] Failed to parse backup session during error', e);
+            }
+          }
+        }
       }
       applySession(session);
     });
@@ -395,12 +409,12 @@ export const SupabaseAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
     localStorage.setItem('pos_session_active', 'true');
     setUser({
       id: '11111111-1111-1111-1111-111111111111',
-      email: 'owner@paystore.com',
+      email: 'owner@MAXORA.com',
       user_metadata: { full_name: 'Mock Owner' }
     } as any);
     setSession({
       access_token: 'mock-token',
-      user: { id: '11111111-1111-1111-1111-111111111111', email: 'owner@paystore.com' }
+      user: { id: '11111111-1111-1111-1111-111111111111', email: 'owner@MAXORA.com' }
     } as any);
     setUserRole({
       id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
@@ -413,7 +427,7 @@ export const SupabaseAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
     });
     setCustomer({
       id: '22222222-2222-2222-2222-222222222222',
-      business_name: 'PayStore Bakery',
+      business_name: 'MAXORA Bakery',
       owner_name: 'Mock Owner',
       subscription_plan: 'yearly',
       subscription_tier: 'premium',

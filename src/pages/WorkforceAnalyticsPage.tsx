@@ -87,7 +87,7 @@ const WorkforceAnalyticsPage: React.FC = () => {
             </Button>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-lg font-bold text-foreground">PayStore Predict</h1>
+                <h1 className="text-lg font-bold text-foreground">MAXORA Predict</h1>
                 <Badge className="bg-gradient-to-r from-violet-500 to-purple-500 text-white border-0 text-[10px]">AI</Badge>
               </div>
               <p className="text-xs text-muted-foreground">Workforce Analytics & Insights</p>

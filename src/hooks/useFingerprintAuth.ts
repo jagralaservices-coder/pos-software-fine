@@ -52,7 +52,7 @@ export const useFingerprintAuth = () => {
         publicKey: {
           challenge,
           rp: {
-            name: 'PayStore POS',
+            name: 'MAXORA',
             id: window.location.hostname
           },
           user: {

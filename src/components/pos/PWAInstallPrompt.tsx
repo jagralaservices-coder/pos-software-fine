@@ -70,7 +70,7 @@ export const PWAInstallPrompt: React.FC = () => {
               <Download className="w-6 h-6 text-primary" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="font-semibold text-foreground text-sm">Install PayStore POS</p>
+              <p className="font-semibold text-foreground text-sm">Install MAXORA</p>
               <p className="text-xs text-muted-foreground">Add to home screen for quick access</p>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">

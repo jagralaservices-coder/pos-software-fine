@@ -59,12 +59,12 @@ export const useBiometricAuth = () => {
         publicKey: {
           challenge,
           rp: {
-            name: 'PayStore POS',
+            name: 'MAXORA',
             id: window.location.hostname
           },
           user: {
             id: new Uint8Array(16),
-            name: 'staff@paystore.pos',
+            name: 'staff@MAXORA.pos',
             displayName: 'Staff Member'
           },
           pubKeyCredParams: [

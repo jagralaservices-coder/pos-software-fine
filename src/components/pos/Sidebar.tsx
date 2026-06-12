@@ -54,6 +54,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useFeatureToggles } from '@/hooks/useFeatureToggles';
 import { useUICustomization } from '@/hooks/useUICustomization';
+import { MaxoraLogo } from '@/components/ui/MaxoraLogo';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -208,9 +209,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
             <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20">
               <span className="text-lg">🧾</span>
             </div>
-            <div>
-              <h1 className="font-bold text-sm text-foreground tracking-tight">PayStore</h1>
-              <p className="text-[10px] text-muted-foreground">Universal POS</p>
+            <div className="flex-1 mt-1">
+              <MaxoraLogo size="sm" showSubtitle={false} className="items-start" />
+              <p className="text-[9px] text-muted-foreground mt-0.5 tracking-wider uppercase font-semibold">Universal POS</p>
             </div>
           </div>
         ) : (

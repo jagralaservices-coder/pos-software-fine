@@ -33,7 +33,7 @@ export const QRMenuGenerator: React.FC<QRMenuGeneratorProps> = ({ className, ico
       return window.location.origin;
     }
     // Fallback to published lovable URL
-    return 'https://paystore-pos.lovable.app';
+    return 'https://MAXORA-pos.lovable.app';
   };
   
   const menuUrl = `${getLiveDomain()}/menu/${storeCode}`;

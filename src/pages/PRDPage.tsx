@@ -4,14 +4,14 @@ import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
 
 const PRD_CONTENT = `
-# PayStore POS — Product Requirements Document (PRD)
+# MAXORA — Product Requirements Document (PRD)
 **Version:** 1.0 | **Date:** February 2026 | **Platform:** Web (PWA), Android, iOS, Windows
 
 ---
 
 ## 1. Executive Summary
 
-PayStore POS is an all-in-one, offline-first Point of Sale system for small-to-medium restaurants, cafés, and retail businesses — primarily in India. It enables business owners to manage billing, inventory, staff, customers, payments, and multi-store operations from a single multi-platform application. The system supports tiered subscriptions (Basic / Pro / Enterprise) with feature gating.
+MAXORA is an all-in-one, offline-first Point of Sale system for small-to-medium restaurants, cafés, and retail businesses — primarily in India. It enables business owners to manage billing, inventory, staff, customers, payments, and multi-store operations from a single multi-platform application. The system supports tiered subscriptions (Basic / Pro / Enterprise) with feature gating.
 
 ---
 
@@ -849,7 +849,7 @@ src/
 
 ---
 
-*Document generated from PayStore POS codebase analysis — February 2026*
+*Document generated from MAXORA codebase analysis — February 2026*
 `;
 
 const PRDPage: React.FC = () => {
@@ -860,7 +860,7 @@ const PRDPage: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `PayStore-POS-PRD.${format}`;
+    a.download = `MAXORA-POS-PRD.${format}`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

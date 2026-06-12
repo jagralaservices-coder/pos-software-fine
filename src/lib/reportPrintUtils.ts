@@ -32,7 +32,7 @@ export const printReport = (options: ReportPrintOptions, sections: ReportSection
   const storeDetails = JSON.parse(localStorage.getItem('pos_store_details') || '{}');
   const activeStoreData = JSON.parse(localStorage.getItem('pos_active_store_data') || '{}');
   
-  const storeName = options.storeName || activeStoreData.name || storeDetails.name || 'PayStore POS';
+  const storeName = options.storeName || activeStoreData.name || storeDetails.name || 'MAXORA';
   const storeAddress = activeStoreData.address || storeDetails.address || '';
   const storePhone = activeStoreData.phone || storeDetails.phone || '';
   
@@ -329,7 +329,7 @@ export const printReport = (options: ReportPrintOptions, sections: ReportSection
       
       <div class="footer">
         <p>This is a computer generated report</p>
-        <p>Powered by PayStore POS</p>
+        <p>Powered by MAXORA</p>
       </div>
     </body>
     </html>
@@ -369,7 +369,7 @@ export const formatReportCurrency = (amount: number): string => {
 export const printBillReport = (title: string, dateRange: string, rows: { label: string; value: string }[]) => {
   const storeDetails = JSON.parse(localStorage.getItem('pos_store_details') || '{}');
   const activeStoreData = JSON.parse(localStorage.getItem('pos_active_store_data') || '{}');
-  const storeName = activeStoreData.name || storeDetails.name || 'PayStore POS';
+  const storeName = activeStoreData.name || storeDetails.name || 'MAXORA';
 
   const html = `<!DOCTYPE html><html><head><title>${title}</title>
 <style>
@@ -398,7 +398,7 @@ body{font-family:'Courier New',monospace;font-size:12px;width:100%;max-width:100
 <div class="sep"></div>
 ${rows.map(r => `<div class="row"><span class="lbl">${r.label}</span><span class="val">${r.value}</span></div>`).join('')}
 <div class="sep"></div>
-<div class="footer">Generated: ${new Date().toLocaleString('en-IN')}<br/>Powered by PayStore POS</div>
+<div class="footer">Generated: ${new Date().toLocaleString('en-IN')}<br/>Powered by MAXORA</div>
 </body></html>`;
 
   const iframe = document.createElement('iframe');

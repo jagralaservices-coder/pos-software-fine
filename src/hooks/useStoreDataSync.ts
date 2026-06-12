@@ -77,17 +77,13 @@ const clearStaleSession = () => {
   if (localStorage.getItem('pos_login_as_demo') === 'true') return;
   if (storeSessionInvalidated) return;
   storeSessionInvalidated = true;
-  console.warn('[StoreSync] Invalid store detected, clearing stale session');
-  localStorage.removeItem('pos_active_store');
-  localStorage.removeItem('pos_active_store_data');
-  localStorage.removeItem('pos_store_session');
-  localStorage.removeItem('pos_is_store_login');
-  localStorage.removeItem('pos_store_code');
-  // Reset flag after a delay to allow re-login
-  setTimeout(() => { storeSessionInvalidated = false; }, 5000);
-  if (window.location.pathname !== '/' && window.location.pathname !== '/auth') {
-    window.location.href = '/';
-  }
+  console.warn('[StoreSync] Sync error detected. Backing off temporarily to preserve offline state.');
+  
+  // Do NOT wipe localStorage here, as transient network errors or Supabase function timeouts 
+  // will cause unexpected logouts for offline users or users with poor connections.
+  // We only reset the invalidation flag to allow future sync attempts.
+  
+  setTimeout(() => { storeSessionInvalidated = false; }, 30000); // 30 second backoff
 };
 
 const callSyncFunction = async (body: any) => {

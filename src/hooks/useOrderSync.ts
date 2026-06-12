@@ -221,18 +221,11 @@ export const useOrderSync = () => {
     if (localStorage.getItem('pos_login_as_demo') === 'true') return;
     if (sessionInvalidated) return;
     sessionInvalidated = true;
-    console.warn('[OrderSync] Invalid store detected, clearing stale session');
+    console.warn('[OrderSync] Sync error detected. Backing off temporarily to prevent loop.');
     if (syncTimerRef.current) { clearInterval(syncTimerRef.current); syncTimerRef.current = null; }
-    localStorage.removeItem('pos_active_store');
-    localStorage.removeItem('pos_active_store_data');
-    localStorage.removeItem('pos_store_session');
-    localStorage.removeItem('pos_is_store_login');
-    localStorage.removeItem('pos_store_code');
-    // Reset flag after delay to allow re-login
-    setTimeout(() => { sessionInvalidated = false; }, 5000);
-    if (window.location.pathname !== '/' && window.location.pathname !== '/auth') {
-      window.location.href = '/';
-    }
+    
+    // Backoff for 30 seconds before trying again, instead of wiping the session
+    setTimeout(() => { sessionInvalidated = false; }, 30000);
   };
 
   const fetchOrdersFromCloud = useCallback(async (): Promise<Order[]> => {

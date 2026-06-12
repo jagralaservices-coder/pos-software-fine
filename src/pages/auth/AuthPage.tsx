@@ -60,9 +60,14 @@ const AuthPage: React.FC = () => {
   // Role-based redirect helper
   const redirectByRole = (role: string) => {
     const lastPath = localStorage.getItem('pos_last_path');
-    if (role !== 'admin' && lastPath && lastPath !== '/' && lastPath !== '/auth' && lastPath !== '/reset-password') {
-      navigate(lastPath, { replace: true });
-      return;
+    if (role !== 'admin' && lastPath && lastPath.startsWith('/') && !lastPath.startsWith('//') && lastPath !== '/' && lastPath !== '/auth' && lastPath !== '/reset-password') {
+      try {
+        navigate(lastPath, { replace: true });
+        return;
+      } catch (e) {
+        console.error('Navigation error:', e);
+        // Fallback to switch below
+      }
     }
     switch (role) {
       case 'admin':

@@ -37,7 +37,9 @@ import { useOwnerStore } from '@/hooks/useOwnerStore';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { formatCurrency } from '@/lib/store';
-import paystoreIcon from '@/assets/paystore-icon.png';
+import MAXORAIcon from '@/assets/maxora-icon.jpg';
+import maxoraLogo from '@/assets/maxora-logo.png';
+import { MaxoraLogo } from '@/components/ui/MaxoraLogo';
 import {
   Dialog,
   DialogContent,
@@ -254,14 +256,10 @@ export const AppHeader: React.FC = () => {
         {/* Logo + Plan Badge */}
         <div className="flex items-center gap-2 px-1 flex-shrink-0">
           <div className="w-10 h-10 rounded-xl overflow-hidden shadow-sm ring-1 ring-primary/20">
-            <img src={paystoreIcon} alt="PayStore POS" className="w-full h-full object-cover" />
+            <img src={MAXORAIcon} alt="MAXORA" className="w-full h-full object-cover" />
           </div>
           <div className="hidden sm:flex flex-col leading-tight">
-            <span className="font-bold text-base">
-              <span className="text-[#E94E3C]">Pay</span>
-              <span className="text-[#F5A623]">Store</span>
-              <span className="text-[#4A90D9] ml-1">POS</span>
-            </span>
+            <MaxoraLogo size="md" className="items-start" />
             <span className={cn(
               'text-[10px] font-semibold px-1.5 py-0.5 rounded-full w-fit',
               tier === 'platinum' && 'bg-gradient-to-r from-violet-500 to-purple-600 text-white',
@@ -486,11 +484,11 @@ export const AppHeader: React.FC = () => {
           <DialogHeader className="p-4 border-b border-border">
             <DialogTitle className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl overflow-hidden bg-primary flex items-center justify-center">
-                <img src={paystoreIcon} alt="PayStore" className="w-full h-full object-cover" />
+                <img src={MAXORAIcon} alt="MAXORA" className="w-full h-full object-cover" />
               </div>
               <div>
-                <p className="font-bold">PayStore POS</p>
-                <p className="text-xs text-muted-foreground font-normal">{user?.user_metadata?.full_name || user?.email?.split('@')[0]} • {userRole?.role === 'store_manager' ? 'Store Manager' : userRole?.role}</p>
+                <img src={maxoraLogo} alt="MAXORA" className="h-6 object-contain" />
+                <p className="text-xs text-muted-foreground font-normal mt-1">{user?.user_metadata?.full_name || user?.email?.split('@')[0]} • {userRole?.role === 'store_manager' ? 'Store Manager' : userRole?.role}</p>
               </div>
             </DialogTitle>
           </DialogHeader>

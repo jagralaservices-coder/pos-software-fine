@@ -117,7 +117,7 @@ export const DailySalesReport: React.FC<DailySalesReportProps> = ({ isOpen, onCl
       </head>
       <body>
         <div class="header">
-          <div class="store-name">${storeDetails.name || 'PayStore POS Restaurant'}</div>
+          <div class="store-name">${storeDetails.name || 'MAXORA'}</div>
           ${storeDetails.address ? `<div>${storeDetails.address}</div>` : ''}
           ${storeDetails.phone ? `<div>Tel: ${storeDetails.phone}</div>` : ''}
           ${storeDetails.gst ? `<div>GST: ${storeDetails.gst}</div>` : ''}
@@ -178,7 +178,7 @@ export const DailySalesReport: React.FC<DailySalesReportProps> = ({ isOpen, onCl
         <div class="footer">
           <div>━━━━━━━━━━━━━━━━━━━━━━</div>
           <div style="margin: 5px 0;">Report Generated: ${new Date().toLocaleString('en-IN')}</div>
-          <div>Powered by PayStore POS</div>
+          <div>Powered by MAXORA</div>
         </div>
       </body>
       </html>

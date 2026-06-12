@@ -482,8 +482,8 @@ export const BarcodeScannerDialog: React.FC<BarcodeScannerDialogProps> = ({
                 <p className="text-destructive">{cameraError}</p>
                 {permissionState === 'denied' && (
                   <p className="text-xs text-muted-foreground mt-1">
-                    📱 Android: Settings → Apps → PayStore POS → Permissions → Camera<br/>
-                    🍎 iOS: Settings → PayStore POS → Camera → Allow
+                    📱 Android: Settings → Apps → MAXORA → Permissions → Camera<br/>
+                    🍎 iOS: Settings → MAXORA → Camera → Allow
                   </p>
                 )}
               </div>

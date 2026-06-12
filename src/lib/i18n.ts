@@ -64,7 +64,7 @@ export const languages: Record<LanguageCode, { name: string; nativeName: string;
 export const translations: Record<LanguageCode, Record<string, string>> = {
   en: {
     // Common
-    'app.name': 'PayStore POS',
+    'app.name': 'MAXORA',
     'common.save': 'Save',
     'common.cancel': 'Cancel',
     'common.delete': 'Delete',
@@ -575,7 +575,7 @@ export const translations: Record<LanguageCode, Record<string, string>> = {
     'operations.dataSynced': 'Data synced successfully',
 
     // Welcome
-    'welcome.title': 'PayStore POS',
+    'welcome.title': 'MAXORA',
     'welcome.subtitle': 'Your complete point of sale solution',
     'welcome.ownerLogin': 'Owner Login',
     'welcome.ownerDesc': 'Manage your business',
@@ -706,7 +706,7 @@ export const translations: Record<LanguageCode, Record<string, string>> = {
   },
   hi: {
     // Common
-    'app.name': 'PayStore POS',
+    'app.name': 'MAXORA',
     'common.save': 'सहेजें',
     'common.cancel': 'रद्द करें',
     'common.delete': 'हटाएं',
@@ -879,7 +879,7 @@ export const translations: Record<LanguageCode, Record<string, string>> = {
   },
   ar: {
     // Common
-    'app.name': 'PayStore POS',
+    'app.name': 'MAXORA',
     'common.save': 'حفظ',
     'common.cancel': 'إلغاء',
     'common.delete': 'حذف',
@@ -986,7 +986,7 @@ export const translations: Record<LanguageCode, Record<string, string>> = {
   },
   de: {
     // Common
-    'app.name': 'PayStore POS',
+    'app.name': 'MAXORA',
     'common.save': 'Speichern',
     'common.cancel': 'Abbrechen',
     'common.delete': 'Löschen',

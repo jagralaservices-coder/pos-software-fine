@@ -41,7 +41,7 @@ const DynamicPricingPage: React.FC = () => {
               <TrendingUp className="w-4 h-4 text-primary" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-foreground">PayStore <span className="text-muted-foreground font-normal">Pricing</span></h1>
+              <h1 className="text-lg font-bold text-foreground">MAXORA <span className="text-muted-foreground font-normal">Pricing</span></h1>
             </div>
           </div>
           <div className="flex items-center gap-2">

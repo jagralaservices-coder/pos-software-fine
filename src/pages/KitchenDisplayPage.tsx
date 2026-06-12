@@ -193,7 +193,7 @@ export const KitchenDisplayPage: React.FC = () => {
               <UtensilsCrossed className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-foreground">PayStore KDS</h1>
+              <h1 className="text-lg font-bold text-foreground">MAXORA KDS</h1>
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider">STATION: MAIN KITCHEN</p>
             </div>
           </div>

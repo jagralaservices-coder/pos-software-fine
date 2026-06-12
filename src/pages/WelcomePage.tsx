@@ -4,7 +4,9 @@ import { Button } from '@/components/ui/button';
 import { LogIn, UserPlus } from 'lucide-react';
 import { useLocale } from '@/contexts/LocaleContext';
 import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
-import paystoreIcon from '@/assets/paystore-icon.png';
+import MAXORAIcon from '@/assets/maxora-icon.jpg';
+import maxoraLogo from '@/assets/maxora-logo.png';
+import { MaxoraLogo } from '@/components/ui/MaxoraLogo';
 
 const WelcomePage: React.FC = () => {
   const navigate = useNavigate();
@@ -14,8 +16,13 @@ const WelcomePage: React.FC = () => {
   useEffect(() => {
     if (isAuthenticated && userRole) {
       const lastPath = localStorage.getItem('pos_last_path');
-      if (userRole.role !== 'admin' && lastPath && lastPath !== '/' && lastPath !== '/auth' && lastPath !== '/reset-password') {
-        navigate(lastPath, { replace: true });
+      if (userRole.role !== 'admin' && lastPath && lastPath.startsWith('/') && !lastPath.startsWith('//') && lastPath !== '/' && lastPath !== '/auth' && lastPath !== '/reset-password') {
+        try {
+          navigate(lastPath, { replace: true });
+        } catch (e) {
+          console.error('Navigation error:', e);
+          navigate('/dashboard', { replace: true });
+        }
       } else {
         switch (userRole.role) {
           case 'admin':
@@ -39,12 +46,11 @@ const WelcomePage: React.FC = () => {
     <div className="min-h-screen min-h-[100dvh] bg-background flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-sm text-center">
         {/* Logo */}
-        <div className="mb-10">
-          <div className="w-24 h-24 rounded-3xl overflow-hidden mx-auto mb-5 shadow-xl ring-2 ring-primary/20">
-            <img src={paystoreIcon} alt="PayStore POS" className="w-full h-full object-cover" />
+        <div className="mb-10 text-center flex flex-col items-center">
+          <div className="w-24 h-24 rounded-3xl overflow-hidden mx-auto mb-6 shadow-xl ring-2 ring-primary/20">
+            <img src={MAXORAIcon} alt="MAXORA Icon" className="w-full h-full object-cover" />
           </div>
-          <h1 className="text-3xl font-bold text-foreground">{t('welcome.title')}</h1>
-          <p className="text-muted-foreground text-sm mt-2">{t('welcome.subtitle')}</p>
+          <MaxoraLogo size="xl" />
         </div>
 
         {/* Single Login Button */}

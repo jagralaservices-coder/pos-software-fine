@@ -61,7 +61,7 @@ const ExecutiveDashboardPage: React.FC = () => {
                 <Share2 className="w-3.5 h-3.5" />
               </Button>
             </h1>
-            <p className="text-xs text-muted-foreground">PayStore POS • Strategic</p>
+            <p className="text-xs text-muted-foreground">MAXORA • Strategic</p>
           </div>
           <div className="w-9 h-9 rounded-full bg-primary flex items-center justify-center">
             <MessageSquare className="w-4 h-4 text-primary-foreground" />

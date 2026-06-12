@@ -35,7 +35,7 @@ import { useSubscription } from '@/hooks/useSubscription';
 import { useOwnerStore } from '@/hooks/useOwnerStore';
 import { OwnerStoreSelectionDialog } from '@/components/pos/OwnerStoreSelectionDialog';
 
-import paystoreIcon from '@/assets/paystore-icon.png';
+import MAXORAIcon from '@/assets/maxora-icon.jpg';
 
 import {
   Drawer,
@@ -222,11 +222,11 @@ export const MobileHeader: React.FC = () => {
               <DrawerHeader className="border-b border-border">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 rounded-xl overflow-hidden bg-primary flex items-center justify-center">
-                    <img src={paystoreIcon} alt="PayStore" className="w-full h-full object-cover" />
+                    <img src={MAXORAIcon} alt="MAXORA" className="w-full h-full object-cover" />
                   </div>
                   <div>
                     <DrawerTitle className="text-left">
-                      {displayInfo?.name || 'PayStore POS'}
+                      {displayInfo?.name || 'MAXORA'}
                     </DrawerTitle>
                     <p className="text-sm text-muted-foreground">
                       {displayInfo?.subtitle || t('common.notLoggedIn')}
@@ -313,10 +313,10 @@ export const MobileHeader: React.FC = () => {
 
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg overflow-hidden bg-primary flex items-center justify-center shadow-md shadow-primary/20">
-              <img src={paystoreIcon} alt="PayStore" className="w-full h-full object-cover" />
+              <img src={MAXORAIcon} alt="MAXORA" className="w-full h-full object-cover" />
             </div>
             <div>
-              <span className="font-bold text-sm text-foreground">PayStore</span>
+              <span className="font-bold text-sm text-foreground">MAXORA</span>
               <div className="flex items-center gap-1">
                 <div className={cn('w-1.5 h-1.5 rounded-full', navigator.onLine ? 'bg-success animate-pulse' : 'bg-destructive')} />
                 <span className="text-[10px] text-muted-foreground">{navigator.onLine ? 'Online' : 'Offline'}</span>

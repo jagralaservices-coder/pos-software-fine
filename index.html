@@ -3,13 +3,31 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <title>PayStore POS - Restaurant & Retail Billing System</title>
-    <meta name="description" content="PayStore POS: Fast, offline-ready restaurant and retail billing system with inventory management, staff tracking, KOT, delivery, and multi-store support." />
+    <title>MAXORA</title>
+    <meta name="description" content="MAXORA: Fast, offline-ready restaurant and retail billing system with inventory management, staff tracking, KOT, delivery, and multi-store support." />
     <meta name="keywords" content="POS, restaurant billing, retail billing, inventory management, staff management, KOT, delivery, India" />
-    <meta name="author" content="PayStore POS" />
+    <meta name="author" content="MAXORA" />
     <meta name="robots" content="index, follow" />
-    <link rel="canonical" href="https://paystore-pos.lovable.app/" />
+    <link rel="canonical" href="https://MAXORA-pos.lovable.app/" />
     <meta name="theme-color" content="#3b82f6" />
+    <meta name="mobile-web-app-capable" content="yes">
+    
+    <!-- Emergency cache clearance script -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          for(let registration of registrations) {
+            registration.unregister();
+          }
+        });
+      }
+      try {
+        const last = localStorage.getItem('pos_last_path');
+        if (last && (last.includes('http') || last === 'http:' || last.startsWith('//'))) {
+          localStorage.removeItem('pos_last_path');
+        }
+      } catch(e) {}
+    </script>
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     
@@ -17,24 +35,24 @@
     <link rel="apple-touch-icon" href="/pwa-192x192.png" />
     <link rel="manifest" href="/manifest.json" />
 
-    <meta property="og:title" content="PayStore POS - Restaurant & Retail Billing" />
+    <meta property="og:title" content="MAXORA - MAXORA" />
     <meta property="og:description" content="Fast, offline-ready POS with billing, inventory, staff management, KOT, delivery & multi-store support." />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://paystore-pos.lovable.app/" />
-    <meta property="og:image" content="https://paystore-pos.lovable.app/pwa-512x512.png" />
-    <meta property="og:site_name" content="PayStore POS" />
+    <meta property="og:url" content="https://MAXORA-pos.lovable.app/" />
+    <meta property="og:image" content="https://MAXORA-pos.lovable.app/pwa-512x512.png" />
+    <meta property="og:site_name" content="MAXORA" />
 
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:site" content="@PayStorePOS" />
-    <meta name="twitter:title" content="PayStore POS - Restaurant & Retail Billing" />
+    <meta name="twitter:site" content="@MAXORAPOS" />
+    <meta name="twitter:title" content="MAXORA - MAXORA" />
     <meta name="twitter:description" content="Fast, offline-ready POS with billing, inventory, staff management." />
-    <meta name="twitter:image" content="https://paystore-pos.lovable.app/pwa-512x512.png" />
+    <meta name="twitter:image" content="https://MAXORA-pos.lovable.app/pwa-512x512.png" />
 
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
-      "name": "PayStore POS",
+      "name": "MAXORA",
       "applicationCategory": "BusinessApplication",
       "operatingSystem": "Web, Android",
       "description": "Fast, offline-ready restaurant and retail POS billing system with inventory, staff, KOT, delivery & multi-store support.",

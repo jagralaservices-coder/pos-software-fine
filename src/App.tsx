@@ -133,6 +133,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: strin
       return renderWithGate(<MainLayout>{children}</MainLayout>);
     }
     // No staff session - redirect to staff login
+    try { localStorage.removeItem('pos_last_path'); } catch (e) {}
     return <Navigate to="/auth" replace />;
   }
   
@@ -153,6 +154,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: strin
   
   // Redirect if not authenticated via any method
   if (!isAuthenticated && !isStoreLogin && !isStaffLoggedIn) {
+    try { localStorage.removeItem('pos_last_path'); } catch (e) {}
     return <Navigate to="/" replace />;
   }
 
@@ -162,6 +164,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: strin
     if (isStoreLogin && activeStore) {
       return renderWithGate(<MainLayout>{children}</MainLayout>);
     }
+    try { localStorage.removeItem('pos_last_path'); } catch (e) {}
     return <Navigate to="/" replace />;
   }
   
@@ -177,6 +180,7 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   }
   
   if (!isAuthenticated || userRole?.role !== 'admin') {
+    try { localStorage.removeItem('pos_last_path'); } catch (e) {}
     return <Navigate to="/auth" replace />;
   }
   

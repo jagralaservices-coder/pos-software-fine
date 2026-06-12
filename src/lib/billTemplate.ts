@@ -72,7 +72,7 @@ export const getStoreConfig = (): StoreConfig => {
   const activeStoreData = JSON.parse(localStorage.getItem('pos_active_store_data') || '{}');
   
   return {
-    businessName: billConfig.businessName || activeStoreData.name || storeDetails.name || 'PayStore POS',
+    businessName: billConfig.businessName || activeStoreData.name || storeDetails.name || 'MAXORA',
     tagline: billConfig.tagline || storeDetails.tagline || '',
     address: billConfig.address || activeStoreData.address || storeDetails.address || '',
     city: billConfig.city || storeDetails.city || '',
@@ -496,7 +496,7 @@ export const generateProfessionalBill = (order: BillOrder, customSettings?: Part
       ${settings.showFooter ? `
       <div class="footer">
         <div class="footer-thanks">${settings.footerText}</div>
-        <div class="footer-powered">${labels.poweredBy} PayStore POS</div>
+        <div class="footer-powered">${labels.poweredBy} MAXORA</div>
       </div>
       ` : ''}
     </body>

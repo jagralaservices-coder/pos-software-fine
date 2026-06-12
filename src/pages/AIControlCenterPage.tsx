@@ -58,7 +58,7 @@ const AIControlCenterPage: React.FC = () => {
           </Button>
           <div className="flex-1">
             <p className="text-[10px] font-bold tracking-widest text-primary uppercase">AI Control Center</p>
-            <h1 className="text-lg font-bold text-foreground">PayStore POS</h1>
+            <h1 className="text-lg font-bold text-foreground">MAXORA</h1>
           </div>
           <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center">
             <Zap className="w-5 h-5 text-primary" />

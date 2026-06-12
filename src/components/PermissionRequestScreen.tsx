@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Button } from '@/components/ui/button';
 import { Camera as CameraIcon, MapPin, Bell, Check, Loader2, ArrowRight, Settings } from 'lucide-react';
-import paystoreIcon from '@/assets/paystore-icon.png';
+import MAXORAIcon from '@/assets/maxora-icon.jpg';
 
 interface PermissionRequestScreenProps {
   onComplete: () => void;
@@ -116,10 +116,10 @@ export const PermissionRequestScreen: React.FC<PermissionRequestScreenProps> = (
       alert(
         '📱 Permission Enable karne ke liye:\n\n' +
         '1. Phone Settings open karein\n2. "Apps" ya "Applications" mein jaayein\n' +
-        '3. "PayStore POS" dhundhein\n4. "Permissions" tap karein\n5. Camera aur Location enable karein'
+        '3. "MAXORA" dhundhein\n4. "Permissions" tap karein\n5. Camera aur Location enable karein'
       );
     } else if (platform === 'ios') {
-      alert('📱 Settings app open karein -> "PayStore POS" -> Camera & Location enable karein');
+      alert('📱 Settings app open karein -> "MAXORA" -> Camera & Location enable karein');
     }
   };
 
@@ -135,10 +135,10 @@ export const PermissionRequestScreen: React.FC<PermissionRequestScreenProps> = (
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/10 via-background to-secondary/10 flex flex-col items-center justify-center p-6">
       <div className="w-20 h-20 rounded-2xl overflow-hidden mb-6 shadow-lg">
-        <img src={paystoreIcon} alt="PayStore" className="w-full h-full object-cover" />
+        <img src={MAXORAIcon} alt="MAXORA" className="w-full h-full object-cover" />
       </div>
 
-      <h1 className="text-2xl font-bold mb-2 text-center">Welcome to PayStore POS</h1>
+      <h1 className="text-2xl font-bold mb-2 text-center">Welcome to MAXORA</h1>
       <p className="text-muted-foreground text-center mb-6 max-w-sm">Har permission ko ek-ek karke Allow karein</p>
 
       <div className="w-full max-w-sm space-y-3 mb-6">

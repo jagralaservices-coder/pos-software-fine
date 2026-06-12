@@ -422,11 +422,11 @@ export const OperationsPage: React.FC = () => {
               </button>
             )}
             <a 
-              href="mailto:support@paystore.in" 
+              href="mailto:support@MAXORA.in" 
               className="flex items-center gap-2 text-primary hover:underline text-sm"
             >
               <Mail className="w-4 h-4" />
-              <span className="hidden sm:inline">support@paystore.in</span>
+              <span className="hidden sm:inline">support@MAXORA.in</span>
             </a>
           </div>
         </div>
