@@ -43,18 +43,25 @@ const WelcomePage: React.FC = () => {
   }, [isAuthenticated, userRole, navigate]);
 
   return (
-    <div className="min-h-screen min-h-[100dvh] bg-background flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-sm text-center">
-        {/* Logo */}
-        <div className="mb-10 text-center flex flex-col items-center">
-          <div className="w-24 h-24 rounded-3xl overflow-hidden mx-auto mb-6 shadow-xl ring-2 ring-primary/20">
+    <div className="min-h-[100dvh] bg-background flex flex-col items-center justify-center p-4">
+      {/* 
+        Main content wrapper, positioned slightly above center using mb-8 or -mt-8 
+      */}
+      <div className="w-full flex flex-col items-center justify-center -mt-12">
+        
+        {/* Tightly packed Icon + Logo group */}
+        <div className="w-full flex flex-col items-center max-w-[600px] mb-8">
+          {/* MAXORA Icon restored above the wordmark */}
+          <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl overflow-hidden shadow-xl ring-2 ring-primary/20 mb-4 flex-shrink-0">
             <img src={MAXORAIcon} alt="MAXORA Icon" className="w-full h-full object-cover" />
           </div>
+          
+          {/* MAXORA 8K Logo */}
           <MaxoraLogo size="xl" />
         </div>
 
-        {/* Single Login Button */}
-        <div className="space-y-3">
+        {/* Login Buttons Group brought closer */}
+        <div className="w-full max-w-sm text-center space-y-3">
           <Button
             onClick={() => navigate('/auth')}
             className="w-full h-14 text-lg rounded-2xl gap-3 shadow-lg shadow-primary/20"
