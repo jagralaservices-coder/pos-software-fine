@@ -36,6 +36,7 @@ import { getInventory, setInventory, InventoryItem, formatCurrency, generateId, 
 import { formatQuantityDisplay, convertToBaseUnit, getBaseUnit, UNIT_CATEGORIES } from '@/lib/inventoryUtils';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Collapsible,
   CollapsibleContent,
@@ -260,7 +261,8 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
     unit: 'kg',
     costPerUnit: '',
     costUnit: 'kg', // Unit for cost (kg, g, ltr, ml, pcs)
-    minStock: '10'
+    minStock: '10',
+    isManufactured: false
   });
 
   const handleAddPurchase = () => {
@@ -283,6 +285,7 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
               ...item, 
               quantity: item.quantity + quantityInBase,
               costPerUnit: formData.costPerUnit ? parseFloat(formData.costPerUnit) : item.costPerUnit,
+              isManufactured: formData.isManufactured || item.isManufactured,
               lastUpdated: new Date()
             }
           : item
@@ -300,6 +303,7 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
         costPerUnit: formData.costPerUnit ? parseFloat(formData.costPerUnit) : 0,
         costUnit: formData.costUnit, // Store cost unit
         minStock: convertToBaseUnit(parseFloat(formData.minStock), formData.unit), // Also convert minStock
+        isManufactured: formData.isManufactured,
         lastUpdated: new Date()
       };
       const updatedInventory = [...inventory, newItem];
@@ -314,7 +318,7 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
     const hasComponents = existingItem && existingItem.components && existingItem.components.length > 0;
     
     // Automatically add an expense for this purchase, ONLY if it's not a manufactured product
-    if (costPerUnit > 0 && parseFloat(formData.quantity) > 0 && !hasComponents) {
+    if (costPerUnit > 0 && parseFloat(formData.quantity) > 0 && !hasComponents && !formData.isManufactured) {
       let totalExpense = 0;
       if (formData.costUnit === 'kg' && formData.unit === 'g') {
         totalExpense = (parseFloat(formData.quantity) / 1000) * costPerUnit;
@@ -342,7 +346,7 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
       }
     }
 
-    setFormData({ name: '', quantity: '', unit: 'kg', costPerUnit: '', costUnit: 'kg', minStock: '10' });
+    setFormData({ name: '', quantity: '', unit: 'kg', costPerUnit: '', costUnit: 'kg', minStock: '10', isManufactured: false });
     setShowAddDialog(false);
   };
 
@@ -355,6 +359,54 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
     // Convert to base unit for storage
     const quantityInBase = formData.quantity ? convertToBaseUnit(parseFloat(formData.quantity), formData.unit) : 0;
     const baseUnit = getBaseUnit(formData.unit);
+    const costPerUnit = formData.costPerUnit ? parseFloat(formData.costPerUnit) : 0;
+
+    // Check if the item is manufactured
+    const isManufactured = formData.isManufactured || (editingItem.components && editingItem.components.length > 0);
+
+    // Calculate delta for automatic expense generation
+    const oldQtyInBase = editingItem.quantity;
+    const deltaInBase = quantityInBase - oldQtyInBase;
+
+    // Only log expense if stock increased and it's a purchased item
+    if (deltaInBase > 0 && costPerUnit > 0 && !isManufactured) {
+      let totalExpense = 0;
+      let addedDisplayQty = deltaInBase;
+      let displayUnit = baseUnit;
+
+      if (formData.costUnit === 'kg' && baseUnit === 'g') {
+        totalExpense = (deltaInBase / 1000) * costPerUnit;
+        addedDisplayQty = deltaInBase / 1000;
+        displayUnit = 'kg';
+      } else if (formData.costUnit === 'ltr' && baseUnit === 'ml') {
+        totalExpense = (deltaInBase / 1000) * costPerUnit;
+        addedDisplayQty = deltaInBase / 1000;
+        displayUnit = 'ltr';
+      } else if (formData.costUnit === 'g' && baseUnit === 'kg') {
+        totalExpense = (deltaInBase * 1000) * costPerUnit;
+        addedDisplayQty = deltaInBase;
+        displayUnit = 'g';
+      } else if (formData.costUnit === 'ml' && baseUnit === 'ltr') {
+        totalExpense = (deltaInBase * 1000) * costPerUnit;
+        addedDisplayQty = deltaInBase;
+        displayUnit = 'ml';
+      } else {
+        totalExpense = deltaInBase * costPerUnit;
+      }
+
+      if (totalExpense > 0) {
+        const newExpense: Expense = {
+          id: generateId(),
+          category: 'Inventory Purchase',
+          amount: totalExpense,
+          description: `Stock adjusted (+${addedDisplayQty} ${displayUnit}) for ${formData.name}`,
+          date: new Date(),
+          paidBy: 'System'
+        };
+        setExpenses([newExpense, ...getExpenses()]);
+        toast.success(`Expense of ₹${totalExpense.toFixed(2)} automatically recorded for added stock`);
+      }
+    }
 
     const updatedInventory = inventory.map(item => 
       item.id === editingItem.id 
@@ -363,9 +415,10 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
             name: formData.name,
             quantity: quantityInBase,
             unit: baseUnit,
-            costPerUnit: formData.costPerUnit ? parseFloat(formData.costPerUnit) : 0,
+            costPerUnit: costPerUnit,
             costUnit: formData.costUnit,
             minStock: convertToBaseUnit(parseFloat(formData.minStock), formData.unit),
+            isManufactured: formData.isManufactured,
             lastUpdated: new Date()
           }
         : item
@@ -374,7 +427,7 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
     setLocalInventory(updatedInventory);
     toast.success(`"${formData.name}" updated`);
 
-    setFormData({ name: '', quantity: '', unit: 'kg', costPerUnit: '', costUnit: 'kg', minStock: '10' });
+    setFormData({ name: '', quantity: '', unit: 'kg', costPerUnit: '', costUnit: 'kg', minStock: '10', isManufactured: false });
     setEditingItem(null);
     setShowEditDialog(false);
   };
@@ -415,7 +468,8 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
       unit: displayUnit,
       costPerUnit: item.costPerUnit.toString(),
       costUnit: item.costUnit || displayUnit,
-      minStock: item.minStock.toString()
+      minStock: item.minStock.toString(),
+      isManufactured: item.isManufactured || false
     });
     setShowEditDialog(true);
   };
@@ -440,7 +494,7 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
 
     inventory.forEach(item => {
       // Don't add if it has components (manufactured product)
-      if (item.components && item.components.length > 0) return;
+      if (item.isManufactured || (item.components && item.components.length > 0)) return;
       
       const costPerUnit = item.costPerUnit || 0;
       if (costPerUnit > 0 && item.quantity > 0) {
@@ -506,10 +560,6 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-          <Button variant="outline" className="gap-2" onClick={handleMigrateToExpenses} title="One-time button to add all current stock to expenses">
-            <RefreshCw className="w-4 h-4" />
-            Sync Stock to Expenses
-          </Button>
           <Button className="gap-2 bg-primary text-primary-foreground" onClick={() => setShowAddDialog(true)}>
             <Plus className="w-4 h-4" />
             Add Purchase
@@ -736,7 +786,17 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
                 onChange={(e) => setFormData({...formData, minStock: e.target.value})}
               />
             </div>
-            <Button className="w-full" onClick={handleAddPurchase}>
+            <div className="flex items-center space-x-2 mt-2">
+              <Checkbox 
+                id="isManufacturedAdd" 
+                checked={formData.isManufactured}
+                onCheckedChange={(checked) => setFormData({...formData, isManufactured: checked === true})}
+              />
+              <Label htmlFor="isManufacturedAdd" className="text-sm font-normal cursor-pointer leading-tight">
+                Manufactured Item (Produced internally, do not count as expense)
+              </Label>
+            </div>
+            <Button className="w-full mt-4" onClick={handleAddPurchase}>
               Add to Inventory
             </Button>
           </div>
@@ -820,7 +880,17 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
                 onChange={(e) => setFormData({...formData, minStock: e.target.value})}
               />
             </div>
-            <Button className="w-full" onClick={handleEditItem}>
+            <div className="flex items-center space-x-2 mt-2">
+              <Checkbox 
+                id="isManufacturedEdit" 
+                checked={formData.isManufactured}
+                onCheckedChange={(checked) => setFormData({...formData, isManufactured: checked === true})}
+              />
+              <Label htmlFor="isManufacturedEdit" className="text-sm font-normal cursor-pointer leading-tight">
+                Manufactured Item (Produced internally, do not count as expense)
+              </Label>
+            </div>
+            <Button className="w-full mt-4" onClick={handleEditItem}>
               Save Changes
             </Button>
           </div>

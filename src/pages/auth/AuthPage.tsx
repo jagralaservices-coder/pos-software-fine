@@ -228,6 +228,14 @@ const AuthPage: React.FC = () => {
 
       if (error) {
         setIsLoading(false);
+        if (error.includes('exceeded the quota') || error.includes('QuotaExceededError')) {
+          toast({ 
+            title: 'Storage Full', 
+            description: 'Your browser storage is full. Please clear app data using the button below to continue.', 
+            variant: 'destructive',
+          });
+          return;
+        }
         toast({ title: t('auth.loginFailed'), description: error, variant: 'destructive' });
         return;
       }
@@ -615,9 +623,24 @@ const AuthPage: React.FC = () => {
 
         {/* Role info */}
         {!isSignup && signupStep === 'form' && (
-          <p className="text-center text-xs text-muted-foreground mt-4">
-            Admin, Owner, Store Manager, Staff — sabka email se login
-          </p>
+          <div className="flex flex-col items-center gap-2 mt-4">
+            <p className="text-center text-xs text-muted-foreground">
+              Admin, Owner, Store Manager, Staff — sabka email se login
+            </p>
+            <Button 
+              type="button"
+              variant="link" 
+              className="text-xs text-muted-foreground h-auto p-0"
+              onClick={() => {
+                if (window.confirm("Are you sure you want to clear all app data? This will log you out and remove all offline data.")) {
+                  localStorage.clear();
+                  window.location.reload();
+                }
+              }}
+            >
+              Experiencing issues? Clear App Data
+            </Button>
+          </div>
         )}
       </div>
     </div>

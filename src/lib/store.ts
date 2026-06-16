@@ -175,6 +175,7 @@ export interface InventoryItem {
   components?: InventoryComponent[]; // Sub-components for this inventory item
   productionYield?: number; // How much is produced from components (in base unit g/ml/pcs)
   productionYieldUnit?: string; // Unit for production yield
+  isManufactured?: boolean; // Flag to indicate this is produced internally, not purchased
 }
 
 export interface InventoryComponent {

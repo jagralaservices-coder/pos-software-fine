@@ -305,7 +305,7 @@ export const SettingsPage: React.FC = () => {
     { id: 'printer', label: t('settings.printer'), icon: Printer, color: 'text-cyan-400' },
     { id: 'billing', label: t('settings.billing'), icon: Receipt, color: 'text-rose-400' },
     { id: 'backup', label: 'Backup & Recovery', icon: HardDrive, color: 'text-amber-500' },
-    ...(isAdmin ? [{ id: 'admin', label: t('admin.ownerSettings'), icon: Users, color: 'text-orange-400' }] : []),
+    ...((isAdmin || isOwner) ? [{ id: 'admin', label: t('admin.ownerSettings'), icon: Users, color: 'text-orange-400' }] : []),
   ];
 
   const renderSectionContent = () => {
