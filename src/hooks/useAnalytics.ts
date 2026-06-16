@@ -6,7 +6,11 @@ import { supabase } from '@/integrations/supabase/client';
 import { startOfDay, startOfWeek, startOfMonth, isAfter } from 'date-fns';
 import { useOwnerStore } from './useOwnerStore';
 
-export type TimeRange = 'today' | 'week' | 'month' | 'all';
+export type TimeRange = 'today' | 'week' | 'month' | 'all' | 'custom';
+export interface CustomDateRange {
+  from: Date;
+  to?: Date;
+}
 
 export interface AnalyticsSummary {
   totalOrders: number;
@@ -158,7 +162,7 @@ const getStoreCodeFromStorage = (): string | null => {
   return null;
 };
 
-export const useAnalytics = (timeRange: TimeRange = 'today') => {
+export const useAnalytics = (timeRange: TimeRange = 'today', customDateRange?: CustomDateRange) => {
   const posContext = useContext(POSContext);
   const { selectedStoreId, isOwner } = useOwnerStore();
 
@@ -200,7 +204,7 @@ export const useAnalytics = (timeRange: TimeRange = 'today') => {
 
   // Fetch orders from DB (including QR orders)
   const fetchOrdersFromDB = useCallback(async () => {
-    if (!effectiveStoreId) {
+    if (!effectiveStoreId && !isOwner) {
       setDbOrders([]);
       return;
     }
@@ -241,18 +245,17 @@ export const useAnalytics = (timeRange: TimeRange = 'today') => {
         setDbOrders(orders);
       } else {
         // Fetch main orders and completed QR orders in parallel
+        let ordersQuery = supabase.from('orders').select('*').order('created_at', { ascending: false }).limit(5000);
+        let qrQuery = supabase.from('qr_orders').select('*').in('status', ['completed', 'ready', 'accepted', 'preparing']).order('created_at', { ascending: false }).limit(5000);
+        
+        if (effectiveStoreId) {
+          ordersQuery = ordersQuery.eq('store_id', effectiveStoreId);
+          qrQuery = qrQuery.eq('store_id', effectiveStoreId);
+        }
+
         const [ordersRes, qrRes] = await Promise.all([
-          supabase
-            .from('orders')
-            .select('*')
-            .eq('store_id', effectiveStoreId)
-            .order('created_at', { ascending: false }),
-          supabase
-            .from('qr_orders')
-            .select('*')
-            .eq('store_id', effectiveStoreId)
-            .in('status', ['completed', 'ready', 'accepted', 'preparing'])
-            .order('created_at', { ascending: false }),
+          ordersQuery,
+          qrQuery,
         ]);
 
         if (ordersRes.error) {
@@ -367,6 +370,22 @@ export const useAnalytics = (timeRange: TimeRange = 'today') => {
       case 'month':
         startDate = startOfMonth(now);
         break;
+      case 'custom':
+        if (customDateRange?.from) {
+          startDate = startOfDay(customDateRange.from);
+          // If 'to' is provided, we filter between 'from' and 'to'
+          if (customDateRange.to) {
+            const endDate = new Date(customDateRange.to);
+            endDate.setHours(23, 59, 59, 999);
+            return filtered.filter(order => {
+              const orderDate = new Date(order.createdAt);
+              return isAfter(orderDate, startDate) && orderDate <= endDate;
+            });
+          }
+        } else {
+          startDate = startOfDay(now);
+        }
+        break;
       default:
         startDate = startOfDay(now);
     }
@@ -374,7 +393,7 @@ export const useAnalytics = (timeRange: TimeRange = 'today') => {
     return filtered.filter(order =>
       isAfter(new Date(order.createdAt), startDate)
     );
-  }, [orders, timeRange]);
+  }, [orders, timeRange, customDateRange]);
 
   // All orders for status counts (not just billed)
   const allActiveOrders = useMemo(() => {
@@ -384,6 +403,49 @@ export const useAnalytics = (timeRange: TimeRange = 'today') => {
       !order.isDirectBill && isAfter(new Date(order.createdAt), startDate)
     );
   }, [orders]);
+
+  const filteredCancelledOrders = useMemo(() => {
+    let filtered = orders.filter(o => o.status === 'cancelled');
+
+    if (timeRange === 'all') return filtered;
+
+    const now = new Date();
+    let startDate: Date;
+
+    switch (timeRange) {
+      case 'today':
+        startDate = startOfDay(now);
+        break;
+      case 'week':
+        startDate = startOfWeek(now);
+        break;
+      case 'month':
+        startDate = startOfMonth(now);
+        break;
+      case 'custom':
+        if (customDateRange?.from) {
+          startDate = startOfDay(customDateRange.from);
+          // If 'to' is provided, we filter between 'from' and 'to'
+          if (customDateRange.to) {
+            const endDate = new Date(customDateRange.to);
+            endDate.setHours(23, 59, 59, 999);
+            return filtered.filter(order => {
+              const orderDate = new Date(order.createdAt);
+              return isAfter(orderDate, startDate) && orderDate <= endDate;
+            });
+          }
+        } else {
+          startDate = startOfDay(now);
+        }
+        break;
+      default:
+        startDate = startOfDay(now);
+    }
+
+    return filtered.filter(order =>
+      isAfter(new Date(order.createdAt), startDate)
+    );
+  }, [orders, timeRange, customDateRange]);
 
   // Core Summary
   const summary: AnalyticsSummary = useMemo(() => {
@@ -575,6 +637,8 @@ export const useAnalytics = (timeRange: TimeRange = 'today') => {
     payments: []
   });
 
+  const [totalCreditLedger, setTotalCreditLedger] = useState<{ outstanding: number }>({ outstanding: 0 });
+
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
@@ -585,15 +649,24 @@ export const useAnalytics = (timeRange: TimeRange = 'today') => {
       try {
         const now = new Date();
         let startDate: Date | null = null;
+        let endDate: Date | null = null;
         if (timeRange === 'today') startDate = startOfDay(now);
         else if (timeRange === 'week') startDate = startOfWeek(now);
         else if (timeRange === 'month') startDate = startOfMonth(now);
+        else if (timeRange === 'custom' && customDateRange?.from) {
+          startDate = startOfDay(customDateRange.from);
+          if (customDateRange.to) {
+            endDate = new Date(customDateRange.to);
+            endDate.setHours(23, 59, 59, 999);
+          }
+        }
 
         let q = supabase
           .from('credit_payments')
           .select('amount, payment_method, created_at')
           .eq('store_id', effectiveStoreId);
         if (startDate) q = q.gte('created_at', startDate.toISOString());
+        if (endDate) q = q.lte('created_at', endDate.toISOString());
 
         const { data, error } = await q;
         if (error || cancelled) return;
@@ -607,13 +680,28 @@ export const useAnalytics = (timeRange: TimeRange = 'today') => {
           paymentsList.push(row);
         });
         setCreditPaymentsAgg({ collected, count, payments: paymentsList });
+
+        // Fetch Total Outstanding regardless of timeRange
+        let totalOut = 0;
+        try {
+          const { data: ledgerData, error: ledgerError } = await supabase
+            .from('credit_ledger')
+            .select('due_amount')
+            .eq('store_id', effectiveStoreId);
+          if (!ledgerError && ledgerData) {
+            ledgerData.forEach((row: any) => {
+              totalOut += Number(row.due_amount || 0);
+            });
+          }
+        } catch (e) {}
+        setTotalCreditLedger({ outstanding: totalOut });
       } catch (e) {
         // ignore - credit payments optional
       }
     };
     load();
     return () => { cancelled = true; };
-  }, [effectiveStoreId, timeRange, dbOrders.length]);
+  }, [effectiveStoreId, timeRange, dbOrders.length, customDateRange]);
 
   // Payment Summary — Credit replaces Due; adds Credit Outstanding / Credit Collected
   const paymentSummary: PaymentSummary[] = useMemo(() => {
@@ -714,9 +802,9 @@ export const useAnalytics = (timeRange: TimeRange = 'today') => {
     // Credit Outstanding
     rows.push({
       method: 'Credit Outstanding',
-      count: paymentTotals.credit.count,
-      amount: creditOutstanding,
-      percentage: total > 0 ? Math.round((creditOutstanding / total) * 100) : 0,
+      count: 0, // Not applicable
+      amount: totalCreditLedger.outstanding,
+      percentage: total > 0 ? Math.round((totalCreditLedger.outstanding / total) * 100) : 0,
     });
 
     // Credit Collected
@@ -738,6 +826,7 @@ export const useAnalytics = (timeRange: TimeRange = 'today') => {
     });
 
     // GST / Tax total
+    // GST / Tax total
     const totalTax = filteredOrders.reduce((s, o) => s + (Number(o.tax) || 0), 0);
     const taxCount = filteredOrders.filter(o => (Number(o.tax) || 0) > 0).length;
     rows.push({
@@ -747,8 +836,17 @@ export const useAnalytics = (timeRange: TimeRange = 'today') => {
       percentage: total > 0 ? Math.round((totalTax / total) * 100) : 0,
     });
 
+    // Cancelled Orders
+    const cancelledAmount = filteredCancelledOrders.reduce((sum, o) => sum + o.total, 0);
+    rows.push({
+      method: 'Cancelled Order',
+      count: filteredCancelledOrders.length,
+      amount: cancelledAmount,
+      percentage: total > 0 ? Math.round((cancelledAmount / total) * 100) : 0,
+    });
+
     return rows;
-  }, [filteredOrders, summary.totalSales, creditPaymentsAgg]);
+  }, [summary, filteredOrders, creditPaymentsAgg, filteredCancelledOrders]);
 
   // Hourly Sales (for today)
   const hourlySales: HourlySales[] = useMemo(() => {

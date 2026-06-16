@@ -275,9 +275,7 @@ const AppRoutes = () => {
       <Route path="/dashboard" element={
         <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><DashboardPage /></ProtectedRoute>
       } />
-      <Route path="/pos" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><POSBillingPage /></ProtectedRoute>
-      } />
+      <Route path="/pos" element={<ProtectedRoute allowedRoles={['store_manager']} allowStoreLogin={true} allowStaffLogin={true}><POSBillingPage /></ProtectedRoute>} />
       <Route path="/tables" element={
         <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="tableManagement"><TablesManagementPage /></FeatureGuard></ProtectedRoute>
       } />

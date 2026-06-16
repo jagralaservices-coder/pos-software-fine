@@ -106,6 +106,10 @@ export const MenuGrid = forwardRef<HTMLDivElement>((_, ref) => {
     });
   }, [menuItems, activeCategory, searchQuery]);
 
+  const activeCategories = useMemo(() => {
+    return categories.filter(cat => menuItems.some(item => item.category === cat.id));
+  }, [categories, menuItems]);
+
   const validateOtherForm = (): boolean => {
     const errors: Record<string, string> = {};
     if (!otherName.trim()) errors.name = 'Product name is required';
@@ -206,7 +210,7 @@ export const MenuGrid = forwardRef<HTMLDivElement>((_, ref) => {
         >
           All Items
         </button>
-        {categories.map((cat) => (
+        {activeCategories.map((cat) => (
           <button
             key={cat.id}
             onClick={() => { setActiveCategory(cat.id); setShowCategorySelector(false); }}

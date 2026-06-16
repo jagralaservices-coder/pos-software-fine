@@ -801,19 +801,7 @@ export const StoreStaffSettings: React.FC = () => {
                       size="sm"
                       className="h-7 text-[10px] px-2.5 bg-primary/5 border-primary/20 text-primary hover:bg-primary/10 rounded-lg"
                       onClick={async () => {
-                        const confirmPopulate = confirm('Are you sure you want to populate this store with demo test data? All existing menu items, inventory, orders, expenses, and credit logs will be reset.');
-                        if (!confirmPopulate) return;
-                        toast.loading('Populating store with demo test data...');
-                        const { runAutoPopulation } = await import('@/lib/demoDataHelper');
-                        const success = await runAutoPopulation(store.id);
-                        toast.dismiss();
-                        if (success) {
-                          toast.success('Store demo data populated successfully!');
-                          fetchStores();
-                          fetchStaff();
-                        } else {
-                          toast.error('Failed to populate store demo data.');
-                        }
+                        toast.error('Demo data generation is now handled strictly at the database level.');
                       }}
                     >
                       Populate Dummy Data

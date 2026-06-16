@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { DateRange } from 'react-day-picker';
+import { DatePickerWithRange } from '@/components/ui/date-range-picker';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -685,26 +687,21 @@ const AdvancedReportsPage: React.FC = () => {
   const storeId = activeStore?.id || null;
   const [activeTab, setActiveTab] = useState<ReportType | null>(null);
   const [granularity, setGranularity] = useState('daily');
-  const [datePreset, setDatePreset] = useState('this_month');
-  
-  const dateRange = useMemo(() => {
-    const now = new Date();
-    switch (datePreset) {
-      case 'today': return { start: now, end: now };
-      case 'last_7': return { start: subDays(now, 7), end: now };
-      case 'last_30': return { start: subDays(now, 30), end: now };
-      case 'this_month': return { start: startOfMonth(now), end: now };
-      case 'last_month': return { start: startOfMonth(subMonths(now, 1)), end: endOfMonth(subMonths(now, 1)) };
-      case 'last_3_months': return { start: subMonths(now, 3), end: now };
-      default: return { start: startOfMonth(now), end: now };
-    }
-  }, [datePreset]);
+  const [dateRange, setDateRange] = useState<DateRange | undefined>({
+    from: startOfMonth(new Date()),
+    to: new Date()
+  });
 
   const { loading, data, fetchReport } = useAdvancedReports(storeId);
 
   useEffect(() => {
-    if (storeId && activeTab && activeTab !== 'aiInsights') {
-      fetchReport(activeTab, dateRange, { granularity });
+    if (storeId && activeTab && activeTab !== 'aiInsights' && dateRange?.from) {
+      // Ensure 'to' date is set (default to 'from' if missing to avoid errors)
+      const validDateRange = {
+        start: dateRange.from,
+        end: dateRange.to || dateRange.from
+      };
+      fetchReport(activeTab, validDateRange, { granularity });
     }
   }, [activeTab, storeId, dateRange, granularity]);
 
@@ -730,8 +727,8 @@ const AdvancedReportsPage: React.FC = () => {
   ];
 
   const handlePrintReport = () => {
-    if (!data || !activeTab) return;
-    const dateStr = `${format(dateRange.start, 'dd MMM')} - ${format(dateRange.end, 'dd MMM yyyy')}`;
+    if (!data || !activeTab || !dateRange?.from) return;
+    const dateStr = `${format(dateRange.from, 'dd MMM')} - ${format(dateRange.to || dateRange.from, 'dd MMM yyyy')}`;
     const tabLabel = tabs.find(t => t.id === activeTab)?.label || activeTab;
     const rows: { label: string; value: string }[] = [];
 
@@ -826,7 +823,7 @@ const AdvancedReportsPage: React.FC = () => {
               {activeTab ? tabs.find(t => t.id === activeTab)?.label || 'Report' : 'Advanced Reports'}
             </h1>
             <p className="text-xs text-muted-foreground">
-              {format(dateRange.start, 'MMM dd')} - {format(dateRange.end, 'MMM dd, yyyy')}
+              {dateRange?.from ? format(dateRange.from, 'MMM dd') : ''} {dateRange?.to ? `- ${format(dateRange.to, 'MMM dd, yyyy')}` : ''}
             </p>
           </div>
         </div>
@@ -837,19 +834,10 @@ const AdvancedReportsPage: React.FC = () => {
               Print
             </Button>
           )}
-          <Select value={datePreset} onValueChange={setDatePreset}>
-            <SelectTrigger className="w-[150px] h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="today">Today</SelectItem>
-              <SelectItem value="last_7">Last 7 Days</SelectItem>
-              <SelectItem value="last_30">Last 30 Days</SelectItem>
-              <SelectItem value="this_month">This Month</SelectItem>
-              <SelectItem value="last_month">Last Month</SelectItem>
-              <SelectItem value="last_3_months">Last 3 Months</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-2">
+            <Button variant={!dateRange || (dateRange.from && !dateRange.to && dateRange.from.toDateString() === new Date().toDateString()) ? 'default' : 'outline'} onClick={() => setDateRange({ from: new Date(), to: new Date() })} className="h-9">Today</Button>
+            <DatePickerWithRange date={dateRange} setDate={setDateRange} />
+          </div>
         </div>
       </div>
 
@@ -889,7 +877,7 @@ const AdvancedReportsPage: React.FC = () => {
           {activeTab === 'delivery' && <DeliveryPerformanceReport data={data} loading={loading} />}
           {activeTab === 'invoice' && <InvoiceReport data={data} loading={loading} />}
           {activeTab === 'multiOutlet' && <MultiOutletReport data={data} loading={loading} />}
-          {activeTab === 'aiInsights' && storeId && <AIInsightsPanel storeId={storeId} dateRange={dateRange} />}
+          {activeTab === 'aiInsights' && storeId && dateRange?.from && <AIInsightsPanel storeId={storeId} dateRange={{ start: dateRange.from, end: dateRange.to || dateRange.from }} />}
         </div>
       )}
     </div>

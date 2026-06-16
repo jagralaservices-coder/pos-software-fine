@@ -332,7 +332,21 @@ export const useStoreDataSync = () => {
     if (!storeId || !navigator.onLine) return localItems;
 
     try {
-      // Save local to cloud
+      // 0. Sync deletions first
+      const deletedKey = `pos_deleted_inventory_${storeId}`;
+      const deletedIdsStr = localStorage.getItem(deletedKey);
+      if (deletedIdsStr) {
+        const deletedIds = JSON.parse(deletedIdsStr) as string[];
+        if (deletedIds.length > 0) {
+          const success = await callSyncFunction({ action: 'delete', store_id: storeId, data_type: 'inventory', item_ids: deletedIds });
+          if (success) {
+            localStorage.removeItem(deletedKey);
+            console.log('[StoreSync] Synced deleted inventory items:', deletedIds);
+          }
+        }
+      }
+
+      // 1. Save local to cloud
       if (localItems.length > 0) {
         await callSyncFunction({ action: 'save', store_id: storeId, data_type: 'inventory', items: localItems });
       }
@@ -357,6 +371,20 @@ export const useStoreDataSync = () => {
     if (!storeId || !navigator.onLine) return localItems;
 
     try {
+      // 0. Sync deletions first
+      const deletedKey = `pos_deleted_expenses_${storeId}`;
+      const deletedIdsStr = localStorage.getItem(deletedKey);
+      if (deletedIdsStr) {
+        const deletedIds = JSON.parse(deletedIdsStr) as string[];
+        if (deletedIds.length > 0) {
+          const success = await callSyncFunction({ action: 'delete', store_id: storeId, data_type: 'expenses', item_ids: deletedIds });
+          if (success) {
+            localStorage.removeItem(deletedKey);
+            console.log('[StoreSync] Synced deleted expenses:', deletedIds);
+          }
+        }
+      }
+
       if (localItems.length > 0) {
         await callSyncFunction({ action: 'save', store_id: storeId, data_type: 'expenses', items: localItems });
       }

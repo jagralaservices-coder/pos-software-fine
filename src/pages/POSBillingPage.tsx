@@ -206,8 +206,9 @@ export const POSBillingPage: React.FC = () => {
 
   const filteredItems = useMemo(() => {
     const baseProducts = menuItems.filter(item => {
-      const matchesCategory = !searchQuery || activeCategory === 'all' || item.category === activeCategory;
-      const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      const matchesCategory = activeCategory === 'all' || item.category === activeCategory;
+      const matchesSearch = !searchQuery || 
+                           item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                            (item.sku && String(item.sku).toLowerCase().includes(searchQuery.toLowerCase())) ||
                            (item.barcode && String(item.barcode).toLowerCase().includes(searchQuery.toLowerCase()));
       return matchesCategory && matchesSearch && item.isAvailable;
@@ -225,9 +226,9 @@ export const POSBillingPage: React.FC = () => {
     return [othersItem, ...baseProducts];
   }, [menuItems, activeCategory, searchQuery]);
 
-
-
-
+  const activeCategories = useMemo(() => {
+    return categories.filter(cat => menuItems.some(item => item.category === cat.id));
+  }, [categories, menuItems]);
 
   // Get available tables for dropdown
   const availableTables = tables.filter(t => t.status === 'available' || t.id === selectedTableId);
@@ -1248,7 +1249,7 @@ export const POSBillingPage: React.FC = () => {
           >
             {t('common.all')}
           </button>
-          {categories.map(cat => (
+          {activeCategories.map(cat => (
             <button
               key={cat.id}
               onClick={() => setActiveCategory(cat.id)}

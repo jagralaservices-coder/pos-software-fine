@@ -201,6 +201,10 @@ const CustomerMenuPage: React.FC = () => {
     });
   }, [menuItems, activeCategory, searchQuery]);
 
+  const activeCategories = useMemo(() => {
+    return categories.filter(cat => menuItems.some(item => item.category === cat.category_id && item.is_available));
+  }, [categories, menuItems]);
+
   const addToCart = (item: PublicMenuItem, variation?: MenuVariation) => {
     const cartId = variation ? `${item.id}_${variation.id}` : item.id;
     const name = variation ? `${item.name} (${variation.name})` : item.name;
@@ -420,7 +424,7 @@ const CustomerMenuPage: React.FC = () => {
           >
             All
           </button>
-          {categories.map(cat => (
+          {activeCategories.map(cat => (
             <button
               key={cat.category_id}
               onClick={() => setActiveCategory(cat.category_id)}

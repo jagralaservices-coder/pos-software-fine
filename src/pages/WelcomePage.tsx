@@ -16,7 +16,7 @@ const WelcomePage: React.FC = () => {
   useEffect(() => {
     if (isAuthenticated && userRole) {
       const lastPath = localStorage.getItem('pos_last_path');
-      if (userRole.role !== 'admin' && lastPath && lastPath.startsWith('/') && !lastPath.startsWith('//') && lastPath !== '/' && lastPath !== '/auth' && lastPath !== '/reset-password') {
+      if (userRole.role !== 'admin' && userRole.role !== 'owner' && lastPath && lastPath.startsWith('/') && !lastPath.startsWith('//') && lastPath !== '/' && lastPath !== '/auth' && lastPath !== '/reset-password') {
         try {
           navigate(lastPath, { replace: true });
         } catch (e) {

@@ -3,7 +3,7 @@ import { useAnalytics } from '@/hooks/useAnalytics';
 import { useLocale } from '@/contexts/LocaleContext';
 import { getPaymentBreakdownSummary } from '@/lib/paymentBreakdown';
 import { smartPrint } from '@/lib/printUtils';
-import { X, Printer, Calendar, TrendingUp, CreditCard, Banknote, Smartphone, DollarSign, Globe, ShoppingBag, UtensilsCrossed, Truck, Loader2, QrCode } from 'lucide-react';
+import { X, Printer, Calendar, TrendingUp, CreditCard, Banknote, Smartphone, DollarSign, Globe, ShoppingBag, UtensilsCrossed, Truck, Loader2, QrCode, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface DailySalesReportProps {
@@ -21,6 +21,11 @@ export const DailySalesReport: React.FC<DailySalesReportProps> = ({ isOpen, onCl
     return orderDate === selectedDate && order.status === 'completed';
   });
 
+  const selectedDateCancelledOrders = allOrders.filter(order => {
+    const orderDate = new Date(order.createdAt).toISOString().split('T')[0];
+    return orderDate === selectedDate && order.status === 'cancelled';
+  });
+
   // Calculate totals
   const totalSales = selectedDateOrders.reduce((sum, order) => sum + order.total, 0);
   const totalTax = selectedDateOrders.reduce((sum, order) => sum + order.tax, 0);
@@ -35,6 +40,10 @@ export const DailySalesReport: React.FC<DailySalesReportProps> = ({ isOpen, onCl
     upi: { amount: 0, count: 0 },
     credit: { amount: 0, count: 0 },
     qr: { amount: 0, count: 0 },
+    cancelled: { 
+      amount: selectedDateCancelledOrders.reduce((sum, order) => sum + order.total, 0), 
+      count: selectedDateCancelledOrders.length 
+    },
   };
 
   selectedDateOrders.forEach(order => {
@@ -139,23 +148,27 @@ export const DailySalesReport: React.FC<DailySalesReportProps> = ({ isOpen, onCl
           <div class="section-title">PAYMENT METHODS</div>
           <div class="highlight">
             <div class="row"><span>💵 Cash Sales:</span><span>₹${paymentBreakdown.cash.amount.toFixed(2)}</span></div>
-            <div class="row-detail"><span>(${paymentBreakdown.cash.count} payments)</span></div>
+            <div class="row-detail"><span>(Qty: ${paymentBreakdown.cash.count})</span></div>
           </div>
           <div class="highlight">
             <div class="row"><span>💳 Card Sales:</span><span>₹${paymentBreakdown.card.amount.toFixed(2)}</span></div>
-            <div class="row-detail"><span>(${paymentBreakdown.card.count} payments)</span></div>
+            <div class="row-detail"><span>(Qty: ${paymentBreakdown.card.count})</span></div>
           </div>
           <div class="highlight">
             <div class="row"><span>📱 UPI Sales:</span><span>₹${paymentBreakdown.upi.amount.toFixed(2)}</span></div>
-            <div class="row-detail"><span>(${paymentBreakdown.upi.count} payments)</span></div>
+            <div class="row-detail"><span>(Qty: ${paymentBreakdown.upi.count})</span></div>
           </div>
           <div class="highlight">
             <div class="row"><span>🌀 QR Orders:</span><span>₹${paymentBreakdown.qr.amount.toFixed(2)}</span></div>
-            <div class="row-detail"><span>(${paymentBreakdown.qr.count} payments)</span></div>
+            <div class="row-detail"><span>(Qty: ${paymentBreakdown.qr.count})</span></div>
           </div>
           <div class="highlight">
             <div class="row"><span>⏳ Credit Sales:</span><span>₹${paymentBreakdown.credit.amount.toFixed(2)}</span></div>
-            <div class="row-detail"><span>(${paymentBreakdown.credit.count} payments)</span></div>
+            <div class="row-detail"><span>(Qty: ${paymentBreakdown.credit.count})</span></div>
+          </div>
+          <div class="highlight" style="color: #dc2626;">
+            <div class="row"><span>❌ Cancelled:</span><span>₹${paymentBreakdown.cancelled.amount.toFixed(2)}</span></div>
+            <div class="row-detail"><span>(Qty: ${paymentBreakdown.cancelled.count})</span></div>
           </div>
         </div>
         
@@ -242,36 +255,42 @@ export const DailySalesReport: React.FC<DailySalesReportProps> = ({ isOpen, onCl
         {/* Payment Methods */}
         <div className="mb-6">
           <h3 className="font-semibold text-foreground mb-3">Payment Methods</h3>
-          <div class="grid grid-cols-5 gap-2.5">
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2.5">
             <div className="bg-secondary rounded-lg p-2.5 text-center">
               <Banknote className="w-5 h-5 mx-auto mb-1.5 text-success" />
               <p className="text-[10px] text-muted-foreground">Cash</p>
               <p className="font-bold text-sm">{formatCurrency(paymentBreakdown.cash.amount)}</p>
-              <p className="text-[10px] text-muted-foreground">{paymentBreakdown.cash.count} payments</p>
+              <p className="text-[10px] text-muted-foreground">Qty: {paymentBreakdown.cash.count}</p>
             </div>
             <div className="bg-secondary rounded-lg p-2.5 text-center">
               <CreditCard className="w-5 h-5 mx-auto mb-1.5 text-primary" />
               <p className="text-[10px] text-muted-foreground">Card</p>
               <p className="font-bold text-sm">{formatCurrency(paymentBreakdown.card.amount)}</p>
-              <p className="text-[10px] text-muted-foreground">{paymentBreakdown.card.count} payments</p>
+              <p className="text-[10px] text-muted-foreground">Qty: {paymentBreakdown.card.count}</p>
             </div>
             <div className="bg-secondary rounded-lg p-2.5 text-center">
               <Smartphone className="w-5 h-5 mx-auto mb-1.5 text-purple-500" />
               <p className="text-[10px] text-muted-foreground">UPI</p>
               <p className="font-bold text-sm">{formatCurrency(paymentBreakdown.upi.amount)}</p>
-              <p className="text-[10px] text-muted-foreground">{paymentBreakdown.upi.count} payments</p>
+              <p className="text-[10px] text-muted-foreground">Qty: {paymentBreakdown.upi.count}</p>
             </div>
             <div className="bg-secondary rounded-lg p-2.5 text-center">
               <QrCode className="w-5 h-5 mx-auto mb-1.5 text-orange-500" />
               <p className="text-[10px] text-muted-foreground">QR Order</p>
               <p className="font-bold text-sm">{formatCurrency(paymentBreakdown.qr.amount)}</p>
-              <p className="text-[10px] text-muted-foreground">{paymentBreakdown.qr.count} payments</p>
+              <p className="text-[10px] text-muted-foreground">Qty: {paymentBreakdown.qr.count}</p>
             </div>
             <div className="bg-secondary rounded-lg p-2.5 text-center">
               <DollarSign className="w-5 h-5 mx-auto mb-1.5 text-indigo-500" />
               <p className="text-[10px] text-muted-foreground">Credit</p>
               <p className="font-bold text-sm">{formatCurrency(paymentBreakdown.credit.amount)}</p>
-              <p className="text-[10px] text-muted-foreground">{paymentBreakdown.credit.count} payments</p>
+              <p className="text-[10px] text-muted-foreground">Qty: {paymentBreakdown.credit.count}</p>
+            </div>
+            <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-2.5 text-center">
+              <XCircle className="w-5 h-5 mx-auto mb-1.5 text-destructive" />
+              <p className="text-[10px] text-destructive">Cancelled</p>
+              <p className="font-bold text-sm text-destructive">{formatCurrency(paymentBreakdown.cancelled.amount)}</p>
+              <p className="text-[10px] text-destructive/80">Qty: {paymentBreakdown.cancelled.count}</p>
             </div>
           </div>
         </div>

@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { DateRange } from 'react-day-picker';
+import { DatePickerWithRange } from '@/components/ui/date-range-picker';
 import { useAnalytics, TimeRange } from '@/hooks/useAnalytics';
 import { formatCurrency } from '@/lib/store';
 import { Download, ArrowLeft, TrendingUp, Printer, FileSpreadsheet } from 'lucide-react';
@@ -11,7 +13,15 @@ import { exportToCSV, exportToPrintableHTML, type ExportColumn } from '@/lib/rep
 const SalesSummaryPage: React.FC = () => {
   const navigate = useNavigate();
   const [timeRange, setTimeRange] = useState<TimeRange>('today');
-  const { summary, paymentSummary, orderTypeSummary, discountSummary, filteredOrders } = useAnalytics(timeRange);
+  const [dateRange, setDateRange] = useState<DateRange | undefined>();
+  useEffect(() => {
+    if (dateRange?.from) {
+      setTimeRange('custom');
+    } else if (timeRange === 'custom') {
+      setTimeRange('today');
+    }
+  }, [dateRange]);
+  const { summary, paymentSummary, orderTypeSummary, discountSummary, filteredOrders } = useAnalytics(timeRange, dateRange);
 
   const exportColumns: ExportColumn[] = [
     { key: 'billNumber', header: 'Bill No' },
@@ -40,14 +50,18 @@ const SalesSummaryPage: React.FC = () => {
   };
 
   const handleExportPDF = () => {
-    const dateRangeLabel = timeRange === 'today' ? 'Today' : timeRange === 'week' ? 'This Week' : 'This Month';
+    const dateRangeLabel = timeRange === 'custom' && dateRange?.from 
+      ? `${dateRange.from.toLocaleDateString()} - ${dateRange.to ? dateRange.to.toLocaleDateString() : 'Now'}`
+      : timeRange === 'today' ? 'Today' : 'Today';
     exportToPrintableHTML(exportData, exportColumns, 'Sales Summary Report', {
       dateRange: dateRangeLabel,
     });
   };
 
   const handlePrint = () => {
-    const dateRangeLabel = timeRange === 'today' ? 'Today' : timeRange === 'week' ? 'This Week' : 'This Month';
+    const dateRangeLabel = timeRange === 'custom' && dateRange?.from 
+      ? `${dateRange.from.toLocaleDateString()} - ${dateRange.to ? dateRange.to.toLocaleDateString() : 'Now'}`
+      : timeRange === 'today' ? 'Today' : 'Today';
     
     printReport(
       {
@@ -120,13 +134,10 @@ const SalesSummaryPage: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Tabs value={timeRange} onValueChange={(v) => setTimeRange(v as TimeRange)}>
-            <TabsList>
-              <TabsTrigger value="today">Today</TabsTrigger>
-              <TabsTrigger value="week">Week</TabsTrigger>
-              <TabsTrigger value="month">Month</TabsTrigger>
-            </TabsList>
-          </Tabs>
+          <div className="flex items-center gap-2">
+            <Button variant={timeRange === 'today' ? 'default' : 'outline'} onClick={() => { setTimeRange('today'); setDateRange(undefined); }} className="h-9">Today</Button>
+            <DatePickerWithRange date={dateRange} setDate={setDateRange} />
+          </div>
           <Button variant="outline" onClick={handlePrint} className="gap-2">
             <Printer className="h-4 w-4" />
             Print

@@ -55,6 +55,8 @@ interface PurchaseOrder {
   notes?: string;
 }
 
+import { supabase } from '@/integrations/supabase/client';
+
 const STATUS_CONFIG = {
   draft: { label: 'Draft', color: 'bg-muted/30 text-muted-foreground border-border', icon: Clock, gradient: 'from-slate-400 to-slate-500' },
   ordered: { label: 'Ordered', color: 'bg-primary/15 text-primary border-primary/30', icon: Package, gradient: 'from-blue-500 to-blue-600' },
@@ -76,66 +78,49 @@ const PurchaseOrdersPage: React.FC = () => {
     items: [{ name: '', quantity: 1, unit: 'kg', unitPrice: 0 }] as PurchaseOrderItem[],
   });
 
-  useEffect(() => {
-    const stored = localStorage.getItem('purchase_orders');
-    if (stored) {
-      setOrders(JSON.parse(stored));
-    } else {
-      const demo: PurchaseOrder[] = [
-        {
-          id: '1', poNumber: 'PO-2026-001', supplierName: 'Fresh Farms Ltd',
-          status: 'delivered', orderDate: '2026-02-20', expectedDate: '2026-02-23',
-          totalAmount: 15400,
-          items: [
-            { name: 'Tomatoes', quantity: 50, unit: 'kg', unitPrice: 40 },
-            { name: 'Onions', quantity: 80, unit: 'kg', unitPrice: 30 },
-            { name: 'Potatoes', quantity: 100, unit: 'kg', unitPrice: 25 },
-            { name: 'Capsicum', quantity: 20, unit: 'kg', unitPrice: 80 },
-          ]
-        },
-        {
-          id: '2', poNumber: 'PO-2026-002', supplierName: 'Metro Wholesale',
-          status: 'shipped', orderDate: '2026-02-24', expectedDate: '2026-02-27',
-          totalAmount: 28750,
-          items: [
-            { name: 'Cooking Oil (5L)', quantity: 10, unit: 'pcs', unitPrice: 650 },
-            { name: 'Rice (25kg)', quantity: 5, unit: 'bags', unitPrice: 1500 },
-            { name: 'Flour (10kg)', quantity: 8, unit: 'bags', unitPrice: 450 },
-          ]
-        },
-        {
-          id: '3', poNumber: 'PO-2026-003', supplierName: 'Spice World',
-          status: 'ordered', orderDate: '2026-02-25', expectedDate: '2026-02-28',
-          totalAmount: 8200,
-          items: [
-            { name: 'Red Chilli Powder', quantity: 5, unit: 'kg', unitPrice: 400 },
-            { name: 'Turmeric Powder', quantity: 3, unit: 'kg', unitPrice: 300 },
-            { name: 'Garam Masala', quantity: 4, unit: 'kg', unitPrice: 550 },
-            { name: 'Cumin Seeds', quantity: 2, unit: 'kg', unitPrice: 800 },
-          ]
-        },
-        {
-          id: '4', poNumber: 'PO-2026-004', supplierName: 'Dairy Best',
-          status: 'draft', orderDate: '2026-02-26', expectedDate: '2026-03-01',
-          totalAmount: 6500,
-          items: [
-            { name: 'Paneer', quantity: 10, unit: 'kg', unitPrice: 350 },
-            { name: 'Butter', quantity: 5, unit: 'kg', unitPrice: 500 },
-          ]
-        },
-        {
-          id: '5', poNumber: 'PO-2026-005', supplierName: 'Green Valley',
-          status: 'cancelled', orderDate: '2026-02-18', expectedDate: '2026-02-21',
-          totalAmount: 4200,
-          items: [
-            { name: 'Lettuce', quantity: 20, unit: 'pcs', unitPrice: 60 },
-            { name: 'Broccoli', quantity: 10, unit: 'kg', unitPrice: 180 },
-          ]
-        },
-      ];
-      setOrders(demo);
-      localStorage.setItem('purchase_orders', JSON.stringify(demo));
+  const fetchOrders = async () => {
+    try {
+      const activeStoreData = localStorage.getItem('pos_active_store_data');
+      if (!activeStoreData) return;
+      const storeId = JSON.parse(activeStoreData).id;
+
+      const { data: dbOrders, error } = await supabase
+        .from('purchase_orders')
+        .select(`
+          *,
+          purchase_order_items (*)
+        `)
+        .eq('store_id', storeId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      if (dbOrders) {
+        const formattedOrders: PurchaseOrder[] = dbOrders.map((o: any) => ({
+          id: o.id,
+          poNumber: o.po_number,
+          supplierName: o.supplier_name,
+          status: o.status,
+          totalAmount: Number(o.total_amount),
+          orderDate: o.order_date,
+          expectedDate: o.expected_date,
+          notes: o.notes,
+          items: (o.purchase_order_items || []).map((i: any) => ({
+            name: i.name,
+            quantity: Number(i.quantity),
+            unit: i.unit,
+            unitPrice: Number(i.unit_price)
+          }))
+        }));
+        setOrders(formattedOrders);
+      }
+    } catch (err: any) {
+      console.error('Error fetching purchase orders:', err);
     }
+  };
+
+  useEffect(() => {
+    fetchOrders();
   }, []);
 
   const addItem = () => {
@@ -154,34 +139,72 @@ const PurchaseOrdersPage: React.FC = () => {
     setNewOrder(p => ({ ...p, items: p.items.filter((_, i) => i !== idx) }));
   };
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!newOrder.supplierName || newOrder.items.every(i => !i.name)) return;
+    const activeStoreData = localStorage.getItem('pos_active_store_data');
+    if (!activeStoreData) return;
+    const storeId = JSON.parse(activeStoreData).id;
+
     const validItems = newOrder.items.filter(i => i.name);
     const total = validItems.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
-    const po: PurchaseOrder = {
-      id: Date.now().toString(),
-      poNumber: `PO-2026-${String(orders.length + 1).padStart(3, '0')}`,
-      supplierName: newOrder.supplierName,
-      status: 'draft',
-      orderDate: new Date().toISOString().split('T')[0],
-      expectedDate: newOrder.expectedDate || new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0],
-      totalAmount: total,
-      items: validItems,
-      notes: newOrder.notes,
-    };
-    const updated = [po, ...orders];
-    setOrders(updated);
-    localStorage.setItem('purchase_orders', JSON.stringify(updated));
-    setShowAddSheet(false);
-    setNewOrder({ supplierName: '', expectedDate: '', notes: '', items: [{ name: '', quantity: 1, unit: 'kg', unitPrice: 0 }] });
-    toast({ title: 'Purchase order created', description: po.poNumber });
+    const poNumber = `PO-2026-${String(orders.length + 1).padStart(3, '0')}`;
+    
+    try {
+      const { data: po, error: poError } = await supabase
+        .from('purchase_orders')
+        .insert({
+          store_id: storeId,
+          po_number: poNumber,
+          supplier_name: newOrder.supplierName,
+          status: 'draft',
+          order_date: new Date().toISOString().split('T')[0],
+          expected_date: newOrder.expectedDate || new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0],
+          total_amount: total,
+          notes: newOrder.notes
+        })
+        .select()
+        .single();
+        
+      if (poError) throw poError;
+
+      const itemsToInsert = validItems.map(i => ({
+        purchase_order_id: po.id,
+        name: i.name,
+        quantity: i.quantity,
+        unit: i.unit,
+        unit_price: i.unitPrice
+      }));
+
+      const { error: itemsError } = await supabase
+        .from('purchase_order_items')
+        .insert(itemsToInsert);
+
+      if (itemsError) throw itemsError;
+
+      toast({ title: 'Purchase order created', description: poNumber });
+      setShowAddSheet(false);
+      setNewOrder({ supplierName: '', expectedDate: '', notes: '', items: [{ name: '', quantity: 1, unit: 'kg', unitPrice: 0 }] });
+      fetchOrders();
+    } catch (err: any) {
+      console.error(err);
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    }
   };
 
-  const updateStatus = (id: string, status: PurchaseOrder['status']) => {
-    const updated = orders.map(o => o.id === id ? { ...o, status } : o);
-    setOrders(updated);
-    localStorage.setItem('purchase_orders', JSON.stringify(updated));
-    toast({ title: `Order ${status}` });
+  const updateStatus = async (id: string, status: PurchaseOrder['status']) => {
+    try {
+      const { error } = await supabase
+        .from('purchase_orders')
+        .update({ status })
+        .eq('id', id);
+        
+      if (error) throw error;
+      toast({ title: `Order ${status}` });
+      fetchOrders();
+    } catch (err: any) {
+      console.error(err);
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    }
   };
 
   const filtered = orders

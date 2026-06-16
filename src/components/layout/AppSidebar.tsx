@@ -25,6 +25,8 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { LogoutConfirmDialog } from '@/components/pos/LogoutConfirmDialog';
 import { useUICustomization } from '@/hooks/useUICustomization';
+import { MaxoraLogo } from '@/components/ui/MaxoraLogo';
+import MAXORAIcon from '@/assets/maxora-icon.jpg';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -88,7 +90,7 @@ export const AppSidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
       path: '/pos', 
       icon: Receipt, 
       label: 'Billing',
-      allowedRoles: ['admin', 'store_manager']
+      allowedRoles: ['store_manager']
     },
     { 
       path: '/operations', 
@@ -200,11 +202,16 @@ export const AppSidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
         )}
       >
         {/* Header */}
-        <div className="h-12 flex items-center justify-between px-4 border-b border-sidebar-border bg-muted/50">
+        <div className="h-12 flex items-center justify-between px-4 border-b border-sidebar-border bg-muted/50 overflow-hidden">
           {!collapsed && (
-            <span className="font-semibold text-foreground">Menu</span>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg overflow-hidden shadow-sm ring-1 ring-primary/20 flex-shrink-0">
+                <img src={MAXORAIcon} alt="MAXORA" className="w-full h-full object-cover" />
+              </div>
+              <MaxoraLogo size="sm" showSubtitle={false} className="items-start" />
+            </div>
           )}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 flex-shrink-0">
             {!collapsed && (
               <button
                 onClick={() => {

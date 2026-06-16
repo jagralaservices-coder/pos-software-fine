@@ -66,7 +66,7 @@ const MobilePOSPage: React.FC = () => {
 
   const filteredItems = useMemo(() => {
     const baseProducts = menuItems.filter(item => {
-      const matchesCategory = !searchQuery || activeCategory === 'all' || item.category === activeCategory;
+      const matchesCategory = activeCategory === 'all' || item.category === activeCategory;
       const matchesSearch = !searchQuery ||
         item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         item.nameHindi?.includes(searchQuery) ||
@@ -88,6 +88,10 @@ const MobilePOSPage: React.FC = () => {
   }, [menuItems, activeCategory, searchQuery]);
 
   const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+
+  const activeCategories = useMemo(() => {
+    return categories.filter(cat => menuItems.some(item => item.category === cat.id));
+  }, [categories, menuItems]);
 
   const getStockInfo = (item: MenuItem) => {
     const stock = item.stock;
@@ -157,7 +161,7 @@ const MobilePOSPage: React.FC = () => {
           >
             <span>🍽️</span> All
           </button>
-          {categories.map((cat) => (
+          {activeCategories.map((cat) => (
             <button
               key={cat.id}
               onClick={() => setActiveCategory(cat.id)}

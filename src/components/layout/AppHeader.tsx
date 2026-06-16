@@ -28,7 +28,8 @@ import {
   RefreshCw,
   Building,
   Lock,
-  Pencil
+  Pencil,
+  Database
 } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
@@ -60,6 +61,8 @@ import { LogoutConfirmDialog } from '@/components/pos/LogoutConfirmDialog';
 import { OwnerStoreSelectionDialog } from '@/components/pos/OwnerStoreSelectionDialog';
 import { supabase } from '@/integrations/supabase/client';
 import { useSubscription } from '@/hooks/useSubscription';
+import { toast } from '@/hooks/use-toast';
+
 
 interface ActiveStaff {
   id: string;
@@ -170,7 +173,7 @@ export const AppHeader: React.FC = () => {
 
   const menuItems = [
     { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ['admin', 'owner', 'store_manager'] },
-    { path: '/pos', icon: Plus, label: 'POS / Billing', roles: ['admin', 'owner', 'store_manager'] },
+    { path: '/pos', icon: Plus, label: 'POS / Billing', roles: ['store_manager'] },
     { path: '/menu', icon: BookOpen, label: 'Menu', roles: ['admin', 'owner', 'store_manager'] },
     { path: '/bulk-upload', icon: FileText, label: 'Menu Upload', roles: ['admin', 'owner', 'store_manager'] },
     { path: '/tables', icon: UtensilsCrossed, label: 'Tables', roles: ['admin', 'owner', 'store_manager', 'staff'] },
@@ -255,13 +258,10 @@ export const AppHeader: React.FC = () => {
 
         {/* Logo + Plan Badge */}
         <div className="flex items-center gap-2 px-1 flex-shrink-0">
-          <div className="w-10 h-10 rounded-xl overflow-hidden shadow-sm ring-1 ring-primary/20">
-            <img src={MAXORAIcon} alt="MAXORA" className="w-full h-full object-cover" />
-          </div>
-          <div className="hidden sm:flex flex-col leading-tight">
-            <MaxoraLogo size="md" className="items-start" />
+          <div className="hidden sm:flex flex-col justify-center leading-tight">
+            <MaxoraLogo size="sm" className="items-start" />
             <span className={cn(
-              'text-[10px] font-semibold px-1.5 py-0.5 rounded-full w-fit',
+              'text-[9px] font-semibold px-1.5 py-0.5 rounded-full w-fit mt-0.5',
               tier === 'platinum' && 'bg-gradient-to-r from-violet-500 to-purple-600 text-white',
               tier === 'gold' && 'bg-gradient-to-r from-amber-400 to-yellow-500 text-black',
               tier === 'basic' && 'bg-muted text-muted-foreground',
@@ -284,14 +284,16 @@ export const AppHeader: React.FC = () => {
         <div className="w-px h-8 bg-border mx-1 flex-shrink-0" />
 
         {/* New Order */}
-        <Button
-          onClick={handleNewOrder}
-          size="sm"
-          className="h-9 gap-1.5 flex-shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          <span className="hidden sm:inline">New Order</span>
-        </Button>
+        {userRole?.role !== 'admin' && userRole?.role !== 'owner' && (
+          <Button
+            onClick={handleNewOrder}
+            size="sm"
+            className="h-9 gap-1.5 flex-shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            <span className="hidden sm:inline">New Order</span>
+          </Button>
+        )}
 
         {/* Search Bill - Now navigates to full page */}
         <Button
@@ -397,6 +399,43 @@ export const AppHeader: React.FC = () => {
 
         {/* Divider */}
         <div className="w-px h-8 bg-border mx-1 flex-shrink-0" />
+
+        {/* Generate Demo Data Button */}
+        <Button
+          variant="outline"
+          size="sm"
+            onClick={async () => {
+              try {
+                toast({ title: 'Generating demo data...', description: 'This may take a moment. Please wait...' });
+                try {
+                  const { data, error } = await supabase.functions.invoke('generate-demo-data', {
+                    body: { email: user?.email, name: user?.user_metadata?.full_name, storeId: activeStore?.id }
+                  });
+                  if (error) throw error;
+                  if (!data?.success) throw new Error(data?.error || 'Unknown error');
+                } catch (edgeError) {
+                  console.log("Edge function failed, falling back to local generation...", edgeError);
+                  // Fallback to client-side generation
+                  const { generateClientDemoData } = await import('@/lib/demoData');
+                  if (activeStore?.id) {
+                    await generateClientDemoData(activeStore.id, user?.id || 'demo');
+                  } else {
+                    throw new Error("No active store to generate data for.");
+                  }
+                }
+                toast({ title: 'Success', description: 'Demo data generated successfully! Please refresh the page.' });
+                setTimeout(() => window.location.reload(), 2000);
+              } catch (e: any) {
+                console.error("Demo gen error:", e);
+                toast({ title: 'Error', description: e.message || 'Failed to generate demo data', variant: 'destructive' });
+              }
+            }}
+            className="h-9 gap-1.5 flex-shrink-0 border-primary text-primary hover:bg-primary/10"
+            title="Generate Demo Data (90 Days)"
+          >
+          <Database className="w-4 h-4" />
+          <span className="hidden lg:inline">Generate Demo Data</span>
+        </Button>
 
         {/* Edit UI / Customize */}
         <Button

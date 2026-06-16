@@ -55,6 +55,11 @@ import { toast } from 'sonner';
 import { useFeatureToggles } from '@/hooks/useFeatureToggles';
 import { useUICustomization } from '@/hooks/useUICustomization';
 import { MaxoraLogo } from '@/components/ui/MaxoraLogo';
+import maxoraIcon from '@/assets/maxora-icon.jpg';
+
+const CustomMenuIcon = ({ className }: { className?: string }) => (
+  <img src={maxoraIcon} alt="Menu" className={cn("w-full h-full object-cover rounded-md", className)} />
+);
 
 interface SidebarProps {
   collapsed: boolean;
@@ -68,6 +73,7 @@ interface NavItem {
   requiredRoles?: ('admin' | 'owner' | 'store_manager' | 'staff')[];
   featureKey?: keyof typeof FEATURES;
   subItems?: { path: string; icon: React.ElementType; labelKey: string }[];
+  hideLabel?: boolean;
 }
 
 const reportsSubItems = [
@@ -93,7 +99,7 @@ const navItems: NavItem[] = [
   { path: '/tables', icon: UtensilsCrossed, labelKey: 'nav.tables', featureKey: 'tableManagement' },
   { path: '/orders', icon: Receipt, labelKey: 'nav.orders' },
   { path: '/pickup', icon: Package, labelKey: 'pos.takeaway', featureKey: 'takeaway' },
-  { path: '/menu', icon: Package, labelKey: 'nav.menu', requiredRoles: ['admin', 'owner', 'store_manager'], featureKey: 'menuManagement' },
+  { path: '/menu', icon: CustomMenuIcon, labelKey: 'nav.menu', requiredRoles: ['admin', 'owner', 'store_manager'], featureKey: 'menuManagement', hideLabel: true },
   { path: '/inventory', icon: Package, labelKey: 'nav.inventory', requiredRoles: ['admin', 'owner', 'store_manager'], featureKey: 'basicInventory' },
   { path: '/expenses', icon: Wallet, labelKey: 'nav.expenses', requiredRoles: ['admin', 'owner', 'store_manager'], featureKey: 'expenseTracking' },
   { path: '/delivery', icon: Truck, labelKey: 'nav.delivery', featureKey: 'deliveryTracking' },
@@ -348,7 +354,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
                   )}
                 >
                   <item.icon className="w-4.5 h-4.5 flex-shrink-0" />
-                  {!collapsed && <span className="font-medium">{getCustomLabel(item)}</span>}
+                  {!collapsed && !item.hideLabel && <span className="font-medium">{getCustomLabel(item)}</span>}
                   {!collapsed && item.path === '/pos' && heldBills.length > 0 && (
                     <span className="ml-auto bg-warning text-warning-foreground text-[10px] px-1.5 py-0.5 rounded-full font-bold">
                       {heldBills.length}

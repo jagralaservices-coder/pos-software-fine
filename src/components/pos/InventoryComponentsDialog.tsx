@@ -128,8 +128,58 @@ export const InventoryComponentsDialog: React.FC<InventoryComponentsDialogProps>
       const yieldFactor = productionYieldUnit.toLowerCase() === 'kg' || productionYieldUnit.toLowerCase() === 'ltr' ? 1000 : 1;
       const yieldInBaseUnit = productionYield * yieldFactor;
 
-      // Also update localStorage for offline/fast access
+      // Calculate the new cost per unit based on components
       const inventory = getInventory();
+      let totalCost = 0;
+      
+      validComponents.forEach(c => {
+        const compItem = inventory.find(i => i.id === c.childInventoryId);
+        if (compItem) {
+          // Determine component's cost per base unit (g, ml, pcs)
+          let costPerBaseUnit = compItem.costPerUnit;
+          const cUnit = compItem.costUnit || compItem.unit;
+          if (cUnit === 'kg' || cUnit === 'ltr') {
+            costPerBaseUnit = compItem.costPerUnit / 1000;
+          }
+          
+          // Determine component's required quantity in base unit
+          let compQtyInBase = c.quantityRequired;
+          if (c.unit === 'kg' || c.unit === 'ltr') {
+            compQtyInBase = c.quantityRequired * 1000;
+          }
+          
+          totalCost += costPerBaseUnit * compQtyInBase;
+        }
+      });
+
+      let effectiveYield = yieldInBaseUnit;
+      if (effectiveYield <= 0) {
+        let totalWeightBase = 0;
+        validComponents.forEach(c => {
+          let compQtyInBase = c.quantityRequired;
+          if (c.unit === 'kg' || c.unit === 'ltr') compQtyInBase = c.quantityRequired * 1000;
+          totalWeightBase += compQtyInBase;
+        });
+        effectiveYield = totalWeightBase;
+      }
+
+      let newCostPerUnit = inventoryItem.costPerUnit;
+      if (effectiveYield > 0) {
+        // Cost per single base unit
+        const costPerBaseUnit = totalCost / effectiveYield;
+        
+        // Convert to the item's configured costUnit
+        const myCostUnit = inventoryItem.costUnit || inventoryItem.unit;
+        if (myCostUnit === 'kg' || myCostUnit === 'ltr') {
+          newCostPerUnit = costPerBaseUnit * 1000;
+        } else {
+          newCostPerUnit = costPerBaseUnit;
+        }
+        // Round to 2 decimal places
+        newCostPerUnit = Number(newCostPerUnit.toFixed(2));
+      }
+
+      // Also update localStorage for offline/fast access
       const updatedInventory = inventory.map(item => 
         item.id === inventoryItem.id 
           ? { 
@@ -137,6 +187,7 @@ export const InventoryComponentsDialog: React.FC<InventoryComponentsDialogProps>
               components: validComponents, 
               productionYield: yieldInBaseUnit,
               productionYieldUnit: productionYieldUnit,
+              costPerUnit: newCostPerUnit,
               lastUpdated: new Date() 
             }
           : item
@@ -155,6 +206,40 @@ export const InventoryComponentsDialog: React.FC<InventoryComponentsDialogProps>
   };
 
   if (!inventoryItem) return null;
+
+  // Dynamically calculate estimated cost
+  let totalComponentCost = 0;
+  let totalComponentWeightBase = 0;
+  
+  components.filter(c => c.childInventoryId && c.quantityRequired > 0).forEach(c => {
+    const compItem = allInventory.find(inv => inv.id === c.childInventoryId);
+    if (compItem) {
+      let costPerBaseUnit = compItem.costPerUnit;
+      const cUnit = compItem.costUnit || compItem.unit;
+      if (cUnit === 'kg' || cUnit === 'ltr') costPerBaseUnit = compItem.costPerUnit / 1000;
+      
+      let compQtyInBase = c.quantityRequired;
+      if (c.unit === 'kg' || c.unit === 'ltr') compQtyInBase = c.quantityRequired * 1000;
+      
+      totalComponentCost += costPerBaseUnit * compQtyInBase;
+      totalComponentWeightBase += compQtyInBase;
+    }
+  });
+
+  const yieldFactor = productionYieldUnit.toLowerCase() === 'kg' || productionYieldUnit.toLowerCase() === 'ltr' ? 1000 : 1;
+  const yieldInBaseUnit = productionYield * yieldFactor;
+  const effectiveYield = yieldInBaseUnit > 0 ? yieldInBaseUnit : totalComponentWeightBase;
+  
+  let estimatedCostPerUnit = inventoryItem.costPerUnit;
+  if (effectiveYield > 0) {
+    const costPerBaseUnit = totalComponentCost / effectiveYield;
+    const myCostUnit = inventoryItem?.costUnit || inventoryItem?.unit || 'kg';
+    if (myCostUnit === 'kg' || myCostUnit === 'ltr') {
+      estimatedCostPerUnit = costPerBaseUnit * 1000;
+    } else {
+      estimatedCostPerUnit = costPerBaseUnit;
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -280,7 +365,7 @@ export const InventoryComponentsDialog: React.FC<InventoryComponentsDialogProps>
                   </Select>
                 </div>
               </div>
-              {productionYield > 0 && (
+              {effectiveYield > 0 && (
                 <div className="mt-3 p-2 bg-background rounded text-sm">
                   <span className="text-muted-foreground">Recipe: </span>
                   <span className="font-medium">
@@ -291,8 +376,12 @@ export const InventoryComponentsDialog: React.FC<InventoryComponentsDialogProps>
                   </span>
                   <span className="text-muted-foreground"> → </span>
                   <span className="font-bold text-primary">
-                    {productionYield} {productionYieldUnit.toUpperCase()} {inventoryItem.name}
+                    {formatQuantityDisplay(effectiveYield, inventoryItem.unit)} {inventoryItem.name}
                   </span>
+                  <div className="mt-2 pt-2 border-t border-border">
+                    <span className="text-muted-foreground font-medium">Estimated Cost: </span>
+                    <span className="font-bold text-green-600">₹{estimatedCostPerUnit.toFixed(2)} / {(inventoryItem.costUnit || inventoryItem.unit).toUpperCase()}</span>
+                  </div>
                 </div>
               )}
             </div>

@@ -222,36 +222,11 @@ const AdminDashboardPage: React.FC = () => {
   };
 
   const handlePopulateStoreDummyData = async (storeId: string) => {
-    if (!storeId) return;
-    setPopulatingStoreId(storeId);
-    try {
-      const storeObj = stores.find(s => s.id === storeId);
-      const custId = storeObj?.customer_id || explorerOwnerId;
-      const { runAutoPopulation } = await import('@/lib/demoDataHelper');
-      const success = await runAutoPopulation(storeId, custId);
-      if (!success) throw new Error('Auto-population failed');
-
-      toast({
-        title: 'Dummy Data Populated!',
-        description: 'Successfully created categories, inventory, menu items, orders, expenses, tables, and customers.',
-      });
-
-      // Refresh Explorer Data
-      await fetchExplorerData(storeId);
-      await fetchCustomers();
-      await fetchAllStores();
-      await fetchAllStaff();
-      await fetchAuditLogs();
-    } catch (err: any) {
-      console.error(err);
-      toast({
-        title: 'Error',
-        description: err.message || 'Failed to populate store details',
-        variant: 'destructive',
-      });
-    } finally {
-      setPopulatingStoreId('');
-    }
+    toast({
+      title: 'Action Disabled',
+      description: 'Demo data generation is now handled strictly at the database level.',
+      variant: 'destructive',
+    });
   };
 
   // Protect Admin route
@@ -1060,10 +1035,14 @@ const AdminDashboardPage: React.FC = () => {
       setConnectedCounts(data as any);
     } catch (err: any) {
       console.error('Error fetching connected counts:', err);
+      // Fallback if RPC fails (e.g. migration not applied)
+      setConnectedCounts({
+        stores: '?', staff: '?', products: '?', orders: '?', customers: '?', expenses: '?', credits: '?', total: '?'
+      } as any);
       toast({
-        title: 'Error',
-        description: 'Failed to fetch connected records count.',
-        variant: 'destructive',
+        title: 'Notice',
+        description: 'Failed to fetch exact record counts, but you can still proceed with deletion.',
+        variant: 'default',
       });
     }
   };

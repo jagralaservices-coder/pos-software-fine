@@ -32,7 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { getInventory, setInventory, InventoryItem, formatCurrency, generateId } from '@/lib/store';
+import { getInventory, setInventory, InventoryItem, formatCurrency, generateId, getExpenses, setExpenses, Expense } from '@/lib/store';
 import { formatQuantityDisplay, convertToBaseUnit, getBaseUnit, UNIT_CATEGORIES } from '@/lib/inventoryUtils';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -264,13 +264,13 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
   });
 
   const handleAddPurchase = () => {
-    if (!formData.name || !formData.quantity || !formData.costPerUnit) {
-      toast.error('Please fill all required fields');
+    if (!formData.name) {
+      toast.error('Item name is required');
       return;
     }
 
     // Convert to base unit (grams or ml) for storage
-    const quantityInBase = convertToBaseUnit(parseFloat(formData.quantity), formData.unit);
+    const quantityInBase = formData.quantity ? convertToBaseUnit(parseFloat(formData.quantity), formData.unit) : 0;
     const baseUnit = getBaseUnit(formData.unit);
 
     const existingItem = inventory.find(i => i.name.toLowerCase() === formData.name.toLowerCase());
@@ -282,7 +282,7 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
           ? { 
               ...item, 
               quantity: item.quantity + quantityInBase,
-              costPerUnit: parseFloat(formData.costPerUnit),
+              costPerUnit: formData.costPerUnit ? parseFloat(formData.costPerUnit) : item.costPerUnit,
               lastUpdated: new Date()
             }
           : item
@@ -297,7 +297,7 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
         name: formData.name,
         quantity: quantityInBase,
         unit: baseUnit, // Store in base unit (g, ml, pcs)
-        costPerUnit: parseFloat(formData.costPerUnit),
+        costPerUnit: formData.costPerUnit ? parseFloat(formData.costPerUnit) : 0,
         costUnit: formData.costUnit, // Store cost unit
         minStock: convertToBaseUnit(parseFloat(formData.minStock), formData.unit), // Also convert minStock
         lastUpdated: new Date()
@@ -308,18 +308,52 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
       toast.success(`New item "${formData.name}" added to inventory`);
     }
 
+    const costPerUnit = formData.costPerUnit ? parseFloat(formData.costPerUnit) : 0;
+    
+    // Check if the item is a manufactured product (has components)
+    const hasComponents = existingItem && existingItem.components && existingItem.components.length > 0;
+    
+    // Automatically add an expense for this purchase, ONLY if it's not a manufactured product
+    if (costPerUnit > 0 && parseFloat(formData.quantity) > 0 && !hasComponents) {
+      let totalExpense = 0;
+      if (formData.costUnit === 'kg' && formData.unit === 'g') {
+        totalExpense = (parseFloat(formData.quantity) / 1000) * costPerUnit;
+      } else if (formData.costUnit === 'ltr' && formData.unit === 'ml') {
+        totalExpense = (parseFloat(formData.quantity) / 1000) * costPerUnit;
+      } else if (formData.costUnit === 'g' && formData.unit === 'kg') {
+        totalExpense = (parseFloat(formData.quantity) * 1000) * costPerUnit;
+      } else if (formData.costUnit === 'ml' && formData.unit === 'ltr') {
+        totalExpense = (parseFloat(formData.quantity) * 1000) * costPerUnit;
+      } else {
+        totalExpense = parseFloat(formData.quantity) * costPerUnit;
+      }
+
+      if (totalExpense > 0) {
+        const newExpense: Expense = {
+          id: generateId(),
+          category: 'Inventory Purchase',
+          amount: totalExpense,
+          description: `Purchased ${formData.quantity} ${formData.unit} of ${formData.name}`,
+          date: new Date(),
+          paidBy: 'System'
+        };
+        setExpenses([newExpense, ...getExpenses()]);
+        toast.success(`Expense of ₹${totalExpense.toFixed(2)} automatically recorded for this purchase`);
+      }
+    }
+
     setFormData({ name: '', quantity: '', unit: 'kg', costPerUnit: '', costUnit: 'kg', minStock: '10' });
     setShowAddDialog(false);
   };
 
   const handleEditItem = () => {
-    if (!editingItem || !formData.name || !formData.quantity || !formData.costPerUnit) {
-      toast.error('Please fill all required fields');
+    if (!editingItem || !formData.name) {
+      toast.error('Item name is required');
       return;
     }
 
     // Convert to base unit for storage
-    const quantityInBase = convertToBaseUnit(parseFloat(formData.quantity), formData.unit);
+    const quantityInBase = formData.quantity ? convertToBaseUnit(parseFloat(formData.quantity), formData.unit) : 0;
     const baseUnit = getBaseUnit(formData.unit);
 
     const updatedInventory = inventory.map(item => 
@@ -329,7 +363,7 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
             name: formData.name,
             quantity: quantityInBase,
             unit: baseUnit,
-            costPerUnit: parseFloat(formData.costPerUnit),
+            costPerUnit: formData.costPerUnit ? parseFloat(formData.costPerUnit) : 0,
             costUnit: formData.costUnit,
             minStock: convertToBaseUnit(parseFloat(formData.minStock), formData.unit),
             lastUpdated: new Date()
@@ -351,6 +385,21 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
     const updatedInventory = inventory.filter(i => i.id !== item.id);
     setInventory(updatedInventory);
     setLocalInventory(updatedInventory);
+    
+    // Track deletion for cloud sync
+    try {
+      const storeDataStr = localStorage.getItem('pos_active_store_data');
+      const storeId = localStorage.getItem('owner_selected_store_id') || (storeDataStr ? JSON.parse(storeDataStr).id : null);
+      if (storeId) {
+        const deletedKey = `pos_deleted_inventory_${storeId}`;
+        const deletedIds = JSON.parse(localStorage.getItem(deletedKey) || '[]');
+        deletedIds.push(item.id);
+        localStorage.setItem(deletedKey, JSON.stringify(deletedIds));
+      }
+    } catch (e) {
+      console.error('Error tracking deleted inventory item:', e);
+    }
+    
     toast.success(`"${item.name}" deleted`);
   };
 
@@ -384,6 +433,55 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
     setLocalInventory(getInventory());
   };
 
+  const handleMigrateToExpenses = () => {
+    let newExpensesCount = 0;
+    const currentExpenses = getExpenses();
+    const newExpensesList: Expense[] = [];
+
+    inventory.forEach(item => {
+      // Don't add if it has components (manufactured product)
+      if (item.components && item.components.length > 0) return;
+      
+      const costPerUnit = item.costPerUnit || 0;
+      if (costPerUnit > 0 && item.quantity > 0) {
+        let totalExpense = 0;
+        const costUnit = item.costUnit || item.unit;
+        
+        if (costUnit === 'kg' && item.unit === 'g') {
+          totalExpense = (item.quantity / 1000) * costPerUnit;
+        } else if (costUnit === 'ltr' && item.unit === 'ml') {
+          totalExpense = (item.quantity / 1000) * costPerUnit;
+        } else if (costUnit === 'g' && item.unit === 'kg') {
+          totalExpense = (item.quantity * 1000) * costPerUnit;
+        } else if (costUnit === 'ml' && item.unit === 'ltr') {
+          totalExpense = (item.quantity * 1000) * costPerUnit;
+        } else {
+          totalExpense = item.quantity * costPerUnit;
+        }
+
+        if (totalExpense > 0) {
+          const newExpense: Expense = {
+            id: generateId() + Math.random().toString(36).substring(7),
+            category: 'Inventory Purchase',
+            amount: totalExpense,
+            description: `Initial stock: ${item.quantity} ${item.unit} of ${item.name}`,
+            date: new Date(),
+            paidBy: 'System'
+          };
+          newExpensesList.push(newExpense);
+          newExpensesCount++;
+        }
+      }
+    });
+
+    if (newExpensesCount > 0) {
+      setExpenses([...newExpensesList, ...currentExpenses]);
+      toast.success(`Successfully added ${newExpensesCount} items to expenses!`);
+    } else {
+      toast.info('No eligible items to migrate.');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <div className="sticky top-0 z-10 bg-background border-b border-border">
@@ -408,6 +506,10 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
+          <Button variant="outline" className="gap-2" onClick={handleMigrateToExpenses} title="One-time button to add all current stock to expenses">
+            <RefreshCw className="w-4 h-4" />
+            Sync Stock to Expenses
+          </Button>
           <Button className="gap-2 bg-primary text-primary-foreground" onClick={() => setShowAddDialog(true)}>
             <Plus className="w-4 h-4" />
             Add Purchase
@@ -425,7 +527,7 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
                   <th className="text-left p-3 text-sm font-medium">Quantity</th>
                   <th className="text-left p-3 text-sm font-medium">Cost/Unit</th>
                   <th className="text-left p-3 text-sm font-medium">Total Cost</th>
-                  {hasRecipeAccess && <th className="text-left p-3 text-sm font-medium">Components</th>}
+                  <th className="text-left p-3 text-sm font-medium">Components</th>
                   <th className="text-left p-3 text-sm font-medium">Actions</th>
                 </tr>
               </thead>
@@ -435,23 +537,53 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
                   const costUnit = item.costUnit || item.unit;
                   const costUnitLabel = costUnit.toUpperCase();
                   
-                  // Calculate total cost based on costUnit
-                  let totalCost = 0;
                   let perUnitCost = item.costPerUnit;
                   
+                  // Dynamically calculate cost for items with components
+                  if (item.components && item.components.length > 0) {
+                    let totalCompCost = 0;
+                    let totalCompWeightBase = 0;
+                    item.components.forEach(c => {
+                      const compItem = inventory.find(i => i.id === c.childInventoryId);
+                      if (compItem) {
+                        let cBaseCost = compItem.costPerUnit;
+                        const cCostUnit = compItem.costUnit || compItem.unit;
+                        if (cCostUnit === 'kg' || cCostUnit === 'ltr') cBaseCost = compItem.costPerUnit / 1000;
+                        
+                        let cQtyBase = c.quantityRequired;
+                        if (c.unit === 'kg' || c.unit === 'ltr') cQtyBase = c.quantityRequired * 1000;
+                        
+                        totalCompCost += cBaseCost * cQtyBase;
+                        totalCompWeightBase += cQtyBase;
+                      }
+                    });
+                    
+                    const yieldFactor = (item.productionYieldUnit === 'kg' || item.productionYieldUnit === 'ltr') ? 1000 : 1;
+                    const yieldBase = (item.productionYield || 0) * yieldFactor;
+                    const effectiveYield = yieldBase > 0 ? yieldBase : totalCompWeightBase;
+                    
+                    if (effectiveYield > 0) {
+                      const costPerBaseUnit = totalCompCost / effectiveYield;
+                      if (costUnit === 'kg' || costUnit === 'ltr') {
+                        perUnitCost = costPerBaseUnit * 1000;
+                      } else {
+                        perUnitCost = costPerBaseUnit;
+                      }
+                    }
+                  }
+                  
                   // If cost is per KG but quantity is in grams, convert
+                  let totalCost = 0;
                   if (costUnit === 'kg' && item.unit === 'g') {
-                    totalCost = (item.quantity / 1000) * item.costPerUnit;
-                    perUnitCost = item.costPerUnit / 1000; // per gram
+                    totalCost = (item.quantity / 1000) * perUnitCost;
+                    // perUnitCost is already per KG, so cost per base unit is perUnitCost / 1000
+                    var displayBaseCost = perUnitCost / 1000; 
                   } else if (costUnit === 'ltr' && item.unit === 'ml') {
-                    totalCost = (item.quantity / 1000) * item.costPerUnit;
-                    perUnitCost = item.costPerUnit / 1000; // per ml
-                  } else if (costUnit === 'g' && item.unit === 'g') {
-                    totalCost = item.quantity * item.costPerUnit;
-                  } else if (costUnit === 'ml' && item.unit === 'ml') {
-                    totalCost = item.quantity * item.costPerUnit;
+                    totalCost = (item.quantity / 1000) * perUnitCost;
+                    var displayBaseCost = perUnitCost / 1000;
                   } else {
-                    totalCost = item.quantity * item.costPerUnit;
+                    totalCost = item.quantity * perUnitCost;
+                    var displayBaseCost = perUnitCost;
                   }
                   
                   return (
@@ -460,10 +592,10 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
                       <td className="p-3 font-mono text-sm">{formatQuantityDisplay(item.quantity, item.unit)}</td>
                       <td className="p-3">
                         <div className="flex flex-col">
-                          <span className="font-medium">{formatCurrency(item.costPerUnit)}/{costUnitLabel}</span>
+                          <span className="font-medium">{formatCurrency(perUnitCost)}/{costUnitLabel}</span>
                           {(costUnit === 'kg' || costUnit === 'ltr') && (
                             <span className="text-xs text-muted-foreground">
-                              ({formatCurrency(perUnitCost)}/{costUnit === 'kg' ? 'GM' : 'ML'})
+                              ({formatCurrency(displayBaseCost)}/{costUnit === 'kg' ? 'GM' : 'ML'})
                             </span>
                           )}
                         </div>
@@ -471,7 +603,6 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
                       <td className="p-3">
                         <span className="font-semibold text-primary">{formatCurrency(totalCost)}</span>
                       </td>
-                      {hasRecipeAccess && (
                       <td className="p-3">
                         {item.components && item.components.length > 0 ? (
                           <span className="text-sm text-primary flex items-center gap-1">
@@ -482,7 +613,6 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
                           <span className="text-muted-foreground text-sm">None</span>
                         )}
                       </td>
-                      )}
                       <td className="p-3">
                         <div className="flex items-center gap-1">
                           <Button 
@@ -494,7 +624,6 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
                             <Settings2 className="w-3 h-3" />
                             Edit
                           </Button>
-                          {hasRecipeAccess && (
                           <Button 
                             variant="ghost" 
                             size="sm" 
@@ -504,7 +633,6 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
                             <Link className="w-3 h-3" />
                             Components
                           </Button>
-                          )}
                           <Button 
                             variant="ghost" 
                             size="sm" 
@@ -548,7 +676,7 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Quantity *</Label>
+                <Label>Quantity</Label>
                 <Input 
                   type="number"
                   placeholder="0"
@@ -575,7 +703,7 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Cost per Unit *</Label>
+                <Label>Cost per Unit</Label>
                 <Input 
                   type="number"
                   placeholder="0"
@@ -632,7 +760,7 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Quantity *</Label>
+                <Label>Quantity</Label>
                 <Input 
                   type="number"
                   placeholder="0"
@@ -659,7 +787,7 @@ const PurchaseManagementView: React.FC<{ onBack: () => void }> = ({ onBack }) =>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Cost per Unit *</Label>
+                <Label>Cost per Unit</Label>
                 <Input 
                   type="number"
                   placeholder="0"

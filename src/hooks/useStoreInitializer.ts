@@ -95,9 +95,7 @@ export const useStoreInitializer = () => {
       }
 
       if (menuCount === 0) {
-        console.log('[StoreInit] Store has 0 menu items. Automatically populating demo test data...');
-        const { runAutoPopulation } = await import('@/lib/demoDataHelper');
-        await runAutoPopulation(storeId);
+        console.log('[StoreInit] Store has 0 menu items. Please configure your store or populate data from server.');
       }
     } catch (e) {
       console.warn('[StoreInit] Failed to check and auto-populate store data:', e);

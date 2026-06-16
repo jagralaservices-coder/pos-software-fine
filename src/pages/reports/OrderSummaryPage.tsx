@@ -1,4 +1,6 @@
 import React from 'react';
+import { DateRange } from 'react-day-picker';
+import { DatePickerWithRange } from '@/components/ui/date-range-picker';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { useLocale } from '@/contexts/LocaleContext';
 import { Download, ArrowLeft, ShoppingCart, Printer, Loader2 } from 'lucide-react';

@@ -504,9 +504,14 @@ export const StaffManagement = forwardRef<HTMLDivElement>((_, ref) => {
 
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-sm text-foreground truncate">{staff.name}</h3>
-                  <span className={cn('text-[10px] px-2 py-0.5 rounded-full font-medium', roleColors[staff.role])}>
-                    {getRoleLabel(staff.role)}
-                  </span>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className={cn('text-[10px] px-2 py-0.5 rounded-full font-medium', roleColors[staff.role])}>
+                      {getRoleLabel(staff.role)}
+                    </span>
+                    <span className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                      ID: {staff.id.substring(0, 6)}
+                    </span>
+                  </div>
                 </div>
                 <p className="text-xs text-muted-foreground">{staff.phone}</p>
               </div>

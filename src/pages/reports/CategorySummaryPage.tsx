@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { DateRange } from 'react-day-picker';
+import { DatePickerWithRange } from '@/components/ui/date-range-picker';
 import { useAnalytics, TimeRange } from '@/hooks/useAnalytics';
 import { formatCurrency } from '@/lib/store';
 import { Download, ArrowLeft, Layers, Printer } from 'lucide-react';
@@ -18,7 +20,15 @@ import {
 const CategorySummaryPage: React.FC = () => {
   const navigate = useNavigate();
   const [timeRange, setTimeRange] = useState<TimeRange>('today');
-  const { categorySummary, summary } = useAnalytics(timeRange);
+  const [dateRange, setDateRange] = useState<DateRange | undefined>();
+  useEffect(() => {
+    if (dateRange?.from) {
+      setTimeRange('custom');
+    } else if (timeRange === 'custom') {
+      setTimeRange('today');
+    }
+  }, [dateRange]);
+  const { categorySummary, summary } = useAnalytics(timeRange, dateRange);
 
   const handleExport = () => {
     const headers = ['Category', 'Items Sold', 'Quantity', 'Amount', 'Percentage'];
@@ -33,7 +43,9 @@ const CategorySummaryPage: React.FC = () => {
   };
 
   const handlePrint = () => {
-    const dateRangeLabel = timeRange === 'today' ? 'Today' : timeRange === 'week' ? 'This Week' : 'This Month';
+    const dateRangeLabel = timeRange === 'custom' && dateRange?.from 
+      ? `${dateRange.from.toLocaleDateString()} - ${dateRange.to ? dateRange.to.toLocaleDateString() : 'Now'}`
+      : timeRange === 'today' ? 'Today' : 'Today';
     
     printReport(
       {
@@ -88,13 +100,10 @@ const CategorySummaryPage: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Tabs value={timeRange} onValueChange={(v) => setTimeRange(v as TimeRange)}>
-            <TabsList>
-              <TabsTrigger value="today">Today</TabsTrigger>
-              <TabsTrigger value="week">Week</TabsTrigger>
-              <TabsTrigger value="month">Month</TabsTrigger>
-            </TabsList>
-          </Tabs>
+          <div className="flex items-center gap-2">
+            <Button variant={timeRange === 'today' ? 'default' : 'outline'} onClick={() => { setTimeRange('today'); setDateRange(undefined); }} className="h-9">Today</Button>
+            <DatePickerWithRange date={dateRange} setDate={setDateRange} />
+          </div>
           <Button variant="outline" onClick={handlePrint} className="gap-2">
             <Printer className="h-4 w-4" />
             Print

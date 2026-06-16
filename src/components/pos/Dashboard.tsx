@@ -229,16 +229,20 @@ export const Dashboard: React.FC = () => {
                     {payment.method === 'Credit' && <Clock className="w-4 h-4 text-indigo-500" />}
                     {payment.method === 'Credit Outstanding' && <Clock className="w-4 h-4 text-destructive" />}
                     {payment.method === 'Credit Collected' && <Check className="w-4 h-4 text-emerald-500" />}
+                    {payment.method === 'Cancelled Order' && <X className="w-4 h-4 text-destructive" />}
                     {payment.method === 'Discount' && <Percent className="w-4 h-4 text-rose-500" />}
                     {payment.method === 'GST' && <FileText className="w-4 h-4 text-amber-500" />}
                   </div>
                   <span className="text-sm text-foreground">{payment.method}</span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <div className="w-20 h-1.5 bg-muted/30 rounded-full overflow-hidden">
+                  <div className="w-20 h-1.5 bg-muted/30 rounded-full overflow-hidden hidden sm:block">
                     <div className="h-full bg-primary rounded-full" style={{ width: `${payment.percentage}%` }} />
                   </div>
-                  <span className="font-semibold text-sm text-foreground w-20 text-right">{formatCurrency(payment.amount)}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-sm text-foreground w-20 text-right">{formatCurrency(payment.amount)}</span>
+                    <span className="text-[10px] text-muted-foreground w-12 text-right">{payment.count} ords</span>
+                  </div>
                 </div>
               </div>
             ))}

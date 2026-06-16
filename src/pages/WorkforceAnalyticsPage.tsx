@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/integrations/supabase/client';
 
 interface StaffMetric {
   id: string;
@@ -42,16 +43,66 @@ const WorkforceAnalyticsPage: React.FC = () => {
   const [staffMetrics, setStaffMetrics] = useState<StaffMetric[]>([]);
 
   useEffect(() => {
-    // Generate demo analytics data
-    const demoStaff: StaffMetric[] = [
-      { id: '1', name: 'Rahul Sharma', role: 'Chef', attendanceRate: 96, avgHoursPerDay: 8.5, lateArrivals: 1, overtimeHours: 12, leavesTaken: 2, performanceScore: 92, trend: 'up' },
-      { id: '2', name: 'Priya Patel', role: 'Cashier', attendanceRate: 100, avgHoursPerDay: 8.0, lateArrivals: 0, overtimeHours: 4, leavesTaken: 1, performanceScore: 98, trend: 'up' },
-      { id: '3', name: 'Amit Kumar', role: 'Waiter', attendanceRate: 88, avgHoursPerDay: 7.5, lateArrivals: 4, overtimeHours: 2, leavesTaken: 3, performanceScore: 75, trend: 'down' },
-      { id: '4', name: 'Neha Singh', role: 'Kitchen Helper', attendanceRate: 92, avgHoursPerDay: 8.2, lateArrivals: 2, overtimeHours: 8, leavesTaken: 2, performanceScore: 85, trend: 'stable' },
-      { id: '5', name: 'Vikram Joshi', role: 'Delivery', attendanceRate: 94, avgHoursPerDay: 9.0, lateArrivals: 1, overtimeHours: 18, leavesTaken: 1, performanceScore: 88, trend: 'up' },
-      { id: '6', name: 'Sita Devi', role: 'Cleaner', attendanceRate: 78, avgHoursPerDay: 6.5, lateArrivals: 6, overtimeHours: 0, leavesTaken: 5, performanceScore: 62, trend: 'down' },
-    ];
-    setStaffMetrics(demoStaff);
+    const fetchStaffData = async () => {
+      try {
+        const { data: attendanceData, error } = await supabase
+          .from('staff_attendance')
+          .select('*');
+        
+        if (error) throw error;
+        
+        if (!attendanceData || attendanceData.length === 0) {
+          setStaffMetrics([]);
+          return;
+        }
+
+        const staffMap = new Map<string, any>();
+        
+        attendanceData.forEach(record => {
+          if (!staffMap.has(record.staff_id)) {
+            staffMap.set(record.staff_id, {
+              id: record.staff_id,
+              name: record.staff_name || 'Unknown',
+              role: 'Staff',
+              totalDays: 0,
+              presentDays: 0,
+              lateArrivals: 0,
+              totalHours: 0,
+              leavesTaken: 0,
+            });
+          }
+          
+          const s = staffMap.get(record.staff_id);
+          s.totalDays++;
+          if (record.status === 'present') {
+            s.presentDays++;
+            // Mock some hour calculations since check_in/out might be basic strings
+            s.totalHours += 8;
+          } else {
+            s.leavesTaken++;
+          }
+        });
+
+        const computedMetrics: StaffMetric[] = Array.from(staffMap.values()).map(s => ({
+          id: s.id,
+          name: s.name,
+          role: s.role,
+          attendanceRate: Math.round((s.presentDays / s.totalDays) * 100) || 0,
+          avgHoursPerDay: s.presentDays > 0 ? Number((s.totalHours / s.presentDays).toFixed(1)) : 0,
+          lateArrivals: s.lateArrivals,
+          overtimeHours: Math.max(0, s.totalHours - (s.presentDays * 8)),
+          leavesTaken: s.leavesTaken,
+          performanceScore: Math.round((s.presentDays / s.totalDays) * 100) - (s.lateArrivals * 2),
+          trend: 'stable'
+        }));
+
+        setStaffMetrics(computedMetrics);
+      } catch (err) {
+        console.error('Error fetching staff data:', err);
+      }
+    };
+    
+    fetchStaffData();
   }, [period]);
 
   const summary = useMemo(() => {

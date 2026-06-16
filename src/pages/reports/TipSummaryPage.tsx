@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Download, ArrowLeft, Heart, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
 import { useLocale } from '@/contexts/LocaleContext';
+import { DateRange } from 'react-day-picker';
+import { DatePickerWithRange } from '@/components/ui/date-range-picker';
 import { useAnalytics, TimeRange } from '@/hooks/useAnalytics';
 import { printReport, formatReportCurrency } from '@/lib/reportPrintUtils';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -19,7 +21,15 @@ const TipSummaryPage: React.FC = () => {
   const navigate = useNavigate();
   const { t, formatCurrency } = useLocale();
   const [timeRange, setTimeRange] = useState<TimeRange>('today');
-  const { filteredOrders } = useAnalytics(timeRange);
+  const [dateRange, setDateRange] = useState<DateRange | undefined>();
+  useEffect(() => {
+    if (dateRange?.from) {
+      setTimeRange('custom');
+    } else if (timeRange === 'custom') {
+      setTimeRange('today');
+    }
+  }, [dateRange]);
+  const { filteredOrders } = useAnalytics(timeRange, dateRange);
 
   // Aggregate tips from real orders (tip field exists in DB but not in local Order type)
   const ordersWithTips = filteredOrders.filter(o => (o as any).tip && (o as any).tip > 0);
@@ -96,13 +106,10 @@ const TipSummaryPage: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Tabs value={timeRange} onValueChange={(v) => setTimeRange(v as TimeRange)}>
-            <TabsList>
-              <TabsTrigger value="today">{t('common.today')}</TabsTrigger>
-              <TabsTrigger value="week">{t('common.thisWeek')}</TabsTrigger>
-              <TabsTrigger value="month">{t('common.thisMonth')}</TabsTrigger>
-            </TabsList>
-          </Tabs>
+          <div className="flex items-center gap-2">
+            <Button variant={timeRange === 'today' ? 'default' : 'outline'} onClick={() => { setTimeRange('today'); setDateRange(undefined); }} className="h-9">Today</Button>
+            <DatePickerWithRange date={dateRange} setDate={setDateRange} />
+          </div>
           <Button variant="outline" onClick={handlePrint} className="gap-2">
             <Printer className="h-4 w-4" />
             {t('common.print')}

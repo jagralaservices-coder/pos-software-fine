@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { DateRange } from 'react-day-picker';
+import { DatePickerWithRange } from '@/components/ui/date-range-picker';
 import { useLocale } from '@/contexts/LocaleContext';
 import { BarChart3, TrendingUp, Download, ArrowLeft, Store, Printer, XCircle, AlertTriangle, Loader2, DollarSign, Wallet, CreditCard, Star, ListOrdered, ShoppingCart, Users, Layers, Percent, Coffee, Hash, FileText, IndianRupee, ArrowDownUp, PiggyBank } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -13,9 +15,19 @@ export const ReportsPage: React.FC = () => {
   const navigate = useNavigate();
   const { t, formatCurrency } = useLocale();
   const [timeRange, setTimeRange] = useState<TimeRange>('today');
+  const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const { isOwner, selectedStoreName } = useOwnerStore();
-  const { paymentSummary, filteredOrders, isLoading } = useAnalytics(timeRange);
+  const { paymentSummary, filteredOrders, isLoading } = useAnalytics(timeRange, dateRange);
   const { canAccess } = useSubscription();
+
+  // Switch to custom when dateRange changes
+  useEffect(() => {
+    if (dateRange?.from) {
+      setTimeRange('custom');
+    } else if (timeRange === 'custom') {
+      setTimeRange('today');
+    }
+  }, [dateRange]);
 
   const reportLinks = [
     { label: '⭐ Advanced Reports', path: '/advanced-reports', icon: Star, featureKey: 'advancedAnalytics' },
@@ -105,7 +117,9 @@ export const ReportsPage: React.FC = () => {
   };
 
   const handlePrint = () => {
-    const dateRangeLabel = timeRange === 'today' ? t('common.today') : timeRange === 'week' ? t('common.thisWeek') : t('common.thisMonth');
+    const dateRangeLabel = timeRange === 'custom' && dateRange?.from 
+      ? `${dateRange.from.toLocaleDateString()} - ${dateRange.to ? dateRange.to.toLocaleDateString() : 'Now'}`
+      : timeRange === 'today' ? t('common.today') : t('common.today'); // fallback
     printReport(
       { title: t('reports.sales'), subtitle: `${dateRangeLabel} Summary`, storeName: selectedStoreName, dateRange: dateRangeLabel },
       [
@@ -118,8 +132,6 @@ export const ReportsPage: React.FC = () => {
 
   const timeRanges = [
     { id: 'today', label: t('common.today') },
-    { id: 'week', label: t('common.thisWeek') },
-    { id: 'month', label: t('common.thisMonth') },
   ] as const;
 
   return (
@@ -155,14 +167,15 @@ export const ReportsPage: React.FC = () => {
           </div>
         )}
 
-        {/* Time Range Chips */}
-        <div className="flex gap-2 px-4 pb-3">
+        {/* Time Range Chips & Date Picker */}
+        <div className="flex gap-2 px-4 pb-3 items-center flex-wrap">
           {timeRanges.map(range => (
-            <button key={range.id} onClick={() => setTimeRange(range.id)}
-              className={cn('px-4 py-1.5 rounded-full text-xs font-medium transition-all', timeRange === range.id ? 'bg-primary text-primary-foreground' : 'bg-card border border-border text-muted-foreground')}>
+            <button key={range.id} onClick={() => { setTimeRange(range.id); setDateRange(undefined); }}
+              className={cn('px-4 py-1.5 rounded-full text-xs font-medium transition-all h-[36px]', timeRange === range.id ? 'bg-primary text-primary-foreground' : 'bg-card border border-border text-muted-foreground')}>
               {range.label}
             </button>
           ))}
+          <DatePickerWithRange date={dateRange} setDate={setDateRange} />
         </div>
       </div>
 
@@ -209,9 +222,12 @@ export const ReportsPage: React.FC = () => {
           <div className="space-y-3">
             {breakdownItems.map(item => (
               <div key={item.label}>
-                <div className="flex justify-between text-sm mb-1.5">
+                <div className="flex justify-between items-center text-sm mb-1.5">
                   <span className="flex items-center gap-1.5 text-foreground">{item.emoji} {item.label}</span>
-                  <span className="font-bold">{formatCurrency(item.value)}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold">{formatCurrency(item.value)}</span>
+                    <span className="text-[10px] text-muted-foreground w-12 text-right">{item.count} ords</span>
+                  </div>
                 </div>
                 <div className="h-2 bg-secondary rounded-full overflow-hidden">
                   <div className={cn('h-full rounded-full transition-all', item.color)} style={{ width: `${totalSales > 0 ? (item.value / totalSales) * 100 : 0}%` }} />

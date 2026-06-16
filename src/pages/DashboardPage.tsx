@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePOS } from '@/contexts/POSContext';
 import { useLocale } from '@/contexts/LocaleContext';
+import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { 
@@ -27,6 +28,7 @@ export const DashboardPage: React.FC = () => {
   const { tables, heldBills } = usePOS();
   const { t, formatCurrency } = useLocale();
   const { summary } = useAnalytics('today');
+  const { userRole } = useSupabaseAuth();
   const isMobile = useIsMobile();
 
   const activeTables = tables.filter(t => t.status === 'occupied').length;
@@ -40,7 +42,7 @@ export const DashboardPage: React.FC = () => {
   const strokeDashoffset = circumference - (goalPercent / 100) * circumference;
 
   const quickActions = [
-    { label: t('dashboard.newOrder'), icon: CartIcon, path: '/pos' },
+    ...(userRole?.role !== 'owner' ? [{ label: t('dashboard.newOrder'), icon: CartIcon, path: '/pos' }] : []),
     { label: t('dashboard.tables'), icon: UtensilsCrossed, path: '/tables' },
     { label: t('dashboard.kitchen'), icon: ChefHat, path: '/kitchen' },
     { label: t('dashboard.reports'), icon: BarChart3, path: '/reports' },
@@ -216,7 +218,7 @@ export const DashboardPage: React.FC = () => {
           <div className="flex justify-around py-2">
             {[
               { icon: BarChart3, label: 'Dashboard', path: '/dashboard', active: true },
-              { icon: DollarSign, label: 'Sales', path: '/pos', active: false },
+              ...(userRole?.role !== 'owner' ? [{ icon: DollarSign, label: 'Sales', path: '/pos', active: false }] : []),
               { icon: ClipboardList, label: 'Items', path: '/menu', active: false },
               { icon: Settings, label: 'Settings', path: '/settings', active: false },
             ].map((nav) => (

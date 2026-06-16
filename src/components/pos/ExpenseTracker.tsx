@@ -49,7 +49,23 @@ export const ExpenseTracker: React.FC = () => {
   const handleDeleteExpense = () => {
     if (!deleteExpenseId) return;
     const updatedExpenses = expenses.filter(exp => exp.id !== deleteExpenseId);
-    setExpensesState(updatedExpenses); setExpenses(updatedExpenses); setDeleteExpenseId(null);
+    setExpensesState(updatedExpenses); setExpenses(updatedExpenses); 
+    
+    // Track deletion for cloud sync
+    try {
+      const storeDataStr = localStorage.getItem('pos_active_store_data');
+      const storeId = localStorage.getItem('owner_selected_store_id') || (storeDataStr ? JSON.parse(storeDataStr).id : null);
+      if (storeId) {
+        const deletedKey = `pos_deleted_expenses_${storeId}`;
+        const deletedIds = JSON.parse(localStorage.getItem(deletedKey) || '[]');
+        deletedIds.push(deleteExpenseId);
+        localStorage.setItem(deletedKey, JSON.stringify(deletedIds));
+      }
+    } catch (e) {
+      console.error('Error tracking deleted expense:', e);
+    }
+    
+    setDeleteExpenseId(null);
     toast.success(t('msg.deleted'));
   };
 
@@ -66,6 +82,33 @@ export const ExpenseTracker: React.FC = () => {
 
   const todayTotal = expenses.filter(e => new Date(e.date).toDateString() === new Date().toDateString()).reduce((sum, e) => sum + e.amount, 0);
   const monthTotal = expenses.filter(e => { const d = new Date(e.date); const n = new Date(); return d.getMonth() === n.getMonth() && d.getFullYear() === n.getFullYear(); }).reduce((sum, e) => sum + e.amount, 0);
+
+  const renderDescription = (description: string) => {
+    // Check for "Initial stock: {qty} {unit} of {name}"
+    const initialStockMatch = description.match(/Initial stock:\s*([\d.]+)\s*(\w+)\s+of\s+(.*)/i);
+    if (initialStockMatch) {
+      return (
+        <>
+          <p className="font-semibold text-foreground text-sm truncate capitalize">{initialStockMatch[3]}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Qty: {initialStockMatch[1]} {initialStockMatch[2]}</p>
+        </>
+      );
+    }
+
+    // Check for "Purchased {qty} {unit} of {name}"
+    const purchasedMatch = description.match(/Purchased\s*([\d.]+)\s*(\w+)\s+of\s+(.*)/i);
+    if (purchasedMatch) {
+      return (
+        <>
+          <p className="font-semibold text-foreground text-sm truncate capitalize">{purchasedMatch[3]}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Purchased Qty: {purchasedMatch[1]} {purchasedMatch[2]}</p>
+        </>
+      );
+    }
+
+    // Default
+    return <p className="font-semibold text-foreground text-sm truncate">{description}</p>;
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -136,8 +179,8 @@ export const ExpenseTracker: React.FC = () => {
                 {categoryEmojis[expense.category] || '💸'}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-semibold text-foreground text-sm truncate">{expense.description}</p>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                {renderDescription(expense.description)}
+                <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
                   <span className="px-1.5 py-0.5 bg-secondary rounded text-[10px]">{expense.category}</span>
                   <span className="flex items-center gap-0.5"><Calendar className="w-3 h-3" />{new Date(expense.date).toLocaleDateString()}</span>
                 </div>
