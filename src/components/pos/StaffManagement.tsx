@@ -138,7 +138,7 @@ export const StaffManagement = forwardRef<HTMLDivElement>((_, ref) => {
       const data = await invokeFunctionWithResponseFallback<CreateStaffResponse>('create-staff', {
         name: newStaff.name,
         email: newStaff.email,
-        role: newStaff.role === 'admin' ? 'store_manager' : 'staff',
+        role: newStaff.(role === 'admin' || role === 'super_admin') ? 'store_manager' : 'staff',
         store_id: storeId,
         customer_id: customerId,
         pin: newStaff.pin,

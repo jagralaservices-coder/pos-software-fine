@@ -13,6 +13,8 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { OfflineIndicator } from "@/components/OfflineIndicator";
 import { FeatureGuard } from "@/components/FeatureGuard";
+import { ImpersonationProvider, useImpersonation } from "@/contexts/ImpersonationContext";
+import { ImpersonationBanner } from "@/components/admin/ImpersonationBanner";
 
 import { PermissionRequestScreen } from "@/components/PermissionRequestScreen";
 import { useAndroidBackButton } from "@/hooks/useAndroidBackButton";
@@ -22,7 +24,22 @@ import { BackupRestoreGate } from "@/components/pos/BackupRestoreGate";
 const WelcomePage = lazy(() => import("./pages/WelcomePage"));
 const AuthPage = lazy(() => import("./pages/auth/AuthPage"));
 const AuthCallbackPage = lazy(() => import("./pages/auth/AuthCallbackPage"));
-const AdminDashboardPage = lazy(() => import("./pages/admin/AdminDashboardPage"));
+import { SuperAdminLayout } from "./components/admin/SuperAdminLayout";
+const AdminExecutiveDashboardPage = lazy(() => import("./pages/admin/ExecutiveDashboardPage"));
+const AccountManagementPage = lazy(() => import("./pages/admin/AccountManagementPage"));
+const SubscriptionManagementPage = lazy(() => import("./pages/admin/SubscriptionManagementPage"));
+const MerchantManagementPage = lazy(() => import("./pages/admin/MerchantManagementPage"));
+const StoreManagementPage = lazy(() => import("./pages/admin/StoreManagementPage"));
+const FinancialAnalyticsPage = lazy(() => import("./pages/admin/FinancialAnalyticsPage"));
+const SystemAnalyticsPage = lazy(() => import("./pages/admin/SystemAnalyticsPage"));
+const CustomerAnalyticsPage = lazy(() => import("./pages/admin/CustomerAnalyticsPage"));
+const StaffAnalyticsPage = lazy(() => import("./pages/admin/StaffAnalyticsPage"));
+const ReportCenterPage = lazy(() => import("./pages/admin/ReportCenterPage"));
+const NotificationsCenterPage = lazy(() => import("./pages/admin/NotificationsCenterPage"));
+const AuditSecurityPage = lazy(() => import("./pages/admin/AuditSecurityPage"));
+const AIInsightsPage = lazy(() => import("./pages/admin/AIInsightsPage"));
+const PlatformAdminsPage = lazy(() => import("./pages/admin/PlatformAdminsPage"));
+const PendingApprovalsPage = lazy(() => import("./pages/admin/PendingApprovalsPage"));
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const POSBillingPage = lazy(() => import("./pages/POSBillingPage"));
 const TablesManagementPage = lazy(() => import("./pages/TablesManagementPage"));
@@ -109,6 +126,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: strin
 }) => {
   const { isAuthenticated, isLoading, userRole } = useSupabaseAuth();
   const posContext = usePOSSafe();
+  const { isImpersonating } = useImpersonation();
   
   // Safely access POS context values with defaults
   const isStoreLogin = posContext?.isStoreLogin ?? false;
@@ -159,7 +177,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: strin
   }
 
   // Check role-based access (only for Supabase auth)
-  if (allowedRoles && userRole && !allowedRoles.includes(userRole.role)) {
+  if (allowedRoles && userRole && !allowedRoles.includes(userRole.role) && !isImpersonating) {
     // If store login is active, allow access
     if (isStoreLogin && activeStore) {
       return renderWithGate(<MainLayout>{children}</MainLayout>);
@@ -179,7 +197,7 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     return <LoadingSpinner />;
   }
   
-  if (!isAuthenticated || userRole?.role !== 'admin') {
+  if (!isAuthenticated || !userRole || !['admin', 'super_admin'].includes(userRole.role)) {
     try { localStorage.removeItem('pos_last_path'); } catch (e) {}
     return <Navigate to="/auth" replace />;
   }
@@ -188,6 +206,15 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 };
 
 // Public route wrapper - shows content if not authenticated, redirects if authenticated
+const SuperAdminOnlyRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isAuthenticated, isLoading, isSuperAdmin } = useSupabaseAuth();
+  if (isLoading) return <LoadingSpinner />;
+  if (!isAuthenticated || !isSuperAdmin()) {
+    return <Navigate to="/admin/dashboard" replace />;
+  }
+  return <>{children}</>;
+};
+
 const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, isLoading, userRole } = useSupabaseAuth();
   
@@ -199,8 +226,9 @@ const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     // Redirect based on role if role exists
     if (userRole) {
       switch (userRole.role) {
+        case 'super_admin':
         case 'admin':
-          return <Navigate to="/admin-dashboard" replace />;
+          return <Navigate to="/admin/dashboard" replace />;
         case 'owner':
           return <Navigate to="/dashboard" replace />;
         case 'store_manager':
@@ -248,14 +276,30 @@ const AppRoutes = () => {
       <Route path="/menu/:storeCode" element={<CustomerMenuPage />} />
       <Route path="/track/:storeCode/:orderNumber" element={<OrderTrackingPage />} />
       
-      {/* Legacy routes - redirect to unified auth */}
+      {/* Legacy routes - redirect to unified auth or new admin layout */}
       <Route path="/login" element={<Navigate to="/auth" replace />} />
       <Route path="/staff-login" element={<Navigate to="/auth" replace />} />
+      <Route path="/admin-dashboard" element={<Navigate to="/admin/dashboard" replace />} />
 
-      {/* Admin Routes - standalone layout, no sidebar/header */}
-      <Route path="/admin-dashboard" element={
-        <AdminRoute><AdminDashboardPage /></AdminRoute>
-      } />
+      {/* Super Admin Routes */}
+      <Route path="/admin" element={<AdminRoute><SuperAdminLayout /></AdminRoute>}>
+        <Route index element={<Navigate to="/admin/dashboard" replace />} />
+        <Route path="dashboard" element={<AdminExecutiveDashboardPage />} />
+        <Route path="accounts" element={<AccountManagementPage />} />
+        <Route path="subscriptions" element={<SubscriptionManagementPage />} />
+        <Route path="merchants" element={<MerchantManagementPage />} />
+        <Route path="stores" element={<StoreManagementPage />} />
+        <Route path="finance" element={<FinancialAnalyticsPage />} />
+        <Route path="system" element={<SystemAnalyticsPage />} />
+        <Route path="customers" element={<CustomerAnalyticsPage />} />
+        <Route path="staff" element={<StaffAnalyticsPage />} />
+        <Route path="reports" element={<ReportCenterPage />} />
+        <Route path="notifications" element={<NotificationsCenterPage />} />
+        <Route path="audit" element={<AuditSecurityPage />} />
+        <Route path="ai-insights" element={<AIInsightsPage />} />
+        <Route path="platform-admins" element={<SuperAdminOnlyRoute><PlatformAdminsPage /></SuperAdminOnlyRoute>} />
+        <Route path="approvals" element={<SuperAdminOnlyRoute><PendingApprovalsPage /></SuperAdminOnlyRoute>} />
+      </Route>
 
       {/* Staff Routes (accessible after staff login) */}
       <Route path="/staff-dashboard" element={
@@ -273,177 +317,177 @@ const AppRoutes = () => {
       
       {/* Protected Routes - Owner & Store Manager */}
       <Route path="/dashboard" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><DashboardPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><DashboardPage /></ProtectedRoute>
       } />
       <Route path="/pos" element={<ProtectedRoute allowedRoles={['store_manager']} allowStoreLogin={true} allowStaffLogin={true}><POSBillingPage /></ProtectedRoute>} />
       <Route path="/tables" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="tableManagement"><TablesManagementPage /></FeatureGuard></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="tableManagement"><TablesManagementPage /></FeatureGuard></ProtectedRoute>
       } />
       <Route path="/orders" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><OrdersManagementPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><OrdersManagementPage /></ProtectedRoute>
       } />
       <Route path="/kitchen" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><KitchenDisplayPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><KitchenDisplayPage /></ProtectedRoute>
       } />
       <Route path="/inventory" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><InventoryPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><InventoryPage /></ProtectedRoute>
       } />
       <Route path="/reports" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><ReportsPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><ReportsPage /></ProtectedRoute>
       } />
       <Route path="/staff-portal" element={
         <ProtectedRoute><StaffPortalPage /></ProtectedRoute>
       } />
       <Route path="/settings" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><OwnerSettingsPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><OwnerSettingsPage /></ProtectedRoute>
       } />
       <Route path="/owner-settings" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><OwnerSettingsPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><OwnerSettingsPage /></ProtectedRoute>
       } />
       <Route path="/backup" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><SettingsPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><SettingsPage /></ProtectedRoute>
       } />
       <Route path="/ui-customization" element={
         <ProtectedRoute allowStoreLogin allowStaffLogin><UICustomizationPage /></ProtectedRoute>
       } />
       <Route path="/live-view" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="liveView"><LiveViewPage /></FeatureGuard></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="liveView"><LiveViewPage /></FeatureGuard></ProtectedRoute>
       } />
       <Route path="/operations" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><OperationsPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><OperationsPage /></ProtectedRoute>
       } />
       <Route path="/item-onoff" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><ItemOnOffPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><ItemOnOffPage /></ProtectedRoute>
       } />
       <Route path="/search-bill" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><SearchBillPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><SearchBillPage /></ProtectedRoute>
       } />
       <Route path="/bulk-upload" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']}><BulkMenuUploadPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']}><BulkMenuUploadPage /></ProtectedRoute>
       } />
       <Route path="/menu" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><MenuPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><MenuPage /></ProtectedRoute>
       } />
       <Route path="/stores" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner']}><StoresPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner']}><StoresPage /></ProtectedRoute>
       } />
       <Route path="/expenses" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="expenseTracking"><ExpensesPage /></FeatureGuard></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="expenseTracking"><ExpensesPage /></FeatureGuard></ProtectedRoute>
       } />
       <Route path="/customers" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><CustomersPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><CustomersPage /></ProtectedRoute>
       } />
       <Route path="/online-orders" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="swiggyZomato"><OnlineOrdersPage /></FeatureGuard></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="swiggyZomato"><OnlineOrdersPage /></FeatureGuard></ProtectedRoute>
       } />
       <Route path="/qr-orders" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="qrMenuOrdering"><QROrdersPage /></FeatureGuard></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="qrMenuOrdering"><QROrdersPage /></FeatureGuard></ProtectedRoute>
       } />
       <Route path="/kot-listing" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="kotListing"><KOTListingPage /></FeatureGuard></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="kotListing"><KOTListingPage /></FeatureGuard></ProtectedRoute>
       } />
       <Route path="/support" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><SupportPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><SupportPage /></ProtectedRoute>
       } />
       <Route path="/delivery" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="deliveryTracking"><DeliveryPage /></FeatureGuard></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="deliveryTracking"><DeliveryPage /></FeatureGuard></ProtectedRoute>
       } />
       <Route path="/credit-ledger" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="creditLedger"><CreditLedgerPage /></FeatureGuard></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="creditLedger"><CreditLedgerPage /></FeatureGuard></ProtectedRoute>
       } />
       <Route path="/cash-flow" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="cashFlow"><CashFlowPage /></FeatureGuard></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="cashFlow"><CashFlowPage /></FeatureGuard></ProtectedRoute>
       } />
       <Route path="/withdrawal" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="withdrawal"><WithdrawalPage /></FeatureGuard></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="withdrawal"><WithdrawalPage /></FeatureGuard></ProtectedRoute>
       } />
       <Route path="/cash-topup" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="cashTopUp"><CashTopUpPage /></FeatureGuard></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="cashTopUp"><CashTopUpPage /></FeatureGuard></ProtectedRoute>
       } />
       <Route path="/advanced-reports" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="advancedAnalytics"><AdvancedReportsPage /></FeatureGuard></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="advancedAnalytics"><AdvancedReportsPage /></FeatureGuard></ProtectedRoute>
       } />
       <Route path="/chat" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin allowStaffLogin><FeatureGuard featureKey="teamChat"><ChatPage /></FeatureGuard></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin allowStaffLogin><FeatureGuard featureKey="teamChat"><ChatPage /></FeatureGuard></ProtectedRoute>
       } />
       {/* Admin Management Routes */}
       <Route path="/admin-approvals" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><AdminApprovalsPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><AdminApprovalsPage /></ProtectedRoute>
       } />
       <Route path="/staff-schedule" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><StaffSchedulePage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><StaffSchedulePage /></ProtectedRoute>
       } />
       <Route path="/staff-settings" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><StaffSettingsPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><StaffSettingsPage /></ProtectedRoute>
       } />
       <Route path="/attendance-reports" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><AttendanceReportsPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><AttendanceReportsPage /></ProtectedRoute>
       } />
       
       {/* Report Routes */}
       <Route path="/reports/category" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><CategorySummaryPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><CategorySummaryPage /></ProtectedRoute>
       } />
       <Route path="/reports/item" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><ItemSummaryPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><ItemSummaryPage /></ProtectedRoute>
       } />
       <Route path="/reports/sales" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><SalesSummaryPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><SalesSummaryPage /></ProtectedRoute>
       } />
       <Route path="/reports/order" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><OrderSummaryPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><OrderSummaryPage /></ProtectedRoute>
       } />
       <Route path="/reports/executive" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><ExecutiveSalesPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><ExecutiveSalesPage /></ProtectedRoute>
       } />
       <Route path="/reports/employee" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><EmployeeSummaryPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><EmployeeSummaryPage /></ProtectedRoute>
       } />
       <Route path="/reports/group" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><GroupSummaryPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><GroupSummaryPage /></ProtectedRoute>
       } />
       <Route path="/reports/variation" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><VariationSummaryPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><VariationSummaryPage /></ProtectedRoute>
       } />
       <Route path="/reports/cover-size" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><CoverSizeSummaryPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><CoverSizeSummaryPage /></ProtectedRoute>
       } />
       <Route path="/reports/tip" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><TipSummaryPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><TipSummaryPage /></ProtectedRoute>
       } />
       <Route path="/reports/counter" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><CounterSummaryPage /></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><CounterSummaryPage /></ProtectedRoute>
       } />
       
       <Route path="/compliance" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="compliance"><ComplianceDashboardPage /></FeatureGuard></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="compliance"><ComplianceDashboardPage /></FeatureGuard></ProtectedRoute>
       } />
       <Route path="/purchase-orders" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="purchaseOrders"><PurchaseOrdersPage /></FeatureGuard></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="purchaseOrders"><PurchaseOrdersPage /></FeatureGuard></ProtectedRoute>
       } />
       <Route path="/workforce-analytics" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="workforceAnalytics"><WorkforceAnalyticsPage /></FeatureGuard></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="workforceAnalytics"><WorkforceAnalyticsPage /></FeatureGuard></ProtectedRoute>
       } />
       <Route path="/ai-control-center" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="aiControlCenter"><AIControlCenterPage /></FeatureGuard></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="aiControlCenter"><AIControlCenterPage /></FeatureGuard></ProtectedRoute>
       } />
       <Route path="/smart-inventory" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="smartInventory"><SmartInventoryPage /></FeatureGuard></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="smartInventory"><SmartInventoryPage /></FeatureGuard></ProtectedRoute>
       } />
       <Route path="/dynamic-pricing" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="dynamicPricing"><DynamicPricingPage /></FeatureGuard></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="dynamicPricing"><DynamicPricingPage /></FeatureGuard></ProtectedRoute>
       } />
       <Route path="/executive-dashboard" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner']} allowStoreLogin><FeatureGuard featureKey="executiveDashboard"><ExecutiveDashboardPage /></FeatureGuard></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner']} allowStoreLogin><FeatureGuard featureKey="executiveDashboard"><ExecutiveDashboardPage /></FeatureGuard></ProtectedRoute>
       } />
       <Route path="/api-management" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner']} allowStoreLogin><FeatureGuard featureKey="apiIntegrations"><APIManagementPage /></FeatureGuard></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner']} allowStoreLogin><FeatureGuard featureKey="apiIntegrations"><APIManagementPage /></FeatureGuard></ProtectedRoute>
       } />
       <Route path="/tax-engine" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="taxEngine"><TaxEnginePage /></FeatureGuard></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner', 'store_manager']} allowStoreLogin><FeatureGuard featureKey="taxEngine"><TaxEnginePage /></FeatureGuard></ProtectedRoute>
       } />
       <Route path="/revenue-forecast" element={
-        <ProtectedRoute allowedRoles={['admin', 'owner']} allowStoreLogin><FeatureGuard featureKey="revenueForecast"><RevenueForecastPage /></FeatureGuard></ProtectedRoute>
+        <ProtectedRoute allowedRoles={['super_admin', 'admin', 'owner']} allowStoreLogin><FeatureGuard featureKey="revenueForecast"><RevenueForecastPage /></FeatureGuard></ProtectedRoute>
       } />
       <Route path="/prd" element={<PRDPage />} />
       <Route path="*" element={<NotFound />} />
@@ -474,18 +518,21 @@ const App = () => {
         <ThemeProvider>
           <LocaleProvider>
             <SupabaseAuthProvider>
-              <POSProvider>
-                <TooltipProvider>
-                  <Toaster />
-                  <Sonner />
-                  <OfflineIndicator />
-                  <BrowserRouter>
-                    <BackgroundQROrderManager />
-                    <AppRoutes />
-                    <PWAInstallPrompt />
-                  </BrowserRouter>
-                </TooltipProvider>
-              </POSProvider>
+              <ImpersonationProvider>
+                <POSProvider>
+                  <TooltipProvider>
+                    <Toaster />
+                    <Sonner />
+                    <OfflineIndicator />
+                    <ImpersonationBanner />
+                    <BrowserRouter>
+                      <BackgroundQROrderManager />
+                      <AppRoutes />
+                      <PWAInstallPrompt />
+                    </BrowserRouter>
+                  </TooltipProvider>
+                </POSProvider>
+              </ImpersonationProvider>
             </SupabaseAuthProvider>
           </LocaleProvider>
         </ThemeProvider>

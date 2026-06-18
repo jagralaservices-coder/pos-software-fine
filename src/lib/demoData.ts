@@ -49,7 +49,7 @@ export const generateClientDemoData = async (storeId: string, customerId: string
         store_id: storeId,
         role: staffRoles[i],
         staff_code: `STF${100+i}`,
-        pin: '123456',
+        pin: '000000',
         is_active: true,
       });
     } catch (e) {
@@ -62,7 +62,7 @@ export const generateClientDemoData = async (storeId: string, customerId: string
       name: sName,
       role: staffRoles[i] as any,
       phone: getRandomPhone(),
-      pin: '123456',
+      pin: '000000',
       isActive: true,
       attendance: []
     });

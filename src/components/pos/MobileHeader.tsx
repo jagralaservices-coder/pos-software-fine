@@ -100,19 +100,19 @@ export const MobileHeader: React.FC = () => {
   const pendingOrders = orders.filter(o => o.status === 'pending' || o.status === 'preparing').length;
 
   const menuItems = [
-    { path: '/dashboard', icon: LayoutDashboard, labelKey: 'nav.dashboard', roles: ['admin', 'owner', 'store_manager'], featureKey: '' },
-    { path: '/pos', icon: Plus, labelKey: 'pos.billing', roles: ['admin', 'owner', 'store_manager'], featureKey: '' },
-    { path: '/tables', icon: UtensilsCrossed, labelKey: 'nav.tables', roles: ['admin', 'owner', 'store_manager', 'staff'], featureKey: 'tableManagement' },
-    { path: '/orders', icon: ClipboardList, labelKey: 'nav.orders', roles: ['admin', 'owner', 'store_manager', 'staff'], featureKey: '' },
-    { path: '/kitchen', icon: ChefHat, labelKey: 'nav.kitchen', roles: ['admin', 'owner', 'store_manager'], featureKey: 'dineIn' },
-    { path: '/inventory', icon: Package, labelKey: 'nav.inventory', roles: ['admin', 'owner', 'store_manager'], featureKey: 'basicInventory' },
-    { path: '/menu', icon: FileText, labelKey: 'nav.menu', roles: ['admin', 'owner', 'store_manager'], featureKey: '' },
-    { path: '/reports', icon: Calculator, labelKey: 'nav.reports', roles: ['admin', 'owner', 'store_manager'], featureKey: 'basicReports' },
-    { path: '/qr-orders', icon: QrCode, labelKey: 'Menu Orders', roles: ['admin', 'owner', 'store_manager'], featureKey: 'qrMenuOrdering' },
-    { path: '/delivery', icon: Truck, labelKey: 'nav.delivery', roles: ['admin', 'owner', 'store_manager'], featureKey: 'deliveryTracking' },
-    { path: '/operations', icon: Wrench, labelKey: 'nav.operations', roles: ['admin', 'owner', 'store_manager'], featureKey: '' },
-    { path: '/chat', icon: MessageCircle, labelKey: 'common.teamChat', roles: ['admin', 'owner', 'store_manager'], featureKey: 'teamChat' },
-    { path: '/settings', icon: Settings, labelKey: 'nav.settings', roles: ['admin', 'owner', 'store_manager'], featureKey: '' },
+    { path: '/dashboard', icon: LayoutDashboard, labelKey: 'nav.dashboard', roles: ['super_admin', 'admin', 'owner', 'store_manager'], featureKey: '' },
+    { path: '/pos', icon: Plus, labelKey: 'pos.billing', roles: ['super_admin', 'admin', 'owner', 'store_manager'], featureKey: '' },
+    { path: '/tables', icon: UtensilsCrossed, labelKey: 'nav.tables', roles: ['super_admin', 'admin', 'owner', 'store_manager', 'staff'], featureKey: 'tableManagement' },
+    { path: '/orders', icon: ClipboardList, labelKey: 'nav.orders', roles: ['super_admin', 'admin', 'owner', 'store_manager', 'staff'], featureKey: '' },
+    { path: '/kitchen', icon: ChefHat, labelKey: 'nav.kitchen', roles: ['super_admin', 'admin', 'owner', 'store_manager'], featureKey: 'dineIn' },
+    { path: '/inventory', icon: Package, labelKey: 'nav.inventory', roles: ['super_admin', 'admin', 'owner', 'store_manager'], featureKey: 'basicInventory' },
+    { path: '/menu', icon: FileText, labelKey: 'nav.menu', roles: ['super_admin', 'admin', 'owner', 'store_manager'], featureKey: '' },
+    { path: '/reports', icon: Calculator, labelKey: 'nav.reports', roles: ['super_admin', 'admin', 'owner', 'store_manager'], featureKey: 'basicReports' },
+    { path: '/qr-orders', icon: QrCode, labelKey: 'Menu Orders', roles: ['super_admin', 'admin', 'owner', 'store_manager'], featureKey: 'qrMenuOrdering' },
+    { path: '/delivery', icon: Truck, labelKey: 'nav.delivery', roles: ['super_admin', 'admin', 'owner', 'store_manager'], featureKey: 'deliveryTracking' },
+    { path: '/operations', icon: Wrench, labelKey: 'nav.operations', roles: ['super_admin', 'admin', 'owner', 'store_manager'], featureKey: '' },
+    { path: '/chat', icon: MessageCircle, labelKey: 'common.teamChat', roles: ['super_admin', 'admin', 'owner', 'store_manager'], featureKey: 'teamChat' },
+    { path: '/settings', icon: Settings, labelKey: 'nav.settings', roles: ['super_admin', 'admin', 'owner', 'store_manager'], featureKey: '' },
   ];
 
   // Staff-specific menu items

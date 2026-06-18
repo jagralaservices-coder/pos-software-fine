@@ -108,7 +108,7 @@ export const AppHeader: React.FC = () => {
   });
   const [staffList, setStaffList] = useState<any[]>([]);
 
-  const isOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
+  const isOwner = userRole?.role === 'owner' || userRole?.role === 'admin' || userRole?.role === 'super_admin';
 
   // Auto-show store selection for owner on first login
   useEffect(() => {
@@ -172,17 +172,17 @@ export const AppHeader: React.FC = () => {
   };
 
   const menuItems = [
-    { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ['admin', 'owner', 'store_manager'] },
+    { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ['super_admin', 'admin', 'owner', 'store_manager'] },
     { path: '/pos', icon: Plus, label: 'POS / Billing', roles: ['store_manager'] },
-    { path: '/menu', icon: BookOpen, label: 'Menu', roles: ['admin', 'owner', 'store_manager'] },
-    { path: '/bulk-upload', icon: FileText, label: 'Menu Upload', roles: ['admin', 'owner', 'store_manager'] },
-    { path: '/tables', icon: UtensilsCrossed, label: 'Tables', roles: ['admin', 'owner', 'store_manager', 'staff'] },
-    { path: '/orders', icon: ClipboardList, label: 'Orders', roles: ['admin', 'owner', 'store_manager', 'staff'] },
-    { path: '/kitchen', icon: ChefHat, label: 'Kitchen', roles: ['admin', 'owner', 'store_manager'] },
-    { path: '/inventory', icon: Package, label: 'Inventory', roles: ['admin', 'owner', 'store_manager'] },
-    { path: '/reports', icon: BarChart3, label: 'Reports', roles: ['admin', 'owner'] },
+    { path: '/menu', icon: BookOpen, label: 'Menu', roles: ['super_admin', 'admin', 'owner', 'store_manager'] },
+    { path: '/bulk-upload', icon: FileText, label: 'Menu Upload', roles: ['super_admin', 'admin', 'owner', 'store_manager'] },
+    { path: '/tables', icon: UtensilsCrossed, label: 'Tables', roles: ['super_admin', 'admin', 'owner', 'store_manager', 'staff'] },
+    { path: '/orders', icon: ClipboardList, label: 'Orders', roles: ['super_admin', 'admin', 'owner', 'store_manager', 'staff'] },
+    { path: '/kitchen', icon: ChefHat, label: 'Kitchen', roles: ['super_admin', 'admin', 'owner', 'store_manager'] },
+    { path: '/inventory', icon: Package, label: 'Inventory', roles: ['super_admin', 'admin', 'owner', 'store_manager'] },
+    { path: '/reports', icon: BarChart3, label: 'Reports', roles: ['super_admin', 'admin', 'owner'] },
     { path: '/staff-portal', icon: Users, label: 'Staff Portal', roles: ['staff'] },
-    { path: '/settings', icon: Settings, label: 'Settings', roles: ['admin', 'owner', 'store_manager'] },
+    { path: '/settings', icon: Settings, label: 'Settings', roles: ['super_admin', 'admin', 'owner', 'store_manager'] },
   ];
 
   const accessibleMenuItems = menuItems.filter(item => 
@@ -284,7 +284,7 @@ export const AppHeader: React.FC = () => {
         <div className="w-px h-8 bg-border mx-1 flex-shrink-0" />
 
         {/* New Order */}
-        {userRole?.role !== 'admin' && userRole?.role !== 'owner' && (
+        {userRole?.role !== 'admin' && userRole?.role !== 'super_admin' && userRole?.role !== 'owner' && (
           <Button
             onClick={handleNewOrder}
             size="sm"

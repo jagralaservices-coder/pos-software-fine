@@ -281,7 +281,7 @@ export const SettingsPage: React.FC = () => {
     saveSetting('pos_settings_billing', updated);
   };
 
-  const isAdmin = userRole?.role === 'admin';
+  const isAdmin = (userRole?.(role === 'admin' || role === 'super_admin') || userRole?.role === 'super_admin');
   const isOwner = userRole?.role === 'owner';
   const { canAccess } = useSubscription();
 

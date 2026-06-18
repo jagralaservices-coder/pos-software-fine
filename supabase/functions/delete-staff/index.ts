@@ -57,12 +57,12 @@ serve(async (req) => {
             .select('role, customer_id, store_id')
             .eq('user_id', user.id)
             .eq('is_active', true)
-            .in('role', ['admin', 'owner', 'store_manager'])
+            .in('role', ['admin', 'super_admin', 'owner', 'store_manager'])
             .limit(1)
             .maybeSingle()
 
           if (roleData) {
-            if (roleData.role === 'admin') {
+            if (roleData.role === 'admin' || roleData.role === 'super_admin') {
               authorized = true
             } else if (roleData.role === 'owner') {
               // Owner can delete staff in their stores

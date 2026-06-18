@@ -3,7 +3,7 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { logSecurityAction } from '@/lib/auditLogger';
 
-export type UserRole = 'admin' | 'owner' | 'store_manager' | 'staff';
+export type UserRole = 'super_admin' | 'admin' | 'owner' | 'store_manager' | 'staff';
 
 export interface UserRoleData {
   id: string;
@@ -44,10 +44,11 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<{ error: string | null }>;
-  signup: (email: string, password: string, fullName: string) => Promise<{ error: string | null }>;
+  signup: (email: string, password: string, fullName: string) => Promise<{ error: string | null, data?: any }>;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error: string | null }>;
   hasRole: (roles: UserRole[]) => boolean;
+  isSuperAdmin: () => boolean;
   isAdmin: () => boolean;
   isOwner: () => boolean;
   isStoreManager: () => boolean;
@@ -371,6 +372,11 @@ export const SupabaseAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
           return;
         }
 
+        if (localStorage.getItem('pos_is_signing_up_staff') === 'true') {
+          console.log('[Auth] Ignored auth change during background staff signup');
+          return;
+        }
+
         applySession(nextSession);
       }
     );
@@ -519,29 +525,49 @@ export const SupabaseAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
     }
   };
 
-  const signup = async (email: string, password: string, fullName: string): Promise<{ error: string | null }> => {
+  const signup = async (email: string, password: string, fullName: string): Promise<{ error: string | null, data?: any }> => {
     try {
       const redirectUrl = `${window.location.origin}/`;
       
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: redirectUrl,
-          data: {
-            full_name: fullName,
-          }
+      // Save current session
+      const { data: sessionData } = await supabase.auth.getSession();
+      const currentSession = sessionData.session;
+      
+      try {
+        if (currentSession) {
+          localStorage.setItem('pos_is_signing_up_staff', 'true');
         }
-      });
 
-      if (error) {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: redirectUrl,
+            data: {
+              full_name: fullName,
+            }
+          }
+        });
+
+        // Restore session if we had one (to prevent auto-login kicking out the admin)
+        if (currentSession) {
+          await supabase.auth.setSession({
+            access_token: currentSession.access_token,
+            refresh_token: currentSession.refresh_token,
+          });
+        }
+
+        if (error) {
         if (error.message.includes('already registered')) {
           return { error: 'This email is already registered. Please login instead.' };
         }
         return { error: error.message };
       }
 
-      return { error: null };
+        return { error: null, data };
+      } finally {
+        localStorage.removeItem('pos_is_signing_up_staff');
+      }
     } catch (error: any) {
       return { error: error.message || 'An unexpected error occurred' };
     }
@@ -593,7 +619,10 @@ export const SupabaseAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
     return roles.includes(userRole.role);
   };
 
-  const isAdmin = () => hasRole(['admin']);
+  const isSuperAdmin = () => {
+    return hasRole(['super_admin']);
+  };
+  const isAdmin = () => hasRole(['admin', 'super_admin']);
   const isOwner = () => hasRole(['owner']);
   const isStoreManager = () => hasRole(['store_manager']);
   const isStaff = () => hasRole(['staff']);
@@ -612,6 +641,7 @@ export const SupabaseAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
       logout,
       resetPassword,
       hasRole,
+      isSuperAdmin,
       isAdmin,
       isOwner,
       isStoreManager,

@@ -155,28 +155,26 @@ const StaffSettingsPage: React.FC = () => {
   };
 
   const handleSendOtp = () => {
-    if (!newStaff.phone || newStaff.phone.trim().length < 10) {
+    if (!newStaff.phone || newStaff.phone.length < 10) {
       toast({
         title: 'Error',
-        description: 'Please enter a valid 10-digit mobile number first',
+        description: 'Please enter a valid mobile number for verification.',
         variant: 'destructive'
       });
       return;
     }
-    
-    setIsSendingOtp(true);
 
-    setTimeout(() => {
-      const mockOtp = Math.floor(100000 + Math.random() * 900000).toString();
-      setOtpCode(mockOtp);
-      setOtpSent(true);
-      setIsSendingOtp(false);
-      toast({
-        title: 'OTP Sent',
-        description: `Verification OTP Sent! Code is ${mockOtp} (Mocked)`,
-      });
-      console.log(`[Verification System] Generated OTP for staff phone ${newStaff.phone}: ${mockOtp}`);
-    }, 800);
+    setIsVerifying(true);
+    // Real OTP via Edge Function using useOTP would go here.
+    // However, since this page isn't using useOTP yet, we will just use the standard toast
+    // and block creation until a real system is integrated here.
+    // For now, we enforce that mock logic is DEAD.
+    toast({
+      title: 'Error',
+      description: 'Real OTP Verification is strictly enforced. Please connect Edge Function here.',
+      variant: 'destructive'
+    });
+    setIsVerifying(false);
   };
 
   const handleVerifyOtp = () => {

@@ -203,25 +203,10 @@ export const StoreStaffSettings: React.FC = () => {
     if (type === 'store') {
       setIsSendingStoreOtp(true);
     } else {
-      setIsSendingOtp(true);
+      // Real OTP via Edge Function would go here.
+      toast.error("Real OTP Verification is strictly enforced. Please connect Edge Function here.");
+      setIsSendingOtp(false);
     }
-
-    setTimeout(() => {
-      const mockOtp = Math.floor(100000 + Math.random() * 900000).toString();
-      if (type === 'store') {
-        setStoreOtpCode(mockOtp);
-        setStoreOtpSent(true);
-        setIsSendingStoreOtp(false);
-      } else {
-        setOtpCode(mockOtp);
-        setOtpSent(true);
-        setIsSendingOtp(false);
-      }
-      toast.success(`Verification OTP Sent! Code is ${mockOtp} (Mocked)`, {
-        duration: 10000
-      });
-      console.log(`[Verification System] Generated OTP for ${phoneNum}: ${mockOtp}`);
-    }, 800);
   };
 
   const handleVerifyOtp = (type: 'store' | 'staff') => {

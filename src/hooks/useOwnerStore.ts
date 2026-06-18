@@ -10,7 +10,7 @@ export interface SelectedStore {
 
 export const useOwnerStore = () => {
   const { userRole, isAuthenticated } = useSupabaseAuth();
-  const isOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
+  const isOwner = userRole?.role === 'owner' || (userRole?.(role === 'admin' || role === 'super_admin') || userRole?.role === 'super_admin');
   
   const [selectedStore, setSelectedStore] = useState<SelectedStore | null>(() => {
     const storeId = localStorage.getItem('owner_selected_store_id');

@@ -56,7 +56,7 @@ const leaveTypeIcons: Record<string, React.ReactNode> = {
 const LeaveRequestPage: React.FC = () => {
   const navigate = useNavigate();
   const { userRole } = useSupabaseAuth();
-  const isManager = userRole?.role === 'owner' || userRole?.role === 'admin' || userRole?.role === 'store_manager';
+  const isManager = userRole?.role === 'owner' || (userRole?.(role === 'admin' || role === 'super_admin') || userRole?.role === 'super_admin') || userRole?.role === 'store_manager';
   
   const [staff, setStaff] = useState<any>(null);
   const [leaveType, setLeaveType] = useState('');

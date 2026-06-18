@@ -230,20 +230,17 @@ const LinkedServicesSettings: React.FC<LinkedServicesSettingsProps> = ({ onBack 
     await new Promise(resolve => setTimeout(resolve, 1000));
     setIsSendingOwnerOtp(false);
     setOwnerOtpSent(true);
-    toast.success(`Verification OTP sent to owner contact number: ${ownerPhone}. Hint: Use OTP "123456"`);
+    toast.success(`OTP sent to owner contact number: ${ownerPhone}.`);
+    
+    // STRICT MODE: No demo OTP allowed.
+    // Real validation required against Edge Function.
+    toast.error('Real OTP Verification is strictly enforced. Please connect Edge Function here.');
   };
 
   const handleVerifyOwnerOtp = async () => {
-    if (ownerOtp.trim() !== '123456') {
-      toast.error('Invalid OTP. Please enter the correct 6-digit code sent to your contact number.');
-      return;
-    }
-    setIsVerifyingOwnerOtp(true);
-    await new Promise(resolve => setTimeout(resolve, 800));
-    setIsVerifyingOwnerOtp(false);
-    setIsOwnerPhoneVerified(true);
-    setVerificationStep(2);
-    toast.success('Owner contact number verified successfully! Proceeding to WhatsApp Setup...');
+    // Real validation required against Edge Function.
+    toast.error('Real OTP Verification is strictly enforced. Please connect Edge Function here.');
+    return;
   };
 
   const handleSendWaOtp = async () => {
@@ -1150,9 +1147,9 @@ const LinkedServicesSettings: React.FC<LinkedServicesSettingsProps> = ({ onBack 
                                   ) : 'Verify Code'}
                                 </Button>
                               </div>
-                              <p className="text-[10px] text-muted-foreground mt-1">
-                                Demo OTP: <span className="font-bold font-mono">123456</span>
-                              </p>
+                              <p className="text-sm text-gray-500 mb-2">
+                                  Demo OTP is disabled. Use real OTP verification.
+                                </p>
                             </div>
                           )}
                         </div>

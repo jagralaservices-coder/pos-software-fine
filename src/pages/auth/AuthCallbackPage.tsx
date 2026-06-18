@@ -21,8 +21,9 @@ const AuthCallbackPage: React.FC = () => {
           
           if (roleData) {
             switch (roleData.role) {
+              case 'super_admin':
               case 'admin':
-                navigate('/admin-dashboard', { replace: true });
+                navigate('/admin/dashboard', { replace: true });
                 return;
               case 'owner':
                 navigate('/settings', { replace: true });

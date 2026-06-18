@@ -2500,6 +2500,222 @@ export type Database = {
           user_id: string
         }[]
       }
+      audit_logs: {
+        Row: {
+          action: string
+          created_at: string
+          device: string | null
+          id: string
+          ip_address: string | null
+          new_value: Json | null
+          old_value: Json | null
+          record_id: string
+          table_name: string
+          user_id: string
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          device?: string | null
+          id?: string
+          ip_address?: string | null
+          new_value?: Json | null
+          old_value?: Json | null
+          record_id: string
+          table_name: string
+          user_id: string
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          device?: string | null
+          id?: string
+          ip_address?: string | null
+          new_value?: Json | null
+          old_value?: Json | null
+          record_id?: string
+          table_name?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      merchant_access_logs: {
+        Row: {
+          accessed_at: string
+          admin_id: string
+          device: string | null
+          id: string
+          ip_address: string | null
+          merchant_id: string | null
+          reason: string | null
+        }
+        Insert: {
+          accessed_at?: string
+          admin_id: string
+          device?: string | null
+          id?: string
+          ip_address?: string | null
+          merchant_id?: string | null
+          reason?: string | null
+        }
+        Update: {
+          accessed_at?: string
+          admin_id?: string
+          device?: string | null
+          id?: string
+          ip_address?: string | null
+          merchant_id?: string | null
+          reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "merchant_access_logs_merchant_id_fkey"
+            columns: ["merchant_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      store_access_logs: {
+        Row: {
+          accessed_at: string
+          admin_id: string
+          device: string | null
+          id: string
+          ip_address: string | null
+          reason: string | null
+          store_id: string | null
+        }
+        Insert: {
+          accessed_at?: string
+          admin_id: string
+          device?: string | null
+          id?: string
+          ip_address?: string | null
+          reason?: string | null
+          store_id?: string | null
+        }
+        Update: {
+          accessed_at?: string
+          admin_id?: string
+          device?: string | null
+          id?: string
+          ip_address?: string | null
+          reason?: string | null
+          store_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "store_access_logs_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      subscription_history: {
+        Row: {
+          action: string
+          date: string
+          id: string
+          new_plan: string | null
+          notes: string | null
+          previous_plan: string | null
+          subscription_id: string | null
+        }
+        Insert: {
+          action: string
+          date?: string
+          id?: string
+          new_plan?: string | null
+          notes?: string | null
+          previous_plan?: string | null
+          subscription_id?: string | null
+        }
+        Update: {
+          action?: string
+          date?: string
+          id?: string
+          new_plan?: string | null
+          notes?: string | null
+          previous_plan?: string | null
+          subscription_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subscription_history_subscription_id_fkey"
+            columns: ["subscription_id"]
+            isOneToOne: false
+            referencedRelation: "subscriptions"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      subscriptions: {
+        Row: {
+          auto_renewal: boolean
+          created_at: string
+          customer_id: string | null
+          id: string
+          plan_name: string
+          remaining_days: number
+          renewal_date: string | null
+          status: string
+          store_id: string | null
+          subscription_end_date: string
+          subscription_start_date: string
+          updated_at: string
+        }
+        Insert: {
+          auto_renewal?: boolean
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          plan_name?: string
+          remaining_days?: number
+          renewal_date?: string | null
+          status?: string
+          store_id?: string | null
+          subscription_end_date: string
+          subscription_start_date?: string
+          updated_at?: string
+        }
+        Update: {
+          auto_renewal?: boolean
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          plan_name?: string
+          remaining_days?: number
+          renewal_date?: string | null
+          status?: string
+          store_id?: string | null
+          subscription_end_date?: string
+          subscription_start_date?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subscriptions_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "subscriptions_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+    }
+    Views: {
+      [_ in never]: never
     }
     Enums: {
       user_role: "admin" | "owner" | "store_manager" | "staff"

@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getExpenses, setExpenses, Expense, generateId } from '@/lib/store';
 import { useLocale } from '@/contexts/LocaleContext';
-import { Plus, Search, Calendar, Wallet, TrendingDown, ArrowLeft, Pencil, Trash2, Filter } from 'lucide-react';
+import { Plus, Search, Calendar, Wallet, TrendingDown, ArrowLeft, Pencil, Trash2, Filter, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
+import { useStoreDataSync } from '@/hooks/useStoreDataSync';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -28,6 +29,21 @@ export const ExpenseTracker: React.FC = () => {
   const [deleteExpenseId, setDeleteExpenseId] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState('all');
   const [newExpense, setNewExpense] = useState({ category: 'Groceries', amount: '', description: '', paidBy: '' });
+  const [isSyncing, setIsSyncing] = useState(false);
+  const { syncExpenses } = useStoreDataSync();
+
+  const handleSync = async () => {
+    setIsSyncing(true);
+    try {
+      const synced = await syncExpenses(expenses);
+      setExpensesState(synced);
+      toast.success('Expenses synced successfully');
+    } catch (e) {
+      toast.error('Sync failed');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const handleAddExpense = () => {
     if (!newExpense.amount || !newExpense.description) { toast.error(t('common.required')); return; }
@@ -124,9 +140,15 @@ export const ExpenseTracker: React.FC = () => {
               <p className="text-xs text-muted-foreground">{expenses.length} records</p>
             </div>
           </div>
-          <Button size="sm" onClick={() => setShowAddExpense(true)} className="gap-1.5 rounded-xl">
-            <Plus className="w-4 h-4" /> {t('expenses.addExpense')}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={handleSync} disabled={isSyncing} className="gap-1.5 rounded-xl">
+              <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Sync</span>
+            </Button>
+            <Button size="sm" onClick={() => setShowAddExpense(true)} className="gap-1.5 rounded-xl">
+              <Plus className="w-4 h-4" /> {t('expenses.addExpense')}
+            </Button>
+          </div>
         </div>
       </div>
 

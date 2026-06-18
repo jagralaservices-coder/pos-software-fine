@@ -97,12 +97,12 @@ export function useSubscription() {
 
   const canAccess = useCallback((featureKey: string): boolean => {
     // Admins bypass all gates
-    if (userRole?.role === 'admin') return true;
+    if ((userRole?.(role === 'admin' || role === 'super_admin') || userRole?.role === 'super_admin')) return true;
     return hasFeatureAccess(tier, businessType, featureKey, enabledAddons);
   }, [tier, businessType, enabledAddons, userRole]);
 
   const canAccessReport = useCallback((reportPath: string): boolean => {
-    if (userRole?.role === 'admin') return true;
+    if ((userRole?.(role === 'admin' || role === 'super_admin') || userRole?.role === 'super_admin')) return true;
     if (meetsMinTier(tier, 'gold')) return true;
     // For basic tier, check specific report feature keys
     const reportFeatureMap: Record<string, string> = {
